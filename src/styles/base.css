@@ -50,6 +50,11 @@ a {
   border-radius: var(--radius-sm);
 }
 
+.boot {
+  height: 100%;
+  background: var(--bg);
+}
+
 .sr-only {
   position: absolute;
   width: 1px;

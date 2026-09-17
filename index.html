@@ -13,37 +13,23 @@
       <button onclick="location.reload()">Reload</button>
     </div>
     <script>
-      // If the app has not rendered after a few seconds (a failed hot reload,
-      // a broken bundle), show a way out instead of a blank window.
-      setTimeout(function () {
-        var root = document.getElementById("root");
-        if (root && root.childElementCount === 0) document.getElementById("boot-fallback").hidden = false;
-      }, 4000);
+      // Never leave a silent blank window: show a way out while the app has not
+      // rendered yet, and hide it again as soon as it has.
+      (function () {
+        var started = Date.now();
+        var check = setInterval(function () {
+          var root = document.getElementById("root");
+          var fallback = document.getElementById("boot-fallback");
+          if (!root || !fallback) return;
+          var mounted = root.childElementCount > 0;
+          fallback.hidden = mounted || Date.now() - started < 5000;
+          if (mounted) clearInterval(check);
+        }, 500);
+      })();
       window.addEventListener("keydown", function (e) {
         if (e.key === "F5" || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "r")) location.reload();
       });
     </script>
-    <style>
-      #boot-fallback {
-        font: 14px system-ui, sans-serif;
-        color: #e3ebe8;
-        background: #0e1312;
-        position: fixed;
-        inset: 0;
-        display: grid;
-        place-content: center;
-        gap: 10px;
-        text-align: center;
-      }
-      #boot-fallback button {
-        padding: 6px 14px;
-        border-radius: 8px;
-        border: 1px solid #2a3331;
-        background: #161c1b;
-        color: inherit;
-        cursor: pointer;
-      }
-    </style>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

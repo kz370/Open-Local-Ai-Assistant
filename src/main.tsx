@@ -74,7 +74,8 @@ function Root() {
       </div>
     );
   }
-  if (!ready || !settings) return null;
+  // Always render something so the window is never truly empty.
+  if (!ready || !settings) return <div className="boot" aria-busy="true" />;
   const screen =
     route === "overlay" ? (
       <Overlay />
