@@ -163,12 +163,14 @@ describe("shortcuts", () => {
     expect(cap.permissions).toContain("global-shortcut:default");
   });
 
-  it("builds Tauri accelerators", () => {
+  it("builds Tauri accelerators including modifier-only combos", () => {
     expect(acceleratorFromEvent(ev("Space", { ctrlKey: true }))).toBe("CommandOrControl+Space");
     expect(acceleratorFromEvent(ev("KeyD", { ctrlKey: true, altKey: true }))).toBe("CommandOrControl+Alt+D");
     expect(acceleratorFromEvent(ev("F9"))).toBe("F9");
     expect(acceleratorFromEvent(ev("KeyA"))).toBeNull(); // no modifier
-    expect(acceleratorFromEvent(ev("ControlLeft", { ctrlKey: true }))).toBeNull(); // modifier only
+    expect(acceleratorFromEvent(ev("ControlLeft", { ctrlKey: true }))).toBe("CommandOrControl");
+    expect(acceleratorFromEvent(ev("AltLeft", { ctrlKey: true, altKey: true }))).toBe("CommandOrControl+Alt");
+    expect(acceleratorFromEvent(ev("MetaLeft", { metaKey: true }))).toBe("Super");
     expect(prettyAccelerator("CommandOrControl+Shift+Space")).toBe("Ctrl + Shift + Space");
   });
 });

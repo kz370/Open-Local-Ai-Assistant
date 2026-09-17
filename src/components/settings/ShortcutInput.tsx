@@ -32,18 +32,25 @@ const CODE_MAP: Record<string, string> = {
 
 /** Converts a keyboard event into a Tauri accelerator string, or null if incomplete. */
 export function acceleratorFromEvent(e: Pick<KeyboardEvent, "code" | "ctrlKey" | "altKey" | "shiftKey" | "metaKey">): string | null {
+  const mods: string[] = [];
+  if (e.ctrlKey) mods.push("CommandOrControl");
+  if (e.altKey) mods.push("Alt");
+  if (e.shiftKey) mods.push("Shift");
+  if (e.metaKey) mods.push("Super");
+
+  const isModifierOnly = ["ControlLeft", "ControlRight", "AltLeft", "AltRight", "ShiftLeft", "ShiftRight", "MetaLeft", "MetaRight", "OSLeft", "OSRight", "SuperLeft", "SuperRight"].includes(e.code);
+
   let key: string | null = null;
   if (/^Key[A-Z]$/.test(e.code)) key = e.code.slice(3);
   else if (/^Digit[0-9]$/.test(e.code)) key = e.code.slice(5);
   else if (/^F([1-9]|1[0-9]|2[0-4])$/.test(e.code)) key = e.code;
   else if (/^Numpad[0-9]$/.test(e.code)) key = `Num${e.code.slice(6)}`;
   else if (CODE_MAP[e.code]) key = CODE_MAP[e.code];
+
+  if (isModifierOnly) {
+    return mods.length ? mods.join("+") : null;
+  }
   if (!key) return null;
-  const mods: string[] = [];
-  if (e.ctrlKey) mods.push("CommandOrControl");
-  if (e.altKey) mods.push("Alt");
-  if (e.shiftKey) mods.push("Shift");
-  if (e.metaKey) mods.push("Super");
   const isFunctionKey = /^F\d+$/.test(key);
   if (!mods.length && !isFunctionKey) return null;
   return [...mods, key].join("+");
@@ -56,32 +63,86 @@ export function prettyAccelerator(acc: string): string {
     .join(" + ");
 }
 
+function isModifierCode(code: string): boolean {
+  return ["ControlLeft", "ControlRight", "AltLeft", "AltRight", "ShiftLeft", "ShiftRight", "MetaLeft", "MetaRight", "OSLeft", "OSRight", "SuperLeft", "SuperRight"].includes(code);
+}
+
+function modifierKeyName(code: string): string | null {
+  switch (code) {
+    case "ControlLeft":
+    case "ControlRight":
+      return "CommandOrControl";
+    case "AltLeft":
+    case "AltRight":
+      return "Alt";
+    case "ShiftLeft":
+    case "ShiftRight":
+      return "Shift";
+    case "MetaLeft":
+    case "MetaRight":
+    case "OSLeft":
+    case "OSRight":
+    case "SuperLeft":
+    case "SuperRight":
+      return "Super";
+    default:
+      return null;
+  }
+}
+
 export function ShortcutInput(props: { value: string; defaultValue: string; onChange: (v: string) => void; label: string }) {
   const [recording, setRecording] = useState(false);
   const btnRef = useRef<HTMLButtonElement>(null);
+  const activeModifiersRef = useRef<Set<string>>(new Set());
 
   // While recording, the app releases its global shortcuts so combinations
   // like Ctrl+Space actually reach this window, and a window-level listener
   // catches keys the button would not receive.
   useEffect(() => {
-    if (!recording) return;
+    if (!recording) {
+      activeModifiersRef.current.clear();
+      return;
+    }
     void ipc.shortcutsCapture(true);
-    const onKey = (e: KeyboardEvent) => {
+    const onKeyDown = (e: KeyboardEvent) => {
       e.preventDefault();
       e.stopPropagation();
       if (e.key === "Escape") {
+        activeModifiersRef.current.clear();
         setRecording(false);
+        return;
+      }
+      if (isModifierCode(e.code)) {
+        const name = modifierKeyName(e.code);
+        if (name) activeModifiersRef.current.add(name);
         return;
       }
       const acc = acceleratorFromEvent(e);
       if (acc) {
+        activeModifiersRef.current.clear();
         props.onChange(acc);
         setRecording(false);
       }
     };
-    window.addEventListener("keydown", onKey, true);
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (!isModifierCode(e.code)) return;
+      const name = modifierKeyName(e.code);
+      if (!name) return;
+      if (activeModifiersRef.current.has(name)) {
+        const combined = [...activeModifiersRef.current];
+        activeModifiersRef.current.clear();
+        if (combined.length > 0) {
+          props.onChange(combined.join("+"));
+          setRecording(false);
+        }
+      }
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    window.addEventListener("keyup", onKeyUp, true);
     return () => {
-      window.removeEventListener("keydown", onKey, true);
+      window.removeEventListener("keydown", onKeyDown, true);
+      window.removeEventListener("keyup", onKeyUp, true);
+      activeModifiersRef.current.clear();
       void ipc.shortcutsCapture(false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
