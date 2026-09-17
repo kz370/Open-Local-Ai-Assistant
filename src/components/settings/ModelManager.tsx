@@ -42,17 +42,18 @@ export function ModelManager({ kinds, title }: { kinds: ("stt" | "vad" | "tts")[
   const custom = installed.filter((m) => m.source === "custom" && kinds.includes(m.kind));
 
   useEffect(() => {
-    // Preselect recommended models that are missing.
-    setSelected(new Set(entries.filter((e) => e.recommended && !e.installed).map((e) => e.id)));
-  }, [entries.map((e) => `${e.id}:${e.installed}`).join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
+    // Preselect recommended models that are missing and not already queued.
+    setSelected(new Set(entries.filter((e) => e.recommended && !e.installed && !e.downloading).map((e) => e.id)));
+  }, [entries.map((e) => `${e.id}:${e.installed}:${e.downloading}`).join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const selectedSize = entries.filter((e) => selected.has(e.id)).reduce((a, e) => a + e.downloadBytes, 0);
 
   const download = async () => {
     setError(null);
+    const ids = [...selected];
+    setSelected(new Set()); // the rows become "queued" and cannot be picked again
     try {
-      await ipc.modelsDownload([...selected]);
-      setSelected(new Set());
+      await ipc.modelsDownload(ids);
       await refresh();
     } catch (e) {
       setError(toAppError(e));
@@ -75,10 +76,20 @@ export function ModelManager({ kinds, title }: { kinds: ("stt" | "vad" | "tts")[
       <div className="model-list">
         {entries.map((e) => {
           const p = progress[e.id];
-          const active = e.downloading || (p && ["downloading", "verifying", "extracting"].includes(p.state));
+          const busy = e.downloading || (p && ["downloading", "verifying", "extracting"].includes(p.state));
+          const active = !!busy && !e.installed;
           const pct = p && p.totalBytes ? Math.min(100, Math.round((p.downloadedBytes / p.totalBytes) * 100)) : 0;
+          const stateLabel = !active
+            ? null
+            : p?.state === "downloading"
+              ? t("settings.models.downloading", { percent: pct })
+              : p?.state === "verifying"
+                ? t("settings.models.verifying")
+                : p?.state === "extracting"
+                  ? t("settings.models.extracting")
+                  : t("settings.models.queued");
           return (
-            <div className="model-item" key={e.id}>
+            <div className={`model-item${active ? " busy" : ""}`} key={e.id}>
               {e.installed ? (
                 <CheckCircle2 size={16} style={{ color: "var(--success)" }} aria-label={t("settings.models.installed")} />
               ) : (
@@ -108,10 +119,10 @@ export function ModelManager({ kinds, title }: { kinds: ("stt" | "vad" | "tts")[
                 </div>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                {active && p && (
+                {active && (
                   <>
                     <span className="row-hint" style={{ margin: 0 }}>
-                      {p.state === "downloading" ? t("settings.models.downloading", { percent: pct }) : p.state === "verifying" ? t("settings.models.verifying") : t("settings.models.extracting")}
+                      {stateLabel}
                     </span>
                     <div className="progress" aria-hidden>
                       <span style={{ width: `${pct}%` }} />

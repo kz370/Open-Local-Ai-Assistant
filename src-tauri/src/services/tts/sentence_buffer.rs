@@ -9,6 +9,8 @@ const ABBREVIATIONS: &[&str] = &[
     "usw", "ca", "nr", "dh", "d.h", "u.a", "inkl", "evtl", "ggf", "vgl",
 ];
 const MIN_CHARS: usize = 16;
+/// The opening sentence is allowed to be short so the reply starts sooner.
+const FIRST_MIN_CHARS: usize = 4;
 const MAX_CHARS: usize = 280;
 
 #[derive(Default)]
@@ -16,6 +18,8 @@ pub struct SentenceBuffer {
     raw: String,
     in_code: bool,
     carry: String,
+    /// The first sentence is released early so speech starts quickly.
+    spoke_once: bool,
 }
 
 impl SentenceBuffer {
@@ -45,9 +49,11 @@ impl SentenceBuffer {
             return;
         }
         let combined = if self.carry.is_empty() { cleaned } else { format!("{} {}", std::mem::take(&mut self.carry), cleaned) };
-        if combined.chars().count() < MIN_CHARS && !force {
+        let min = if self.spoke_once { MIN_CHARS } else { FIRST_MIN_CHARS };
+        if combined.chars().count() < min && !force {
             self.carry = combined;
         } else if combined.chars().any(char::is_alphanumeric) {
+            self.spoke_once = true;
             out.push(combined);
         }
     }
@@ -205,11 +211,11 @@ mod tests {
     }
 
     #[test]
-    fn spec_example_streams_first_sentence_early() {
+    fn spec_example_streams_sentences_early() {
         let mut b = SentenceBuffer::default();
-        assert!(b.push("Hello! I can help").is_empty());
-        let first = b.push(" you with that. Let me");
-        assert_eq!(first, vec!["Hello! I can help you with that."]);
+        // "Hello!" is spoken as soon as it arrives, the rest follows sentence by sentence.
+        assert_eq!(b.push("Hello! I can help"), vec!["Hello!"]);
+        assert_eq!(b.push(" you with that. Let me"), vec!["I can help you with that."]);
         assert!(b.push(" explain...").is_empty());
         assert_eq!(b.flush(), vec!["Let me explain..."]);
     }
@@ -235,9 +241,19 @@ mod tests {
     }
 
     #[test]
-    fn short_fragments_are_merged() {
+    fn short_fragments_are_merged_after_the_first_one() {
+        // The opening fragment is spoken immediately, later short ones are merged.
         let out = feed(&["Yes. Sure. That works perfectly for your case."]);
-        assert_eq!(out, vec!["Yes. Sure. That works perfectly for your case."]);
+        assert_eq!(out, vec!["Yes.", "Sure. That works perfectly for your case."]);
+    }
+
+    #[test]
+    fn speech_starts_before_the_answer_is_finished() {
+        let mut b = SentenceBuffer::default();
+        let first = b.push("Sure! ");
+        assert_eq!(first, vec!["Sure!"], "the first words are released immediately");
+        assert!(b.push("Let me check that for ").is_empty());
+        assert_eq!(b.push("you. "), vec!["Let me check that for you."]);
     }
 
     #[test]
@@ -251,6 +267,6 @@ mod tests {
     #[test]
     fn markdown_is_cleaned_and_lists_split() {
         let out = feed(&["## Steps\n", "1. **Open** the [settings](https://x.y/z) page\n2. Click save\n"]);
-        assert_eq!(out, vec!["Steps Open the settings page", "Click save"]);
+        assert_eq!(out, vec!["Steps", "Open the settings page", "Click save"]);
     }
 }

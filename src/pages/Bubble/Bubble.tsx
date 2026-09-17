@@ -12,7 +12,7 @@ export function Bubble() {
   const press = useRef<{ x: number; y: number; dragging: boolean } | null>(null);
 
   useEffect(() => {
-    document.documentElement.classList.add("bubble-window");
+    document.documentElement.classList.add("launcher-window");
     const subs = [
       on<VoiceEvent>("voice://event", (e) => {
         if (e.type === "state") setActivity(e.state === "idle" ? "idle" : "listening");
@@ -32,10 +32,10 @@ export function Bubble() {
   const label = activity === "listening" ? t("bubble.listening") : activity === "speaking" ? t("bubble.speaking") : t("bubble.open");
 
   return (
-    <div className="bubble-stage">
+    <div className="launcher-stage">
       <button
         type="button"
-        className={`bubble ${activity}`}
+        className={`launcher ${activity}`}
         aria-label={label}
         title={label}
         onPointerDown={(e) => {
@@ -59,8 +59,8 @@ export function Bubble() {
           if (e.key === "Enter" || e.key === " ") void ipc.bubbleOpenChat();
         }}
       >
-        <span className="bubble-ring" aria-hidden />
-        <svg className="bubble-glyph" viewBox="0 0 24 24" aria-hidden>
+        <span className="launcher-ring" aria-hidden />
+        <svg className="launcher-glyph" viewBox="0 0 24 24" aria-hidden>
           <path d="M4 12h1.5M8 8.5v7M11.5 5.5v13M15 8.5v7M18.5 11v2" />
         </svg>
       </button>

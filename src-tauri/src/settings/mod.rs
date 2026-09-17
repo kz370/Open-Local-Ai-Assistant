@@ -32,6 +32,10 @@ impl Default for WindowGeometry {
 pub struct GeneralSettings {
     /// "system" | "light" | "dark"
     pub theme: String,
+    /// "teal" | "blue" | "green" | "amber" | "rose" | "slate"
+    pub accent: String,
+    /// What the assistant calls itself in the UI and in its system prompt.
+    pub assistant_name: String,
     pub high_contrast: bool,
     pub font_scale: f32,
     pub start_with_os: bool,
@@ -55,6 +59,8 @@ impl Default for GeneralSettings {
     fn default() -> Self {
         Self {
             theme: "system".into(),
+            accent: "teal".into(),
+            assistant_name: "Local Assistant".into(),
             high_contrast: false,
             font_scale: 1.0,
             start_with_os: false,
@@ -141,6 +147,12 @@ pub struct SttSettings {
     pub silence_ms: u32,
     /// Extra folders scanned for speech/voice models (read-only).
     pub extra_model_dirs: Vec<String>,
+    /// Show hands-free conversation as a call screen.
+    pub call_view: bool,
+    /// Stop a recording after this much silence (seconds, 0 = never).
+    pub auto_stop_silence_secs: u32,
+    /// Leave hands-free mode after this long without speech (seconds, 0 = never).
+    pub hands_free_timeout_secs: u32,
 }
 
 impl Default for SttSettings {
@@ -156,6 +168,9 @@ impl Default for SttSettings {
             vad_threshold: 0.5,
             silence_ms: 800,
             extra_model_dirs: Vec::new(),
+            call_view: true,
+            auto_stop_silence_secs: 8,
+            hands_free_timeout_secs: 300,
         }
     }
 }
@@ -247,6 +262,13 @@ impl Settings {
         if !matches!(self.general.theme.as_str(), "system" | "light" | "dark") {
             self.general.theme = "system".into();
         }
+        if !matches!(self.general.accent.as_str(), "teal" | "blue" | "green" | "amber" | "rose" | "slate") {
+            self.general.accent = "teal".into();
+        }
+        self.general.assistant_name = self.general.assistant_name.trim().chars().take(40).collect();
+        if self.general.assistant_name.is_empty() {
+            self.general.assistant_name = "Local Assistant".into();
+        }
         if !matches!(self.general.window_position.as_str(), "bottom-right" | "bottom-left" | "center" | "custom") {
             self.general.window_position = "bottom-right".into();
         }
@@ -277,6 +299,12 @@ impl Settings {
             .filter(|d| !d.is_empty())
             .collect();
         self.stt.extra_model_dirs.dedup();
+        if self.stt.auto_stop_silence_secs != 0 {
+            self.stt.auto_stop_silence_secs = self.stt.auto_stop_silence_secs.clamp(2, 120);
+        }
+        if self.stt.hands_free_timeout_secs != 0 {
+            self.stt.hands_free_timeout_secs = self.stt.hands_free_timeout_secs.clamp(15, 3600);
+        }
         if !matches!(self.tts.preferred_gender.as_str(), "any" | "female" | "male") {
             self.tts.preferred_gender = "any".into();
         }

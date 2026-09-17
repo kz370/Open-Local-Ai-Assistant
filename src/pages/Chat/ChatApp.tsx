@@ -9,6 +9,7 @@ import { Composer, type ComposerHandle } from "../../components/chat/Composer";
 import { MessageBubble } from "../../components/chat/MessageBubble";
 import { ToolConfirmDialog } from "../../components/chat/ToolConfirmDialog";
 import { BrandMark } from "../../components/common/BrandMark";
+import { CallView } from "../../components/voice/CallView";
 import { textDir } from "../../components/common/controls";
 import { HistoryPanel } from "../../components/history/HistoryPanel";
 
@@ -31,6 +32,8 @@ export function ChatApp() {
   const listRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
 
+  const handsFree = useVoice((s) => s.handsFree);
+  const callView = (settings?.stt.callView ?? true) && handsFree;
   const developer = settings?.general.developerMode ?? false;
   const compact = settings?.general.compact ?? false;
   const aliases = settings?.ai.modelAliases;
@@ -133,7 +136,7 @@ export function ChatApp() {
           <BrandMark size={30} />
           <div className="header-titles" data-tauri-drag-region>
             <span className="header-title" data-tauri-drag-region>
-              {t("app.name")}
+              {settings?.general.assistantName || t("app.name")}
             </span>
             <span className="header-status" data-tauri-drag-region title={activeModel ?? undefined}>
               {status}
@@ -185,7 +188,9 @@ export function ChatApp() {
         </div>
       )}
 
-      {compact ? (
+      {callView ? (
+        <CallView />
+      ) : compact ? (
         <div className="compact-last" dir={lastAssistant ? textDir(lastAssistant.content, lastAssistant.language) : undefined}>
           {lastAssistant?.content || (busy ? t("chat.thinking") : t("chat.emptyHint"))}
         </div>

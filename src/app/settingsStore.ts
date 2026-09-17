@@ -47,6 +47,32 @@ export const useSettings = create<SettingsState>((set, get) => ({
 
 let mediaListener: ((e: MediaQueryListEvent) => void) | null = null;
 
+/** Accent palettes (no purple). Values are [accent, hover, soft, softText]. */
+const ACCENTS: Record<string, { light: string[]; dark: string[]; grad: string }> = {
+  teal: { light: ["#0f766e", "#0b5f58", "#dcf1ec", "#0b4f49"], dark: ["#2dd4bf", "#5eead4", "#15332f", "#99f6e4"], grad: "linear-gradient(145deg, #2dd4bf, #0d9488)" },
+  blue: { light: ["#1d4ed8", "#1e40af", "#dde7fd", "#152f6d"], dark: ["#60a5fa", "#93c5fd", "#16233d", "#bfdbfe"], grad: "linear-gradient(145deg, #60a5fa, #2563eb)" },
+  green: { light: ["#15803d", "#166534", "#ddf3e3", "#0f4c25"], dark: ["#4ade80", "#86efac", "#14301f", "#bbf7d0"], grad: "linear-gradient(145deg, #4ade80, #16a34a)" },
+  amber: { light: ["#b45309", "#92400e", "#fdeed6", "#7c3a06"], dark: ["#fbbf24", "#fcd34d", "#3a2a10", "#fde68a"], grad: "linear-gradient(145deg, #fbbf24, #d97706)" },
+  rose: { light: ["#be123c", "#9f1239", "#fde3e8", "#851032"], dark: ["#fb7185", "#fda4af", "#3a1a22", "#fecdd3"], grad: "linear-gradient(145deg, #fb7185, #e11d48)" },
+  slate: { light: ["#334155", "#1e293b", "#e4e8ee", "#1f2937"], dark: ["#94a3b8", "#cbd5e1", "#232a35", "#e2e8f0"], grad: "linear-gradient(145deg, #94a3b8, #475569)" },
+};
+
+function applyAccent(root: HTMLElement, name: string, dark: boolean) {
+  const accent = ACCENTS[name] ?? ACCENTS.teal;
+  const [main, hover, soft, softText] = dark ? accent.dark : accent.light;
+  root.style.setProperty("--accent", main);
+  root.style.setProperty("--accent-hover", hover);
+  root.style.setProperty("--accent-soft", soft);
+  root.style.setProperty("--accent-soft-text", softText);
+  root.style.setProperty("--accent-contrast", dark ? "#05201c" : "#ffffff");
+  root.style.setProperty("--focus", dark ? hover : main);
+  root.style.setProperty("--brand-gradient", accent.grad);
+  root.style.setProperty("--user-bubble", accent.grad);
+  root.style.setProperty("--glow-1", `color-mix(in srgb, ${main} ${dark ? "12%" : "16%"}, transparent)`);
+  root.style.setProperty("--glow-strong", `color-mix(in srgb, ${main} 28%, transparent)`);
+  root.style.setProperty("--focus-ring", `color-mix(in srgb, ${main} 16%, transparent)`);
+}
+
 export function applyAppearance(s: Settings) {
   const root = document.documentElement;
   const mq = window.matchMedia?.("(prefers-color-scheme: dark)");
@@ -54,10 +80,12 @@ export function applyAppearance(s: Settings) {
   root.dataset.theme = resolve();
   root.dataset.contrast = s.general.highContrast ? "high" : "normal";
   root.style.setProperty("--font-scale", String(s.general.fontScale || 1));
+  applyAccent(root, s.general.accent, resolve() === "dark");
   if (mq) {
     if (mediaListener) mq.removeEventListener?.("change", mediaListener);
     mediaListener = () => {
       root.dataset.theme = resolve();
+      applyAccent(root, s.general.accent, resolve() === "dark");
     };
     mq.addEventListener?.("change", mediaListener);
   }

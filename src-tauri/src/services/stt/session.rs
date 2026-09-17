@@ -59,6 +59,8 @@ pub struct VoiceSessions {
     emit: VoiceEmit,
     speaking: SpeakingProbe,
     active: Mutex<Option<Active>>,
+    /// The previous session's thread, joined by the next session (never by the UI).
+    previous: Mutex<Option<std::thread::JoinHandle<()>>>,
 }
 
 const MAX_RECORDING: Duration = Duration::from_secs(300);
@@ -66,7 +68,7 @@ const VAD_WINDOW: usize = 512;
 
 impl VoiceSessions {
     pub fn new(stt: Arc<SttService>, settings: Arc<SettingsStore>, emit: VoiceEmit, speaking: SpeakingProbe) -> Self {
-        Self { stt, settings, emit, speaking, active: Mutex::new(None) }
+        Self { stt, settings, emit, speaking, active: Mutex::new(None), previous: Mutex::new(None) }
     }
 
     pub fn active_mode(&self) -> Option<ListenMode> {
@@ -87,8 +89,12 @@ impl VoiceSessions {
         if mode == ListenMode::HandsFree && !streaming && vad_path.is_none() {
             return Err(AppError::Stt("hands-free needs the voice activity detection model".into()));
         }
-        // Stop any running session first (discarding its audio).
+        // Stop any running session first (discarding its audio) and wait for it
+        // here, before opening the microphone again.
         self.stop(true);
+        if let Some(prev) = self.previous.lock().unwrap_or_else(|p| p.into_inner()).take() {
+            let _ = prev.join();
+        }
 
         let (capture, rx) = Capture::start(settings.stt.microphone.as_deref())?;
         let device = capture.device_name.clone();
@@ -105,16 +111,7 @@ impl VoiceSessions {
             .spawn(move || {
                 let mut capture = capture;
                 let ctx = SessionCtx { mode, emit: emit.clone(), speaking, settings: stt_settings.clone(), stop: stop2, discard: discard2 };
-                if mode == ListenMode::Test {
-                    ctx.run_level_only(&rx);
-                } else {
-                    let vad = vad_path.and_then(|p| create_vad(&p, &stt_settings));
-                    let result = stt.with_recognizer(&stt_settings, |rec, _| ctx.run(rec, &rx, vad));
-                    if let Err(e) = result {
-                        tracing::warn!(error = %e, "speech session could not start");
-                        emit(VoiceEvent::Error { mode, code: e.code().into(), detail: e.to_string() });
-                    }
-                }
+                run_session(&stt, &ctx, &rx, vad_path.as_deref());
                 capture.stop();
                 emit(VoiceEvent::State { mode, state: "idle".into(), device: None, streaming });
             })
@@ -125,16 +122,64 @@ impl VoiceSessions {
     }
 
     /// Stops the active session. With `discard`, recorded audio is dropped
-    /// instead of transcribed. Returns immediately; results arrive as events.
+    /// instead of transcribed. Never blocks: the session thread finishes on its
+    /// own and results arrive as events.
     pub fn stop(&self, discard: bool) -> Option<ListenMode> {
         let active = self.active.lock().unwrap_or_else(|p| p.into_inner()).take()?;
         active.discard.store(discard, Ordering::Relaxed);
         active.stop.store(true, Ordering::Relaxed);
-        if discard {
-            let _ = active.thread.join();
-        }
+        *self.previous.lock().unwrap_or_else(|p| p.into_inner()) = Some(active.thread);
         Some(active.mode)
     }
+}
+
+/// Runs one listening session over an audio source. Shared by the microphone
+/// path and by tests that feed recorded audio.
+fn run_session(stt: &SttService, ctx: &SessionCtx, rx: &Receiver<CaptureEvent>, vad_path: Option<&std::path::Path>) {
+    if ctx.mode == ListenMode::Test {
+        ctx.run_level_only(rx);
+        return;
+    }
+    let vad = match vad_path {
+        Some(p) => match create_vad(p, &ctx.settings) {
+            Some(v) => Some(v),
+            None => {
+                tracing::warn!(path = %p.display(), "voice activity detection model could not be loaded");
+                (ctx.emit)(VoiceEvent::Error { mode: ctx.mode, code: "stt_unavailable".into(), detail: "the voice activity detection model could not be loaded".into() });
+                return;
+            }
+        },
+        None => None,
+    };
+    let result = stt.with_recognizer(&ctx.settings, |rec, model| {
+        tracing::info!(mode = ?ctx.mode, model = %model.id, streaming = rec.is_streaming(), vad = vad.is_some(), "listening session started");
+        ctx.run(rec, rx, vad)
+    });
+    if let Err(e) = result {
+        tracing::warn!(error = %e, "speech session could not start");
+        (ctx.emit)(VoiceEvent::Error { mode: ctx.mode, code: e.code().into(), detail: e.to_string() });
+    }
+}
+
+/// Test hook: runs a session over a caller-provided audio source (no microphone).
+pub fn run_session_for_test(
+    stt: &SttService,
+    settings: &SttSettings,
+    mode: ListenMode,
+    rx: &Receiver<CaptureEvent>,
+    vad_path: Option<&std::path::Path>,
+    emit: VoiceEmit,
+    stop: Arc<AtomicBool>,
+) {
+    let ctx = SessionCtx {
+        mode,
+        emit,
+        speaking: Arc::new(|| false),
+        settings: settings.clone(),
+        stop,
+        discard: Arc::new(AtomicBool::new(false)),
+    };
+    run_session(stt, &ctx, rx, vad_path);
 }
 
 fn create_vad(path: &std::path::Path, settings: &SttSettings) -> Option<sherpa_onnx::VoiceActivityDetector> {
@@ -163,6 +208,31 @@ struct SessionCtx {
     stop: Arc<AtomicBool>,
     discard: Arc<AtomicBool>,
 }
+
+/// Watches how long the microphone has heard nothing and ends the session
+/// when the configured limit is reached.
+struct SilenceGuard {
+    last_speech: Instant,
+    limit: Option<Duration>,
+}
+
+impl SilenceGuard {
+    fn new(mode: ListenMode, settings: &SttSettings) -> Self {
+        let secs = if mode == ListenMode::HandsFree { settings.hands_free_timeout_secs } else { settings.auto_stop_silence_secs };
+        Self { last_speech: Instant::now(), limit: (secs > 0).then(|| Duration::from_secs(secs as u64)) }
+    }
+
+    fn heard_speech(&mut self) {
+        self.last_speech = Instant::now();
+    }
+
+    fn expired(&self) -> bool {
+        self.limit.map(|l| self.last_speech.elapsed() > l).unwrap_or(false)
+    }
+}
+
+/// Level above which we consider the microphone to be picking up speech.
+const SPEECH_LEVEL: f32 = 0.22;
 
 impl SessionCtx {
     fn stopped(&self) -> bool {
@@ -216,18 +286,26 @@ impl SessionCtx {
         let mut committed = String::new();
         let mut samples_seen = 0u64;
         let hands_free = self.mode == ListenMode::HandsFree;
+        let mut silence = SilenceGuard::new(self.mode, &self.settings);
 
-        while !self.stopped() && started.elapsed() < MAX_RECORDING {
+        while !self.stopped() && started.elapsed() < MAX_RECORDING && !silence.expired() {
             match rx.recv_timeout(Duration::from_millis(100)) {
-                Ok(CaptureEvent::Level(v)) => (self.emit)(VoiceEvent::Level { mode: self.mode, value: v }),
+                Ok(CaptureEvent::Level(v)) => {
+                    if v > SPEECH_LEVEL {
+                        silence.heard_speech();
+                    }
+                    (self.emit)(VoiceEvent::Level { mode: self.mode, value: v });
+                }
                 Ok(CaptureEvent::Samples(s)) => {
                     if hands_free && (self.speaking)() {
+                        silence.heard_speech(); // the assistant is talking, not a silent room
                         continue; // ignore our own voice from the speakers
                     }
                     samples_seen += s.len() as u64;
                     session.accept(&s);
                     let text = session.text();
                     if text != last_partial {
+                        silence.heard_speech();
                         last_partial = text.clone();
                         let shown = if committed.is_empty() { text.clone() } else { format!("{committed} {text}") };
                         self.emit_partial(shown.trim());
@@ -291,12 +369,19 @@ impl SessionCtx {
         let mut committed = String::new();
         let mut was_speaking = false;
         let mut samples_seen = 0u64;
+        let mut silence = SilenceGuard::new(self.mode, &self.settings);
 
-        while !self.stopped() && (hands_free || started.elapsed() < MAX_RECORDING) {
+        while !self.stopped() && (hands_free || started.elapsed() < MAX_RECORDING) && !silence.expired() {
             match rx.recv_timeout(Duration::from_millis(100)) {
-                Ok(CaptureEvent::Level(v)) => (self.emit)(VoiceEvent::Level { mode: self.mode, value: v }),
+                Ok(CaptureEvent::Level(v)) => {
+                    if v > SPEECH_LEVEL {
+                        silence.heard_speech();
+                    }
+                    (self.emit)(VoiceEvent::Level { mode: self.mode, value: v });
+                }
                 Ok(CaptureEvent::Samples(s)) => {
                     if hands_free && (self.speaking)() {
+                        silence.heard_speech();
                         pending.clear();
                         if let (Some(vad), false) = (vad.as_ref(), was_speaking) {
                             vad.reset();
@@ -335,7 +420,9 @@ impl SessionCtx {
                         if text.is_empty() {
                             continue;
                         }
+                        silence.heard_speech();
                         if hands_free {
+                            tracing::info!(chars = text.chars().count(), audio_ms = seg_ms, "utterance transcribed");
                             self.emit_transcript(&text, seg_ms, t0.elapsed().as_millis() as u64);
                             self.emit_state("listening");
                         } else {

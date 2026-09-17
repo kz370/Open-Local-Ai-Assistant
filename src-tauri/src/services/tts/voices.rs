@@ -58,6 +58,23 @@ pub fn list_voices(installed: &[InstalledModel]) -> Vec<VoiceInfo> {
     for m in installed.iter().filter(|m| m.kind == ModelKind::Tts) {
         let quality = catalog::find(&m.id).map(|c| c.quality).unwrap_or(3);
         match m.engine {
+            // Kokoro-architecture models for other languages (e.g. Nabra for
+            // Arabic) expose numbered style vectors instead of named speakers.
+            Engine::Kokoro if m.languages.first().map(|l| l != "en").unwrap_or(false) => {
+                let lang = m.languages.first().cloned().unwrap_or_else(|| "*".into());
+                for sid in 0..8 {
+                    out.push(VoiceInfo {
+                        id: format!("{}:{sid}", m.id),
+                        model_id: m.id.clone(),
+                        name: format!("{} - voice {}", m.name, sid + 1),
+                        language: lang.clone(),
+                        speaker_id: sid,
+                        engine: m.engine,
+                        quality: if sid == 0 { quality + 1 } else { quality },
+                        gender: String::new(),
+                    });
+                }
+            }
             Engine::Kokoro => {
                 for (sid, speaker) in KOKORO_V019_SPEAKERS.iter().enumerate() {
                     out.push(VoiceInfo {

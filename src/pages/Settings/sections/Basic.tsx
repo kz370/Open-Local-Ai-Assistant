@@ -73,6 +73,36 @@ export function AppearanceSection() {
             onChange={(v) => set((d) => void (d.general.theme = v))}
           />
         </Row>
+        <Row label={t("settings.appearance.accent")}>
+          <div className="swatches" role="radiogroup" aria-label={t("settings.appearance.accent")}>
+            {(["teal", "blue", "green", "amber", "rose", "slate"] as const).map((c) => (
+              <button
+                key={c}
+                type="button"
+                role="radio"
+                aria-checked={g.accent === c}
+                aria-label={t(`settings.appearance.accents.${c}`)}
+                title={t(`settings.appearance.accents.${c}`)}
+                className={`swatch ${c}${g.accent === c ? " on" : ""}`}
+                onClick={() => set((d) => void (d.general.accent = c))}
+              />
+            ))}
+          </div>
+        </Row>
+        <Row label={t("settings.appearance.assistantName")} hint={t("settings.appearance.assistantNameHint")} htmlFor="in-name">
+          <input
+            id="in-name"
+            className="input"
+            style={{ maxWidth: 260 }}
+            maxLength={40}
+            defaultValue={g.assistantName}
+            onBlur={(e) => {
+              const v = e.target.value.trim() || "Local Assistant";
+              if (v !== g.assistantName) set((d) => void (d.general.assistantName = v));
+            }}
+            onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
+          />
+        </Row>
         <Row label={t("settings.appearance.highContrast")} htmlFor="sw-hc">
           <Switch id="sw-hc" label={t("settings.appearance.highContrast")} checked={g.highContrast} onChange={(v) => set((d) => void (d.general.highContrast = v))} />
         </Row>

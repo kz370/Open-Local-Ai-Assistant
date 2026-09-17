@@ -27,6 +27,8 @@ use voices::{list_voices, select_voice, VoiceInfo};
 #[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum TtsEvent {
     Speaking { tag: String },
+    Paused,
+    Resumed,
     Idle,
     VoiceUnavailable { language: String },
     Error { detail: String },
@@ -243,6 +245,21 @@ impl TtsService {
     }
 
     pub fn is_speaking(&self) -> bool {
+        self.player.is_active() && !self.player.is_paused()
+    }
+
+    /// Pauses or resumes the current speech without losing the queue.
+    pub fn set_paused(&self, paused: bool) {
+        self.player.set_paused(paused);
+        (self.emit)(if paused { TtsEvent::Paused } else { TtsEvent::Resumed });
+    }
+
+    pub fn is_paused(&self) -> bool {
+        self.player.is_paused()
+    }
+
+    /// True when speech is playing or queued (even while paused).
+    pub fn has_audio(&self) -> bool {
         self.player.is_active()
     }
 }

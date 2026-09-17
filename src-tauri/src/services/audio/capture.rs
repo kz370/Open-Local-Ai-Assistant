@@ -78,6 +78,13 @@ impl Drop for Capture {
 fn build_stream(device: &cpal::Device, tx: Sender<CaptureEvent>) -> Result<cpal::Stream, String> {
     let supported = device.default_input_config().map_err(|e| e.to_string())?;
     let config = supported.config();
+    tracing::info!(
+        device = %device.description().map(|d| d.name().to_string()).unwrap_or_else(|_| device.to_string()),
+        sample_rate = config.sample_rate,
+        channels = config.channels,
+        format = ?supported.sample_format(),
+        "microphone opened"
+    );
     match supported.sample_format() {
         SampleFormat::F32 => build::<f32>(device, config, tx),
         SampleFormat::I16 => build::<i16>(device, config, tx),
@@ -101,6 +108,7 @@ where
         None
     };
     let mut meter_buf: Vec<f32> = Vec::new();
+    let mut ticks: u64 = 0;
     let meter_every = (STT_SAMPLE_RATE / 20) as usize;
     let err_tx = tx.clone();
     device
@@ -120,7 +128,13 @@ where
                 }
                 meter_buf.extend_from_slice(&out);
                 if meter_buf.len() >= meter_every {
-                    let _ = tx.send(CaptureEvent::Level(level(&meter_buf)));
+                    let lvl = level(&meter_buf);
+                    // One line per second of audio: enough to debug a silent microphone.
+                    ticks += 1;
+                    if ticks % 20 == 0 {
+                        tracing::debug!(level = lvl, "microphone level");
+                    }
+                    let _ = tx.send(CaptureEvent::Level(lvl));
                     meter_buf.clear();
                 }
                 let _ = tx.send(CaptureEvent::Samples(out));

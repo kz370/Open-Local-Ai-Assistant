@@ -38,12 +38,14 @@ function Root() {
   const [startupError, setStartupError] = useState<string | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
     const cleanups: (() => void)[] = [];
+    const track = (un: () => void) => (cancelled ? un() : cleanups.push(un));
     (async () => {
       const s = await useSettings.getState().load();
-      cleanups.push(await useSettings.getState().subscribe());
+      track(await useSettings.getState().subscribe());
       if (route === "chat") {
-        cleanups.push(await useVoice.getState().subscribe());
+        track(await useVoice.getState().subscribe());
         if (s.lastConversationId) {
           await useChat.getState().loadConversation(s.lastConversationId).catch(() => undefined);
         }
@@ -55,7 +57,10 @@ function Root() {
       setStartupError(e instanceof Error ? e.message : JSON.stringify(e));
       setReady(true);
     });
-    return () => cleanups.forEach((c) => c());
+    return () => {
+      cancelled = true;
+      cleanups.forEach((c) => c());
+    };
   }, [route]);
 
   if (startupError || (ready && !settings)) {

@@ -252,6 +252,18 @@ pub static CATALOG: &[CatalogModel] = &[
         gender: "male",
     },
     CatalogModel {
+        id: "nabra-82m-arabic-int8",
+        kind: ModelKind::Tts,
+        engine: Engine::Kokoro,
+        name: "Nabra Arabic (natural, Modern Standard Arabic)",
+        languages: &["ar"],
+        files: &[RemoteFile { url: url!(GH_TTS, "/nabra-82m-arabic-int8.tar.bz2"), sha256: Some("e7c644fabb1529190de9a2f7d6044f88c26bf6d9b717ad41ef5d2b748e01459b"), dest: "", archive: true, size_bytes: 82_800_000 }],
+        quality: 5,
+        min_ram_gb: 2,
+        license: "see model card",
+        gender: "mixed",
+    },
+    CatalogModel {
         id: "piper-ar_JO-kareem-medium",
         kind: ModelKind::Tts,
         engine: Engine::Piper,

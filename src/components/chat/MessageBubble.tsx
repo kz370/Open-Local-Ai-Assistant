@@ -1,7 +1,9 @@
 import { memo, useState } from "react";
-import { Check, Copy, RotateCcw, Volume2 } from "lucide-react";
+import { Check, Copy, Pause, Play, Square, Volume2 } from "lucide-react";
 import type { UiMessage } from "../../app/chatStore";
 import { ipc } from "../../app/ipc";
+import { useSettings } from "../../app/settingsStore";
+import { useVoice } from "../../app/voiceStore";
 import { t } from "../../app/strings";
 import { ErrorNotice, textDir } from "../common/controls";
 import { BrandMark } from "../common/BrandMark";
@@ -13,14 +15,19 @@ interface Props {
   message: UiMessage;
   developer: boolean;
   showReasoning: boolean;
-  isLastAssistant: boolean;
+  /** Kept for layout decisions by the caller. */
+  isLastAssistant?: boolean;
   modelName?: string;
   onRetry?: () => void;
   onOpenSettings?: () => void;
 }
 
-export const MessageBubble = memo(function MessageBubble({ message: m, developer, showReasoning, isLastAssistant, modelName, onRetry, onOpenSettings }: Props) {
+export const MessageBubble = memo(function MessageBubble({ message: m, developer, showReasoning, modelName, onRetry, onOpenSettings }: Props) {
   const [copied, setCopied] = useState(false);
+  const assistantName = useSettings((s) => s.settings?.general.assistantName) || t("chat.assistant");
+  const speakingTag = useVoice((s) => s.speakingTag);
+  const paused = useVoice((s) => s.paused);
+  const isThisPlaying = speakingTag === m.id;
   const dir = textDir(m.content, m.language);
   const lang = m.language ?? undefined;
 
@@ -43,7 +50,7 @@ export const MessageBubble = memo(function MessageBubble({ message: m, developer
       </div>
       <div className="msg-body">
       <div className="msg-label">
-        {t("chat.assistant")}
+        {assistantName}
         {modelName && <span className="msg-model">{modelName}</span>}
       </div>
       <ToolActivity tools={m.tools} developer={developer} />
@@ -99,12 +106,23 @@ export const MessageBubble = memo(function MessageBubble({ message: m, developer
           >
             {copied ? <Check size={14} /> : <Copy size={14} />}
           </button>
-          <button className="icon-btn" aria-label={t("chat.speak")} title={t("chat.speak")} onClick={() => void ipc.ttsSpeak(m.content, m.language)}>
-            <Volume2 size={14} />
-          </button>
-          {isLastAssistant && (
-            <button className="icon-btn" aria-label={t("chat.replay")} title={t("chat.replay")} onClick={() => void ipc.ttsReplayLast().then((ok) => { if (!ok) void ipc.ttsSpeak(m.content, m.language); })}>
-              <RotateCcw size={14} />
+          {isThisPlaying ? (
+            <>
+              <button
+                className="icon-btn active"
+                aria-label={paused ? t("chat.resume") : t("chat.pause")}
+                title={paused ? t("chat.resume") : t("chat.pause")}
+                onClick={() => void ipc.ttsSetPaused(!paused)}
+              >
+                {paused ? <Play size={14} /> : <Pause size={14} />}
+              </button>
+              <button className="icon-btn" aria-label={t("chat.stopSpeaking")} title={t("chat.stopSpeaking")} onClick={() => void ipc.ttsStop()}>
+                <Square size={12} fill="currentColor" />
+              </button>
+            </>
+          ) : (
+            <button className="icon-btn" aria-label={t("chat.speak")} title={t("chat.speak")} onClick={() => void ipc.ttsSpeak(m.content, m.language, m.id)}>
+              <Volume2 size={14} />
             </button>
           )}
         </div>

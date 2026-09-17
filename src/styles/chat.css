@@ -16,8 +16,8 @@
   place-items: center;
   flex: none;
   color: #fff;
-  background: linear-gradient(145deg, #2dd4bf 0%, #0d9488 55%, #0f766e 100%);
-  box-shadow: 0 4px 14px rgba(13, 148, 136, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  background: var(--brand-gradient, linear-gradient(145deg, #2dd4bf 0%, #0d9488 55%, #0f766e 100%));
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--accent) 35%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.25);
 }
 
 /* ---------- Header ---------- */
@@ -176,20 +176,20 @@
 }
 
 .msg {
-  display: flex;
-  gap: 10px;
+  display: block;
   animation: fade-in 240ms var(--ease);
   max-width: 100%;
 }
-.msg.user {
-  justify-content: flex-end;
+/* Grid (not flex) so long words can never squeeze the text column. */
+.msg.assistant {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr);
+  gap: 10px;
 }
 .msg-avatar {
-  flex: none;
-  padding-top: 1px;
+  padding-top: 2px;
 }
 .msg-body {
-  flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -214,7 +214,7 @@
 }
 .bubble {
   max-width: 100%;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
   font-size: var(--text-md);
   line-height: 1.62;
 }
@@ -224,8 +224,14 @@
   padding: 9px 14px;
   border-radius: 18px 18px 6px 18px;
   max-width: 85%;
+  width: fit-content;
+  margin-inline-start: auto;
   white-space: pre-wrap;
   box-shadow: 0 6px 18px var(--user-bubble-shadow);
+}
+.msg.user .bubble[dir="rtl"] {
+  margin-inline-start: 0;
+  margin-inline-end: auto;
 }
 .msg.user .bubble[dir="rtl"] {
   border-radius: 18px 18px 18px 6px;
@@ -296,9 +302,10 @@
   unicode-bidi: isolate;
   direction: ltr;
 }
-.markdown a {
+.markdown a,
+.markdown code {
   unicode-bidi: isolate;
-  word-break: break-word;
+  overflow-wrap: anywhere;
   text-decoration-color: color-mix(in srgb, var(--accent) 45%, transparent);
   text-underline-offset: 2px;
 }
@@ -630,9 +637,9 @@
   cursor: default;
 }
 .round-btn.send {
-  background: linear-gradient(145deg, #2dd4bf, #0d9488);
+  background: var(--brand-gradient, linear-gradient(145deg, #2dd4bf, #0d9488));
   color: #fff;
-  box-shadow: 0 4px 12px rgba(13, 148, 136, 0.35);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--accent) 32%, transparent);
 }
 .round-btn.send:disabled {
   background: var(--card-hover);
@@ -820,7 +827,7 @@
   width: 4px;
   min-height: 3px;
   border-radius: 3px;
-  background: linear-gradient(180deg, #5eead4, #0d9488);
+  background: var(--brand-gradient, linear-gradient(180deg, #5eead4, #0d9488));
   transition: height 80ms linear;
 }
 .recording-actions {
@@ -953,19 +960,19 @@
 }
 
 /* ============ Floating bubble ============ */
-html.bubble-window,
-html.bubble-window body,
-html.bubble-window #root {
+html.launcher-window,
+html.launcher-window body,
+html.launcher-window #root {
   background: transparent !important;
   overflow: hidden;
 }
-.bubble-stage {
+.launcher-stage {
   width: 100%;
   height: 100%;
   display: grid;
   place-items: center;
 }
-.bubble {
+.launcher {
   position: relative;
   width: 60px;
   height: 60px;
@@ -985,17 +992,17 @@ html.bubble-window #root {
   transition: transform 180ms var(--ease), box-shadow 180ms var(--ease);
   touch-action: none;
 }
-.bubble:hover {
+.launcher:hover {
   transform: scale(1.07);
 }
-.bubble:active {
+.launcher:active {
   transform: scale(0.95);
 }
-.bubble:focus-visible {
+.launcher:focus-visible {
   outline: 2px solid #fff;
   outline-offset: 3px;
 }
-.bubble-glyph {
+.launcher-glyph {
   width: 28px;
   height: 28px;
   fill: none;
@@ -1004,26 +1011,26 @@ html.bubble-window #root {
   stroke-linecap: round;
   pointer-events: none;
 }
-.bubble-ring {
+.launcher-ring {
   position: absolute;
   inset: 0;
   border-radius: 50%;
   pointer-events: none;
 }
-.bubble.listening {
+.launcher.listening {
   background: linear-gradient(145deg, #fb7185 0%, #e11d48 100%);
 }
-.bubble.listening .bubble-ring,
-.bubble.speaking .bubble-ring {
+.launcher.listening .launcher-ring,
+.launcher.speaking .launcher-ring {
   animation: ripple 1.6s infinite var(--ease);
 }
-.bubble.listening .bubble-ring {
+.launcher.listening .launcher-ring {
   box-shadow: 0 0 0 0 rgba(244, 63, 94, 0.55);
 }
-.bubble.speaking .bubble-ring {
+.launcher.speaking .launcher-ring {
   box-shadow: 0 0 0 0 rgba(45, 212, 191, 0.6);
 }
-.bubble.speaking .bubble-glyph path {
+.launcher.speaking .launcher-glyph path {
   animation: wave 0.9s infinite ease-in-out;
   transform-origin: center;
 }
@@ -1043,4 +1050,102 @@ html.bubble-window #root {
   50% {
     transform: scaleY(0.6);
   }
+}
+
+/* ============ Hands-free call view ============ */
+.call {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 18px 18px;
+  text-align: center;
+}
+.call-top {
+  font-size: var(--text-xs);
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+.call-avatar-wrap {
+  position: relative;
+  display: grid;
+  place-items: center;
+  margin-top: 6px;
+}
+.call-pulse {
+  position: absolute;
+  inset: -14px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+}
+.call-pulse.listening {
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  animation: ripple 1.8s infinite var(--ease);
+}
+.call-pulse.speaking {
+  border-color: color-mix(in srgb, var(--accent) 70%, transparent);
+  animation: ripple 1.1s infinite var(--ease);
+}
+.call-pulse.thinking,
+.call-pulse.transcribing {
+  border-color: var(--hairline);
+  animation: pulse 1.4s infinite var(--ease);
+}
+.call-state {
+  font-size: var(--text-lg);
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+.call .meter {
+  height: 44px;
+}
+.call-caption {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  line-height: 1.55;
+  max-width: 340px;
+  user-select: text;
+}
+.call-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding-top: 4px;
+}
+.call-btn {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: 1px solid var(--hairline);
+  background: var(--card);
+  color: var(--text);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition: transform var(--dur-fast), background var(--dur-fast);
+}
+.call-btn:hover:not(:disabled) {
+  background: var(--card-hover);
+}
+.call-btn:active:not(:disabled) {
+  transform: scale(0.94);
+}
+.call-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.call-btn.end {
+  width: 58px;
+  height: 58px;
+  background: #e5484d;
+  border-color: transparent;
+  color: #fff;
+}
+.model-item.busy {
+  opacity: 0.6;
 }
