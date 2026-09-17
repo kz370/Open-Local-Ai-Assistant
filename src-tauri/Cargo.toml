@@ -1,0 +1,81 @@
+[package]
+name = "local-ai-assistant"
+version = "0.1.0"
+description = "Local-first desktop AI assistant powered by LM Studio"
+authors = ["Local Assistant"]
+edition = "2021"
+default-run = "local-ai-assistant"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "local_ai_assistant_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["image-png", "tray-icon"] }
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri-plugin-global-shortcut = "2.3.2"
+tauri-plugin-autostart = "2.5.1"
+tauri-plugin-single-instance = "2.4.4"
+tauri-plugin-dialog = "2.7.3"
+tokio = { version = "1.53.1", features = ["full"] }
+uuid = { version = "1.26.1", features = ["v4"] }
+chrono = { version = "0.4.45", features = ["serde"] }
+thiserror = "2.0.20"
+anyhow = "1.0.104"
+tracing = "0.1.44"
+tracing-appender = "0.2.5"
+sysinfo = "0.39.6"
+whatlang = "0.18.0"
+sha2 = "0.11.0"
+hex = "0.4.3"
+async-trait = "0.1.92"
+bytes = "1.12.1"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter", "fmt", "json"] }
+sherpa-onnx = "1.13.8"
+cpal = "0.18.2"
+rmcp = { version = "3.4.0", features = ["client", "transport-child-process", "transport-streamable-http-client-reqwest"] }
+reqwest = { version = "0.13.5", default-features = false, features = ["json", "stream", "native-tls", "http2"] }
+futures-util = "0.3.34"
+rusqlite = { version = "0.40.2", features = ["bundled"] }
+tokio-util = "0.7.19"
+regex = "1.13.1"
+url = "2.5.8"
+enigo = "0.6.1"
+arboard = "3.6.1"
+tar = "0.4.46"
+bzip2 = "0.6.1"
+
+
+# Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+panic = "abort"
+strip = true
+
+[dev-dependencies]
+axum = "0.8.9"
+tempfile = "3.27.0"
+
+[target."cfg(windows)".dependencies]
+windows = { version = "0.62.2", features = ["Win32_Graphics_Dxgi", "Win32_Foundation", "Win32_UI_Input_KeyboardAndMouse"] }
+
+[[bin]]
+name = "mcp_fixture_server"
+path = "src/bin/mcp_fixture_server.rs"
+test = false
+
+[[bin]]
+name = "local-ai-assistant"
+path = "src/main.rs"

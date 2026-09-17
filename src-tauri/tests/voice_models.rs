@@ -1,0 +1,73 @@
+//! End-to-end local voice test with real models (English, Arabic, German):
+//! download (consented, checksum-verified) -> TTS synthesis -> STT transcription
+//! -> automatic language detection.
+//!
+//! Skipped unless `LA_MODELS_DIR` points to a models directory, e.g.
+//! `LA_MODELS_DIR=/path/to/models cargo test --test voice_models -- --nocapture`
+
+use local_ai_assistant_lib::database::Db;
+use local_ai_assistant_lib::services::hardware;
+use local_ai_assistant_lib::services::language::Lang;
+use local_ai_assistant_lib::services::models::{catalog, download, ModelStore};
+use local_ai_assistant_lib::services::stt::SttService;
+use local_ai_assistant_lib::services::tts::TtsService;
+use local_ai_assistant_lib::settings::SettingsStore;
+use std::sync::Arc;
+use tokio_util::sync::CancellationToken;
+
+const MODELS: &[&str] = &["whisper-small", "silero-vad", "kokoro-int8-en-v0_19", "piper-de_DE-thorsten-medium-int8", "piper-ar_JO-kareem-medium"];
+
+fn words(s: &str) -> Vec<String> {
+    s.to_lowercase()
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
+#[tokio::test]
+async fn tts_stt_roundtrip_three_languages() {
+    let Ok(dir) = std::env::var("LA_MODELS_DIR") else {
+        eprintln!("LA_MODELS_DIR not set; skipping real-model voice test");
+        return;
+    };
+    let store = Arc::new(ModelStore::new(dir.into()));
+    for id in MODELS {
+        if !store.is_installed(id) {
+            let m = catalog::find(id).unwrap();
+            eprintln!("installing {id} ({} MB)…", m.download_size() / 1_000_000);
+            download::install(&store, m, CancellationToken::new(), &|_| {}).await.expect("install");
+        }
+    }
+
+    let db = Arc::new(Db::open_in_memory().unwrap());
+    let settings = Arc::new(SettingsStore::load(db).unwrap());
+    let hw = hardware::detect();
+    let tts = TtsService::new(store.clone(), settings.clone(), hw.clone(), Arc::new(|_| {}));
+    let stt = SttService::new(store.clone(), hw.clone());
+    assert!(stt.vad_model_path().is_some());
+
+    let cases = [
+        (Lang::En, "Hello, how are you today? I would like to organize my files.", vec!["organize", "files"]),
+        (Lang::De, "Guten Tag. Wie kann ich meine Dateien organisieren?", vec!["dateien", "organisieren"]),
+        (Lang::Ar, "مرحبا، كيف حالك اليوم؟", vec!["اليوم"]),
+    ];
+    for (lang, text, expect_words) in cases {
+        assert!(tts.is_available(lang), "no voice for {lang}");
+        let t0 = std::time::Instant::now();
+        let (samples, rate) = tts.synthesize(text, lang, hw.inference_threads()).expect("synthesize");
+        let synth_ms = t0.elapsed().as_millis();
+        assert!(samples.len() > rate as usize / 2, "audio too short");
+        let resampler = sherpa_onnx::LinearResampler::create(rate as i32, 16_000).unwrap();
+        let mut pcm = resampler.resample(&samples, true);
+        pcm.extend(std::iter::repeat(0.0).take(8_000));
+
+        let result = stt.transcribe(&pcm, &settings.get().stt).expect("transcribe");
+        eprintln!("[{lang}] tts {synth_ms} ms, stt {} ms: {:?} -> detected {:?}", result.elapsed_ms, result.text, result.language);
+        assert_eq!(result.language.as_deref(), Some(lang.code()), "language detection for {lang}");
+        let got = words(&result.text);
+        for w in expect_words {
+            assert!(got.iter().any(|g| g.contains(&w.to_lowercase())), "[{lang}] expected '{w}' in {:?}", result.text);
+        }
+    }
+}
