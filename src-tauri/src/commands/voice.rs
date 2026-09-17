@@ -19,8 +19,9 @@ pub struct AudioDevices {
 }
 
 #[tauri::command]
-pub async fn audio_devices() -> CmdResult<AudioDevices> {
-    tokio::task::spawn_blocking(|| AudioDevices { inputs: devices::list_inputs(), outputs: devices::list_outputs() })
+pub async fn audio_devices(state: State<'_, AppState>) -> CmdResult<AudioDevices> {
+    let mic_only = state.settings.get().stt.mic_only;
+    tokio::task::spawn_blocking(move || AudioDevices { inputs: devices::list_inputs(mic_only), outputs: devices::list_outputs() })
         .await
         .map_err(|e| AppError::Audio(e.to_string()))
 }
@@ -36,6 +37,13 @@ pub fn voice_start(state: State<'_, AppState>, mode: ListenMode) -> CmdResult<()
 #[tauri::command]
 pub fn voice_stop(state: State<'_, AppState>, discard: bool) -> Option<ListenMode> {
     state.voice.stop(discard)
+}
+
+/// Cancels in-progress dictation (Esc / overlay X): drops audio, skips the
+/// insert, shows "cancelled" feedback. No-op when idle.
+#[tauri::command]
+pub fn dictation_cancel(app: AppHandle) {
+    crate::desktop::window::cancel_dictation(&app);
 }
 
 #[tauri::command]

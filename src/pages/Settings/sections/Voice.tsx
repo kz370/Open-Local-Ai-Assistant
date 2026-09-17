@@ -10,11 +10,11 @@ import { ModelManager } from "../../../components/settings/ModelManager";
 import { LevelMeter } from "../../../components/voice/LevelMeter";
 import { useS } from "./Basic";
 
-function useDevices() {
+function useDevices(micOnly: boolean) {
   const [devices, setDevices] = useState<{ inputs: AudioDevice[]; outputs: AudioDevice[] }>({ inputs: [], outputs: [] });
   useEffect(() => {
     void ipc.audioDevices().then(setDevices);
-  }, []);
+  }, [micOnly]);
   return devices;
 }
 
@@ -198,7 +198,7 @@ const LANGS: LangCode[] = ["en", "ar", "de"];
 
 export function SpeechSection() {
   const [s, set] = useS();
-  const devices = useDevices();
+  const devices = useDevices(s.stt.micOnly);
   const installed = useInstalled();
   const sttModels = installed.filter((m) => m.kind === "stt");
   return (
@@ -243,6 +243,9 @@ export function SpeechSection() {
         </Row>
         <Row label={t("settings.speech.testMic")}>
           <MicTest microphone={s.stt.microphone} />
+        </Row>
+        <Row label={t("settings.speech.micOnly")} hint={t("settings.speech.micOnlyHint")} htmlFor="sw-miconly">
+          <Switch id="sw-miconly" label={t("settings.speech.micOnly")} checked={s.stt.micOnly} onChange={(v) => set((d) => void (d.stt.micOnly = v))} />
         </Row>
         <Row label={t("settings.speech.hardware")}>
           <span className="badge">
@@ -296,7 +299,7 @@ function useVoices() {
 
 export function VoiceSection() {
   const [s, set] = useS();
-  const devices = useDevices();
+  const devices = useDevices(s.stt.micOnly);
   const voices = useVoices();
   const [error, setError] = useState<AppErrorPayload | null>(null);
   const key = (l: LangCode) => (l === "en" ? "voiceEn" : l === "ar" ? "voiceAr" : "voiceDe") as "voiceEn" | "voiceAr" | "voiceDe";

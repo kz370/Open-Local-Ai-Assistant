@@ -203,6 +203,7 @@ pub fn open_settings_window(app: AppHandle, section: Option<String>) -> CmdResul
     // Call DIRECTLY (worker thread): Tauri window ops self-dispatch to the
     // main loop internally. Routing build() onto main first self-deadlocks:
     // its inner main-loop rendezvous waits on the thread it already owns.
+    tracing::info!(section = ?section, "open_settings_window command invoked");
     window::open_settings(&app, section.as_deref())?;
     Ok(())
 }

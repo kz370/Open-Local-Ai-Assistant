@@ -85,6 +85,7 @@ fn init_state(app: &AppHandle) -> Result<AppState, Box<dyn std::error::Error>> {
         hardware,
         downloads: Mutex::new(Default::default()),
         dictation_busy: AtomicBool::new(false),
+        dictation_cancel: AtomicBool::new(false),
         shortcut_errors: Mutex::new(Vec::new()),
     })
 }
@@ -99,7 +100,13 @@ fn on_voice_event(app: &AppHandle, ev: VoiceEvent) {
             tauri::async_runtime::spawn(async move { run_dictation(app, text).await });
         }
         VoiceEvent::State { mode: ListenMode::Dictation, state, .. } => {
-            let _ = app.emit("dictation://state", serde_json::json!({ "state": state }));
+            // A stop arriving after Esc-cancel must not resurrect the overlay
+            // as idle; report cancelled instead (flag stays for run_dictation).
+            if state == "idle" && app.state::<AppState>().dictation_cancel.load(Ordering::Relaxed) {
+                let _ = app.emit("dictation://state", serde_json::json!({ "state": "cancelled" }));
+            } else {
+                let _ = app.emit("dictation://state", serde_json::json!({ "state": state }));
+            }
         }
         VoiceEvent::Error { mode: ListenMode::Dictation, code, detail } => {
             let _ = app.emit("dictation://state", serde_json::json!({ "state": "error", "error": { "code": code, "detail": detail } }));
@@ -129,6 +136,12 @@ fn hide_overlay_later(app: &AppHandle) {
 async fn run_dictation(app: AppHandle, raw: String) {
     let state = app.state::<AppState>();
     state.dictation_busy.store(true, Ordering::Relaxed);
+    // Esc/X cancel wins over any pending transcript or correction.
+    if state.dictation_cancel.swap(false, Ordering::Relaxed) {
+        let _ = app.emit("dictation://state", serde_json::json!({ "state": "cancelled" }));
+        state.dictation_busy.store(false, Ordering::Relaxed);
+        return;
+    }
     let settings = state.settings.get().dictation;
     let raw = raw.trim().to_string();
     let mut text = raw.clone();
@@ -154,6 +167,12 @@ async fn run_dictation(app: AppHandle, raw: String) {
                 }
                 None => correction_error = Some(errors::AppError::NoModel),
             }
+        }
+        // Cancel may have landed during the (slow) correction call.
+        if state.dictation_cancel.swap(false, Ordering::Relaxed) {
+            let _ = app.emit("dictation://state", serde_json::json!({ "state": "cancelled" }));
+            state.dictation_busy.store(false, Ordering::Relaxed);
+            return;
         }
         let final_text = dictation::finalize_text(&text, &settings);
         let s2 = settings.clone();
@@ -204,6 +223,9 @@ pub fn run() {
             shortcuts::register_all(&handle);
             window::restore(&handle);
             let _ = window::create_overlay(&handle);
+            // Pre-create settings hidden: on-demand creation flakes on some
+            // machines while startup-created webviews always work.
+            let _ = window::ensure_settings(&handle);
             // Tint tray + taskbar icons to match saved accent.
             {
                 let accent = handle.state::<AppState>().settings.get().general.accent.clone();
@@ -272,6 +294,7 @@ pub fn run() {
             commands::voice::audio_devices,
             commands::voice::voice_start,
             commands::voice::voice_stop,
+            commands::voice::dictation_cancel,
             commands::voice::voice_status,
             commands::voice::tts_voices,
             commands::voice::tts_speak,

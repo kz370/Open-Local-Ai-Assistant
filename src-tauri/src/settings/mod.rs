@@ -129,6 +129,10 @@ impl Default for LanguageSettings {
     }
 }
 
+fn default_true() -> bool {
+    true
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", default)]
 pub struct SttSettings {
@@ -138,6 +142,9 @@ pub struct SttSettings {
     pub language: String,
     /// None = automatic (system default input)
     pub microphone: Option<String>,
+    /// true = microphone only (loopback / Stereo Mix excluded)
+    #[serde(default = "default_true")]
+    pub mic_only: bool,
     /// "auto" | "cpu"
     pub hardware: String,
     pub auto_submit: bool,
@@ -161,6 +168,7 @@ impl Default for SttSettings {
             model: "auto".into(),
             language: "auto".into(),
             microphone: None,
+            mic_only: true,
             hardware: "auto".into(),
             auto_submit: true,
             hands_free: false,
@@ -455,5 +463,14 @@ mod tests {
         let s: Settings = serde_json::from_str(r#"{"ai":{"temperature":0.2}}"#).unwrap();
         assert_eq!(s.ai.temperature, 0.2);
         assert_eq!(s.ai.server_url, DEFAULT_LMSTUDIO_URL);
+    }
+
+    #[test]
+    fn mic_only_defaults_true_for_old_settings() {
+        let s = Settings::default();
+        assert!(s.stt.mic_only);
+        // Stored settings from before the flag existed must also get true.
+        let old: Settings = serde_json::from_str(r#"{"stt":{"microphone":null}}"#).unwrap();
+        assert!(old.stt.mic_only);
     }
 }

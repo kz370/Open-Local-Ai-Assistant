@@ -6,6 +6,7 @@
 //! the bubble.
 
 use crate::settings::WindowGeometry;
+use crate::services::stt::session::ListenMode;
 use crate::state::AppState;
 use std::sync::atomic::{AtomicU64, Ordering};
 use tauri::{AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
@@ -418,25 +419,15 @@ pub fn set_compact(app: &AppHandle, compact: bool) {
     }
 }
 
-pub fn open_settings(app: &AppHandle, section: Option<&str>) -> tauri::Result<()> {
-    let route = format!("index.html#/settings/{}", section.unwrap_or("general"));
-    tracing::info!(route = %route, "open_settings requested");
+/// Creates the settings window hidden (idempotent). Called at startup:
+/// on-demand creation flakes on some machines while startup-created
+/// webviews always work.
+pub fn ensure_settings(app: &AppHandle) -> tauri::Result<WebviewWindow> {
     if let Some(w) = app.get_webview_window(SETTINGS) {
-        tracing::info!("open_settings reusing existing window");
-        let _ = app.emit_to(SETTINGS, "app://navigate", format!("/settings/{}", section.unwrap_or("general")));
-        let _ = w.unminimize();
-        if let Err(e) = w.show() {
-            tracing::error!(error = %e, "open_settings reuse show failed");
-            return Err(e.into());
-        }
-        if let Err(e) = w.set_focus() {
-            tracing::error!(error = %e, "open_settings reuse focus failed");
-            return Err(e.into());
-        }
-        return Ok(());
+        return Ok(w);
     }
     tracing::info!("open_settings creating new window");
-    let w = match WebviewWindowBuilder::new(app, SETTINGS, WebviewUrl::App(route.into()))
+    let w = match WebviewWindowBuilder::new(app, SETTINGS, WebviewUrl::App("index.html#/settings/general".into()))
         .title("Local Assistant — Settings")
         .inner_size(1000.0, 720.0)
         .min_inner_size(720.0, 520.0)
@@ -450,7 +441,7 @@ pub fn open_settings(app: &AppHandle, section: Option<&str>) -> tauri::Result<()
         Ok(w) => w,
         Err(e) => {
             tracing::error!(error = %e, "open_settings build failed");
-            return Err(e.into());
+            return Err(e);
         }
     };
     // Hide rather than destroy on close: rebuilding this window from scratch
@@ -468,14 +459,30 @@ pub fn open_settings(app: &AppHandle, section: Option<&str>) -> tauri::Result<()
             }
         }
     });
-    // Show after build (all working windows do this): building visible races
-    // WebView2 init and paints blank.
+    Ok(w)
+}
+
+pub fn open_settings(app: &AppHandle, section: Option<&str>) -> tauri::Result<()> {
+    let route = format!("index.html#/settings/{}", section.unwrap_or("general"));
+    tracing::info!(route = %route, "open_settings requested");
+    let existed = app.get_webview_window(SETTINGS).is_some();
+    let w = ensure_settings(app)?;
+    tracing::info!(existed, "open_settings window ready");
+    let _ = app.emit_to(SETTINGS, "app://navigate", format!("/settings/{}", section.unwrap_or("general")));
+    let _ = w.unminimize();
     if let Err(e) = w.show() {
         tracing::error!(error = %e, "open_settings show failed");
+        return Err(e.into());
     }
     if let Err(e) = w.set_focus() {
         tracing::error!(error = %e, "open_settings focus failed");
+        return Err(e.into());
     }
+    // TEMP PROBE (remove after diagnosis): if JS runs, body goes red under
+    // the opaque UI (invisible when healthy). Red visible = nav+JS alive,
+    // React missing. White = navigation dead.
+    std::thread::sleep(std::time::Duration::from_millis(800));
+    let _ = w.eval("document.body.style.background='#ff0000'");
     Ok(())
 }
 
@@ -515,6 +522,27 @@ pub fn hide_overlay(app: &AppHandle) {
     if let Some(w) = app.get_webview_window(OVERLAY) {
         let _ = w.hide();
     }
+}
+
+/// Cancels in-progress dictation (Esc / overlay X): drops audio, skips the
+/// insert, shows "cancelled" feedback. No-op without an active session.
+pub fn cancel_dictation(app: &AppHandle) {
+    let state = app.state::<AppState>();
+    if state.voice.active_mode() != Some(ListenMode::Dictation) {
+        return;
+    }
+    state.dictation_cancel.store(true, Ordering::Relaxed);
+    state.voice.stop(true);
+    let _ = app.emit("dictation://state", serde_json::json!({"state": "cancelled"}));
+    // Let "cancelled" paint, then hide unless a new session started.
+    let app2 = app.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(1400)).await;
+        let s = app2.state::<AppState>();
+        if s.voice.active_mode() != Some(ListenMode::Dictation) {
+            hide_overlay(&app2);
+        }
+    });
 }
 
 #[cfg(test)]

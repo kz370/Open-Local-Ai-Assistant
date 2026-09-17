@@ -26,8 +26,8 @@ pub struct Capture {
 }
 
 impl Capture {
-    pub fn start(device_id: Option<&str>) -> AppResult<(Capture, Receiver<CaptureEvent>)> {
-        let device = devices::input_device(device_id)?;
+    pub fn start(device_id: Option<&str>, mic_only: bool) -> AppResult<(Capture, Receiver<CaptureEvent>)> {
+        let device = devices::input_device(device_id, mic_only)?;
         let device_name = device.description().map(|d| d.name().to_string()).unwrap_or_else(|_| device.to_string());
         let (tx, rx) = mpsc::channel();
         let stop = Arc::new(AtomicBool::new(false));

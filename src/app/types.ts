@@ -49,6 +49,7 @@ export interface Settings {
     model: string;
     language: LangSetting;
     microphone: string | null;
+    micOnly: boolean;
     hardware: string;
     autoSubmit: boolean;
     handsFree: boolean;
@@ -357,7 +358,7 @@ export interface PrivacyStatus {
 }
 
 export interface DictationStateEvent {
-  state: "listening" | "transcribing" | "idle" | "correcting" | "inserted" | "empty" | "error";
+  state: "listening" | "transcribing" | "idle" | "correcting" | "inserted" | "empty" | "cancelled" | "error";
   text?: string;
   error?: AppErrorPayload;
   result?: { raw: string; inserted: string; corrected: boolean; correctionError: string | null };
