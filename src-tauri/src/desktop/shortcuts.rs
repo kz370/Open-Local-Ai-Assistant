@@ -110,6 +110,8 @@ fn dispatch_shortcut_action(app: &AppHandle, action: Action, pressed: bool) {
                 if state.dictation_busy.load(std::sync::atomic::Ordering::Relaxed) {
                     return;
                 }
+                // Fresh session owns the cancel flag (clears a stale Esc).
+                state.dictation_cancel.store(false, std::sync::atomic::Ordering::Relaxed);
                 match state.voice.start(ListenMode::Dictation) {
                     Ok(()) => window::show_overlay(app),
                     Err(e) => {
@@ -125,17 +127,27 @@ fn dispatch_shortcut_action(app: &AppHandle, action: Action, pressed: bool) {
 }
 
 #[cfg(windows)]
+fn esc_pressed() -> bool {
+    use windows::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState;
+    // VK_ESCAPE; observe only, never swallow.
+    unsafe { (GetAsyncKeyState(0x1B) as i16) < 0 }
+}
+
+#[cfg(windows)]
 fn trigger_modifier_watch(app: &AppHandle) {
     use std::sync::{Mutex, OnceLock};
-    static COMBOS: OnceLock<std::sync::Arc<Mutex<Vec<(Action, String)>>>> = OnceLock::new();
+    static COMBOS: OnceLock<std::sync::Arc<Mutex<(Vec<(Action, String)>, bool)>>> = OnceLock::new();
     static WATCHER: OnceLock<Mutex<Option<std::thread::JoinHandle<()>>>> = OnceLock::new();
-    let combos_shared = COMBOS.get_or_init(|| std::sync::Arc::new(Mutex::new(Vec::new()))).clone();
+    let combos_shared = COMBOS.get_or_init(|| std::sync::Arc::new(Mutex::new((Vec::new(), false)))).clone();
 
     // Refresh the watched combos on every register_all (user may have changed them).
-    *combos_shared.lock().unwrap_or_else(|p| p.into_inner()) = configured(app)
-        .into_iter()
-        .filter(|(_, keys)| is_supported_modifier_only(keys))
-        .collect();
+    *combos_shared.lock().unwrap_or_else(|p| p.into_inner()) = (
+        configured(app)
+            .into_iter()
+            .filter(|(_, keys)| is_supported_modifier_only(keys))
+            .collect(),
+        app.state::<AppState>().settings.get().dictation.enabled,
+    );
 
     let watcher = WATCHER.get_or_init(|| Mutex::new(None));
     let mut current = watcher.lock().unwrap();
@@ -146,8 +158,10 @@ fn trigger_modifier_watch(app: &AppHandle) {
     let app = app.clone();
     *current = Some(thread::spawn(move || {
         let mut last = HashMap::new();
+        let mut last_esc = false;
         loop {
-            let snapshot: Vec<(Action, String)> = combos_shared.lock().map(|g| g.clone()).unwrap_or_default();
+            let (snapshot, esc_watch): (Vec<(Action, String)>, bool) =
+                combos_shared.lock().map(|g| g.clone()).unwrap_or_default();
             for (action, keys) in &snapshot {
                 let pressed = windows_modifier_shortcut_pressed(keys);
                 let prev = *last.get(action).unwrap_or(&false);
@@ -159,6 +173,16 @@ fn trigger_modifier_watch(app: &AppHandle) {
             // Drop stale actions (shortcut changed away) so a stuck "pressed"
             // state can't leak into the next combo with the same action.
             last.retain(|a, _| snapshot.iter().any(|(sa, _)| sa == a));
+            // Esc cancels dictation anywhere (overlay can't take focus).
+            // Edge-triggered, observe-only: never swallows the key.
+            let esc = esc_pressed();
+            if esc && !last_esc && esc_watch {
+                let st = app.state::<AppState>();
+                if st.voice.active_mode() == Some(ListenMode::Dictation) {
+                    super::window::cancel_dictation(&app);
+                }
+            }
+            last_esc = esc;
             thread::sleep(Duration::from_millis(25));
         }
     }));

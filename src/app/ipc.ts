@@ -90,6 +90,7 @@ export const ipc = {
   audioDevices: () => invoke<{ inputs: AudioDevice[]; outputs: AudioDevice[] }>("audio_devices"),
   voiceStart: (mode: ListenMode) => invoke<void>("voice_start", { mode }),
   voiceStop: (discard: boolean) => invoke<ListenMode | null>("voice_stop", { discard }),
+  dictationCancel: () => invoke<void>("dictation_cancel"),
   voiceStatus: () => invoke<ListenMode | null>("voice_status"),
   ttsVoices: () => invoke<VoiceInfo[]>("tts_voices"),
   ttsSpeak: (text: string, language?: string | null, tag?: string) => invoke<void>("tts_speak", { text, language, tag }),

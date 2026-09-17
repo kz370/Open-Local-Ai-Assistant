@@ -19,7 +19,7 @@ export function Bubble() {
       }),
       on<DictationStateEvent>("dictation://state", (e) => {
         if (e.state === "listening") setActivity("listening");
-        else if (["inserted", "empty", "error", "idle"].includes(e.state)) setActivity("idle");
+        else if (["inserted", "empty", "cancelled", "error", "idle"].includes(e.state)) setActivity("idle");
       }),
       on<TtsEvent>("tts://event", (e) => {
         if (e.type === "speaking") setActivity("speaking");

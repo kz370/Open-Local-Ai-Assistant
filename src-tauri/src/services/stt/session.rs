@@ -96,7 +96,7 @@ impl VoiceSessions {
             let _ = prev.join();
         }
 
-        let (capture, rx) = Capture::start(settings.stt.microphone.as_deref())?;
+        let (capture, rx) = Capture::start(settings.stt.microphone.as_deref(), settings.stt.mic_only)?;
         let device = capture.device_name.clone();
         let stop = Arc::new(AtomicBool::new(false));
         let discard = Arc::new(AtomicBool::new(false));

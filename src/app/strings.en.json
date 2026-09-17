@@ -240,6 +240,8 @@
       "model": "Model",
       "language": "Language",
       "microphone": "Microphone",
+      "micOnly": "Microphone only",
+      "micOnlyHint": "Ignore system audio and loopback devices such as Stereo Mix. Turn off to allow them.",
       "hardware": "Hardware",
       "cpu": "CPU",
       "testMic": "Test microphone",
@@ -479,11 +481,12 @@
     "transcribing": "Transcribing…",
     "correcting": "Correcting…",
     "inserted": "Inserted",
+    "cancelled": "Cancelled",
     "empty": "No speech detected",
     "error": "Dictation failed",
     "speakNow": "Speak now",
-    "hint": "Release to insert",
-    "hintToggle": "Press the shortcut again to insert"
+    "hint": "Release to insert • Esc cancels",
+    "hintToggle": "Press the shortcut again to insert • Esc cancels"
   },
   "languages": {
     "en": "English",

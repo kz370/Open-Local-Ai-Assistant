@@ -5,6 +5,7 @@ import { useChat } from "../../app/chatStore";
 import { ipc, on } from "../../app/ipc";
 import { useSettings } from "../../app/settingsStore";
 import { modelLabel, t } from "../../app/strings";
+import type { DictationStateEvent } from "../../app/types";
 import { useVoice } from "../../app/voiceStore";
 import { Composer, type ComposerHandle } from "../../components/chat/Composer";
 import { MessageBubble } from "../../components/chat/MessageBubble";
@@ -34,6 +35,8 @@ export function ChatApp() {
   const [morph, setMorph] = useState<{ phase: "closed" | "opening" | "idle" | "closing"; fx: number; fy: number }>({ phase: "closed", fx: 396, fy: 616 });
   const morphTimer = useRef(0);
   const lastOpenRef = useRef(0);
+  // voiceStore ignores dictation events, so track it here for Esc-cancel.
+  const [dictating, setDictating] = useState(false);
   const composerRef = useRef<ComposerHandle>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
@@ -121,6 +124,9 @@ export function ChatApp() {
         composerRef.current?.focus();
       }),
       on("app://toggle-hands-free", () => void useVoice.getState().toggleHandsFree()),
+      on<DictationStateEvent>("dictation://state", (e) => {
+        setDictating(e.state === "listening" || e.state === "transcribing" || e.state === "correcting");
+      }),
     ];
     return () => {
       window.clearTimeout(morphTimer.current);
@@ -136,6 +142,13 @@ export function ChatApp() {
         e.preventDefault();
         e.stopPropagation();
         void stopPtt(false);
+        return;
+      }
+      // Esc cancels dictation too (overlay can't take focus).
+      if (e.key === "Escape" && dictating) {
+        e.preventDefault();
+        e.stopPropagation();
+        void ipc.dictationCancel().catch(() => undefined);
         return;
       }
       const mod = e.ctrlKey || e.metaKey;
@@ -155,7 +168,7 @@ export function ChatApp() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [busy, showHistory, newConversation, recording, stopPtt]);
+  }, [busy, showHistory, newConversation, recording, stopPtt, dictating]);
 
   useEffect(() => {
     const el = listRef.current;

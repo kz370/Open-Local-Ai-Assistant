@@ -41,6 +41,8 @@ pub struct AppState {
     pub hardware: HardwareInfo,
     pub downloads: Mutex<HashMap<String, CancellationToken>>,
     pub dictation_busy: AtomicBool,
+    /// Set by Esc/X cancel; consumed by run_dictation before any insert.
+    pub dictation_cancel: AtomicBool,
     pub shortcut_errors: Mutex<Vec<String>>,
 }
 

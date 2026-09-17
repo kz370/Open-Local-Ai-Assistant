@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { CheckCircle2, Mic, XCircle } from "lucide-react";
-import { on } from "../../app/ipc";
+import { CheckCircle2, Mic, X, XCircle } from "lucide-react";
+import { ipc, on } from "../../app/ipc";
 import { useSettings } from "../../app/settingsStore";
 import { errorMessage, t } from "../../app/strings";
 import type { DictationStateEvent, VoiceEvent } from "../../app/types";
@@ -69,6 +69,11 @@ export function Overlay() {
       label = t("overlay.empty");
       hint = "";
       break;
+    case "cancelled":
+      icon = <XCircle size={16} style={{ color: "var(--text-faint)" }} />;
+      label = t("overlay.cancelled");
+      hint = "";
+      break;
     case "error":
       icon = <XCircle size={16} style={{ color: "var(--danger)" }} />;
       label = error ?? t("overlay.error");
@@ -83,6 +88,17 @@ export function Overlay() {
         <span className="overlay-label">{label}</span>
         {listening && <LevelMeter levels={levels} max={18} label={t("voice.level")} />}
         {hint && <span className="overlay-hint">{hint}</span>}
+        <span style={{ flex: 1 }} />
+        <button
+          type="button"
+          className="icon-btn"
+          style={{ width: 24, height: 24 }}
+          aria-label={t("voice.cancel")}
+          title={`${t("voice.cancel")} (Esc)`}
+          onClick={() => void ipc.dictationCancel().catch(() => undefined)}
+        >
+          <X size={14} />
+        </button>
       </div>
       <div className={`overlay-text${text ? "" : " empty"}`} ref={textRef} dir={text ? textDir(text) : "auto"}>
         {text || t("overlay.listening")}
