@@ -8,6 +8,42 @@
   </head>
   <body>
     <div id="root"></div>
+    <div id="boot-fallback" hidden>
+      <p>The window did not finish loading.</p>
+      <button onclick="location.reload()">Reload</button>
+    </div>
+    <script>
+      // If the app has not rendered after a few seconds (a failed hot reload,
+      // a broken bundle), show a way out instead of a blank window.
+      setTimeout(function () {
+        var root = document.getElementById("root");
+        if (root && root.childElementCount === 0) document.getElementById("boot-fallback").hidden = false;
+      }, 4000);
+      window.addEventListener("keydown", function (e) {
+        if (e.key === "F5" || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "r")) location.reload();
+      });
+    </script>
+    <style>
+      #boot-fallback {
+        font: 14px system-ui, sans-serif;
+        color: #e3ebe8;
+        background: #0e1312;
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-content: center;
+        gap: 10px;
+        text-align: center;
+      }
+      #boot-fallback button {
+        padding: 6px 14px;
+        border-radius: 8px;
+        border: 1px solid #2a3331;
+        background: #161c1b;
+        color: inherit;
+        cursor: pointer;
+      }
+    </style>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

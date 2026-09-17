@@ -501,6 +501,8 @@
     "speaking": "Speaking",
     "saySomething": "Say something to start",
     "end": "End conversation",
-    "interrupt": "Stop speaking"
+    "interrupt": "Stop speaking",
+    "usingMic": "Microphone: {{device}}",
+    "changeMic": "No sound? Choose another microphone"
   }
 }
