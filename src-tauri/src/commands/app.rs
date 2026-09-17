@@ -1,6 +1,6 @@
 use super::CmdResult;
 use crate::capabilities::CapabilityReport;
-use crate::desktop::{shortcuts, window};
+use crate::desktop::{icon, shortcuts, window};
 use crate::errors::AppError;
 use crate::services::ai::model_selector::ModelSelection;
 use crate::services::ai::{AiService, ConnectionStatus, ModelInfo};
@@ -67,6 +67,9 @@ pub async fn save_settings(app: AppHandle, state: State<'_, AppState>, settings:
         if g_before.window_position != g.window_position && g.window_position != "custom" {
             window::apply_position(&win, &g.window_position, &g.window);
         }
+    }
+    if g_before.accent != g.accent {
+        icon::apply_accent(&app, &g.accent);
     }
     let _ = app.emit("settings://changed", &saved);
     Ok(saved)

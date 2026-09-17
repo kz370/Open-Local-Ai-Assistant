@@ -11,7 +11,7 @@ pub mod settings;
 pub mod state;
 
 use database::Db;
-use desktop::{shortcuts, tray, window};
+use desktop::{icon, shortcuts, tray, window};
 use services::ai::lmstudio::LmStudioService;
 use services::chat::{ChatEngine, ModelResolver};
 use services::dictation;
@@ -204,6 +204,11 @@ pub fn run() {
             shortcuts::register_all(&handle);
             window::restore(&handle);
             let _ = window::create_overlay(&handle);
+            // Tint tray + taskbar icons to match saved accent.
+            {
+                let accent = handle.state::<AppState>().settings.get().general.accent.clone();
+                icon::apply_accent(&handle, &accent);
+            }
 
             if let Some(main) = window::main_window(&handle) {
                 let h = handle.clone();

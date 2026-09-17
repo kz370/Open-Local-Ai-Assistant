@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { History, Minus, Settings2, SquarePen, X } from "lucide-react";
 import { useChat } from "../../app/chatStore";
 import { ipc, on } from "../../app/ipc";
@@ -28,6 +29,11 @@ export function ChatApp() {
   const [showHistory, setShowHistory] = useState(false);
   const [lm, setLm] = useState<LmState>("checking");
   const [autoModel, setAutoModel] = useState<string | null>(null);
+  // Morph veil: bubble <-> chat continuity. Starts closed (veiled) so first
+  // paint never flashes content before window-shown event.
+  const [morph, setMorph] = useState<{ phase: "closed" | "opening" | "idle" | "closing"; fx: number; fy: number }>({ phase: "closed", fx: 396, fy: 616 });
+  const morphTimer = useRef(0);
+  const lastOpenRef = useRef(0);
   const composerRef = useRef<ComposerHandle>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
@@ -67,10 +73,43 @@ export function ChatApp() {
   }, [connectionError]);
 
   useEffect(() => {
+    // Self-heal: missed window-shown (first mount race) leaves veil stuck.
+    getCurrentWindow()
+      .isVisible()
+      .then((v) => {
+        if (v) setMorph((m) => (m.phase === "closed" ? { ...m, phase: "idle" } : m));
+      })
+      .catch(() => undefined);
+    const later = (ms: number, fn: () => void) => {
+      window.clearTimeout(morphTimer.current);
+      morphTimer.current = window.setTimeout(fn, ms);
+    };
     const subs = [
       on("app://focus-input", () => {
         setShowHistory(false);
         composerRef.current?.focus();
+      }),
+      on<{ origin?: string; animated?: boolean; fx?: number; fy?: number }>("app://window-shown", (p) => {
+        // GPU shell zoom in webview; native frame already snapped to anchor.
+        // Dedupe: rapid double events replay zoom (reads as happening twice).
+        if (p?.animated && Number.isFinite(p.fx) && Number.isFinite(p.fy)) {
+          const now = Date.now();
+          if (now - lastOpenRef.current < 350) return;
+          lastOpenRef.current = now;
+          setMorph({ phase: "opening", fx: p.fx as number, fy: p.fy as number });
+          later(260, () => setMorph((m) => ({ ...m, phase: "idle" })));
+        } else {
+          // Plain reveal (first-run, custom pos, tray): quick fade.
+          setMorph((m) => ({ ...m, phase: "idle" }));
+        }
+      }),
+      on<{ fx?: number; fy?: number }>("app://window-closing", (p) => {
+        setMorph((m) => ({
+          phase: "closing",
+          fx: Number.isFinite(p?.fx) && (p?.fx as number) !== 0 ? (p?.fx as number) : m.fx,
+          fy: Number.isFinite(p?.fy) && (p?.fy as number) !== 0 ? (p?.fy as number) : m.fy,
+        }));
+        later(240, () => setMorph((m) => ({ ...m, phase: "closed" })));
       }),
       on("app://new-conversation", () => {
         setShowHistory(false);
@@ -79,7 +118,10 @@ export function ChatApp() {
       }),
       on("app://toggle-hands-free", () => void useVoice.getState().toggleHandsFree()),
     ];
-    return () => subs.forEach((p) => void p.then((un) => un()));
+    return () => {
+      window.clearTimeout(morphTimer.current);
+      subs.forEach((p) => void p.then((un) => un()));
+    };
   }, [newConversation]);
 
   useEffect(() => {
@@ -130,7 +172,12 @@ export function ChatApp() {
     );
 
   return (
-    <div className={`app-shell${compact ? " compact" : ""}`}>
+    <div
+      className={`app-shell${compact ? " compact" : ""}`}
+      data-morph={morph.phase}
+      style={{ "--zx": `${morph.fx}px`, "--zy": `${morph.fy}px` } as React.CSSProperties}
+    >
+      <div className="morph-content">
       <header className="header">
         <div className="header-drag" data-tauri-drag-region>
           <BrandMark size={30} />
@@ -239,6 +286,8 @@ export function ChatApp() {
       )}
 
       <Composer ref={composerRef} autoModel={autoModel} onVoiceSetup={() => void ipc.openSettings("speech")} />
+      </div>
+      <div className="morph-veil" aria-hidden />
       <ToolConfirmDialog />
       {showHistory && <HistoryPanel onClose={() => setShowHistory(false)} />}
     </div>

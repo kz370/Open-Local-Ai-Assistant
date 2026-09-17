@@ -252,6 +252,33 @@ pub struct Settings {
 impl Settings {
     /// Clamp values into sane ranges; applied on every save.
     pub fn sanitize(&mut self) {
+        fn is_modifier_token(t: &str) -> bool {
+            matches!(
+                t.trim().to_ascii_uppercase().as_str(),
+                "ALT" | "OPTION"
+                    | "CONTROL" | "CTRL" | "COMMANDORCONTROL" | "COMMANDORCTRL" | "CMDORCTRL" | "CMDORCONTROL"
+                    | "SHIFT"
+                    | "SUPER" | "META" | "COMMAND" | "CMD" | "WIN"
+            )
+        }
+        fn is_single_modifier(keys: &str) -> bool {
+            let tokens: Vec<&str> = keys.split('+').map(str::trim).filter(|t| !t.is_empty()).collect();
+            tokens.len() == 1 && tokens.iter().all(|t| is_modifier_token(t))
+        }
+        // Single Alt/Ctrl/Shift/Super alone fires on every normal press
+        // (Alt+Tab, etc). Migrate legacy values to safe defaults.
+        if is_single_modifier(&self.general.global_shortcut) {
+            self.general.global_shortcut = "CommandOrControl+Space".into();
+        }
+        if is_single_modifier(&self.general.push_to_talk_shortcut) {
+            self.general.push_to_talk_shortcut = "CommandOrControl+Shift+Space".into();
+        }
+        if is_single_modifier(&self.dictation.shortcut) {
+            self.dictation.shortcut = "CommandOrControl+Alt+Space".into();
+        }
+        if self.general.global_shortcut.trim().is_empty() {
+            self.general.global_shortcut = "CommandOrControl+Space".into();
+        }
         let lang_ok = |s: &str| matches!(s, "auto" | "en" | "ar" | "de");
         if !lang_ok(&self.language.response_language) {
             self.language.response_language = "auto".into();

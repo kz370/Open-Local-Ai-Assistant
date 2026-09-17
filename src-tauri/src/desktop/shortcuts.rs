@@ -46,6 +46,16 @@ fn is_modifier_only_shortcut(keys: &str) -> bool {
     })
 }
 
+/// Single modifiers (e.g. "Alt") fire on every normal press of that key
+/// (Alt+Tab, Alt+F4, menu focus). Require 2+ modifiers for modifier-only.
+fn modifier_only_count(keys: &str) -> usize {
+    keys.split('+').map(str::trim).filter(|t| !t.is_empty()).count()
+}
+
+fn is_supported_modifier_only(keys: &str) -> bool {
+    is_modifier_only_shortcut(keys) && modifier_only_count(keys) >= 2
+}
+
 #[cfg(windows)]
 fn windows_modifier_pressed(token: &str) -> bool {
     use windows::Win32::UI::Input::KeyboardAndMouse::{
@@ -116,18 +126,20 @@ fn dispatch_shortcut_action(app: &AppHandle, action: Action, pressed: bool) {
 
 #[cfg(windows)]
 fn trigger_modifier_watch(app: &AppHandle) {
-    static WATCHER: std::sync::OnceLock<std::sync::Mutex<Option<std::thread::JoinHandle<()>>>> = std::sync::OnceLock::new();
-    let watcher = WATCHER.get_or_init(|| std::sync::Mutex::new(None));
+    use std::sync::{Mutex, OnceLock};
+    static COMBOS: OnceLock<std::sync::Arc<Mutex<Vec<(Action, String)>>>> = OnceLock::new();
+    static WATCHER: OnceLock<Mutex<Option<std::thread::JoinHandle<()>>>> = OnceLock::new();
+    let combos_shared = COMBOS.get_or_init(|| std::sync::Arc::new(Mutex::new(Vec::new()))).clone();
+
+    // Refresh the watched combos on every register_all (user may have changed them).
+    *combos_shared.lock().unwrap_or_else(|p| p.into_inner()) = configured(app)
+        .into_iter()
+        .filter(|(_, keys)| is_supported_modifier_only(keys))
+        .collect();
+
+    let watcher = WATCHER.get_or_init(|| Mutex::new(None));
     let mut current = watcher.lock().unwrap();
     if current.is_some() {
-        return;
-    }
-
-    let combos = configured(app)
-        .into_iter()
-        .filter(|(_, keys)| is_modifier_only_shortcut(keys))
-        .collect::<Vec<_>>();
-    if combos.is_empty() {
         return;
     }
 
@@ -135,7 +147,8 @@ fn trigger_modifier_watch(app: &AppHandle) {
     *current = Some(thread::spawn(move || {
         let mut last = HashMap::new();
         loop {
-            for (action, keys) in &combos {
+            let snapshot: Vec<(Action, String)> = combos_shared.lock().map(|g| g.clone()).unwrap_or_default();
+            for (action, keys) in &snapshot {
                 let pressed = windows_modifier_shortcut_pressed(keys);
                 let prev = *last.get(action).unwrap_or(&false);
                 if pressed != prev {
@@ -143,6 +156,9 @@ fn trigger_modifier_watch(app: &AppHandle) {
                 }
                 last.insert(*action, pressed);
             }
+            // Drop stale actions (shortcut changed away) so a stuck "pressed"
+            // state can't leak into the next combo with the same action.
+            last.retain(|a, _| snapshot.iter().any(|(sa, _)| sa == a));
             thread::sleep(Duration::from_millis(25));
         }
     }));
@@ -163,8 +179,12 @@ pub fn register_all(app: &AppHandle) {
     let mut seen: Vec<u32> = Vec::new();
     for (action, keys) in configured(app) {
         if is_modifier_only_shortcut(&keys) {
-            #[cfg(windows)]
-            trigger_modifier_watch(app);
+            if !is_supported_modifier_only(&keys) {
+                errors.push(format!("{keys}: single-modifier shortcuts are disabled (use 2+ modifiers or modifier+key)"));
+                continue;
+            }
+            #[cfg(not(windows))]
+            errors.push(format!("{keys}: modifier-only shortcuts are Windows-only"));
             continue;
         }
         match keys.parse::<Shortcut>() {
@@ -182,6 +202,11 @@ pub fn register_all(app: &AppHandle) {
             Err(e) => errors.push(format!("{keys}: {e}")),
         }
     }
+    #[cfg(windows)]
+    {
+        // Always refresh watcher combos (clears stale single-Alt, etc).
+        trigger_modifier_watch(app);
+    }
     *app.state::<AppState>().shortcut_errors.lock().unwrap_or_else(|p| p.into_inner()) = errors;
 }
 
@@ -194,4 +219,19 @@ pub fn handle(app: &AppHandle, shortcut: &Shortcut, event: ShortcutEvent) {
         return;
     };
     dispatch_shortcut_action(app, action, event.state() == ShortcutState::Pressed);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{is_modifier_only_shortcut, is_supported_modifier_only};
+
+    #[test]
+    fn single_modifier_not_supported() {
+        assert!(is_modifier_only_shortcut("Alt"));
+        assert!(!is_supported_modifier_only("Alt"));
+        assert!(!is_supported_modifier_only("Shift"));
+        assert!(is_supported_modifier_only("CommandOrControl+Alt"));
+        assert!(is_supported_modifier_only("Alt+Shift"));
+        assert!(!is_supported_modifier_only("CommandOrControl+Space"));
+    }
 }

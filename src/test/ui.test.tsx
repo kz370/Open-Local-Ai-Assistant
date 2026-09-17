@@ -168,9 +168,10 @@ describe("shortcuts", () => {
     expect(acceleratorFromEvent(ev("KeyD", { ctrlKey: true, altKey: true }))).toBe("CommandOrControl+Alt+D");
     expect(acceleratorFromEvent(ev("F9"))).toBe("F9");
     expect(acceleratorFromEvent(ev("KeyA"))).toBeNull(); // no modifier
-    expect(acceleratorFromEvent(ev("ControlLeft", { ctrlKey: true }))).toBe("CommandOrControl");
+    // Single modifiers rejected: Alt alone fires on every Alt press (Alt+Tab...).
+    expect(acceleratorFromEvent(ev("ControlLeft", { ctrlKey: true }))).toBeNull();
     expect(acceleratorFromEvent(ev("AltLeft", { ctrlKey: true, altKey: true }))).toBe("CommandOrControl+Alt");
-    expect(acceleratorFromEvent(ev("MetaLeft", { metaKey: true }))).toBe("Super");
+    expect(acceleratorFromEvent(ev("MetaLeft", { metaKey: true }))).toBeNull();
     expect(prettyAccelerator("CommandOrControl+Shift+Space")).toBe("Ctrl + Shift + Space");
   });
 });

@@ -48,7 +48,9 @@ export function acceleratorFromEvent(e: Pick<KeyboardEvent, "code" | "ctrlKey" |
   else if (CODE_MAP[e.code]) key = CODE_MAP[e.code];
 
   if (isModifierOnly) {
-    return mods.length ? mods.join("+") : null;
+    // Single modifiers (e.g. "Alt" alone) fire on every normal Alt press
+    // (Alt+Tab, Alt+F4, menu focus). Require at least 2 modifiers.
+    return mods.length >= 2 ? mods.join("+") : null;
   }
   if (!key) return null;
   const isFunctionKey = /^F\d+$/.test(key);
@@ -131,7 +133,9 @@ export function ShortcutInput(props: { value: string; defaultValue: string; onCh
       if (activeModifiersRef.current.has(name)) {
         const combined = [...activeModifiersRef.current];
         activeModifiersRef.current.clear();
-        if (combined.length > 0) {
+        // Require 2+ modifiers: single Alt/Ctrl/Shift/Super alone would
+        // trigger on every normal press of that key. Keep recording.
+        if (combined.length >= 2) {
           props.onChange(combined.join("+"));
           setRecording(false);
         }

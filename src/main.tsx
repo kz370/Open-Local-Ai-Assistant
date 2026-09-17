@@ -38,6 +38,7 @@ function Root() {
   const [startupError, setStartupError] = useState<string | null>(null);
 
   useEffect(() => {
+    document.documentElement.dataset.route = route;
     let cancelled = false;
     const cleanups: (() => void)[] = [];
     const track = (un: () => void) => (cancelled ? un() : cleanups.push(un));

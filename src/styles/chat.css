@@ -1,14 +1,75 @@
 /* ============ Chat window ============ */
+html[data-route="chat"] body,
+html[data-route="chat"] #root {
+  background: transparent !important;
+}
 .app-shell {
   height: 100%;
   display: flex;
   flex-direction: column;
   position: relative;
   overflow: hidden;
+  border-radius: 25px;
+  border: 1px solid var(--hairline);
   background:
     radial-gradient(120% 60% at 100% 0%, var(--glow-1) 0%, transparent 55%),
     radial-gradient(90% 50% at 0% 100%, var(--glow-2) 0%, transparent 60%),
     var(--bg);
+}
+
+/* Zoom morph: whole shell scales from bubble point (fx/fy).
+   Transparent native frame lets scaled shell read as growing window.
+   Circle -> rounded rect via border-radius keyframes. GPU only. */
+.app-shell[data-morph="opening"] {
+  animation: shell-zoom-in 250ms var(--ease);
+  transform-origin: var(--zx, 50%) var(--zy, 50%);
+}
+.app-shell[data-morph="closing"] {
+  animation: shell-zoom-out 190ms var(--ease) forwards;
+  transform-origin: var(--zx, 50%) var(--zy, 50%);
+}
+@keyframes shell-zoom-in {
+  from {
+    transform: scale(0.32);
+    opacity: 0;
+    border-radius: 50%;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+    border-radius: 25px;
+  }
+}
+@keyframes shell-zoom-out {
+  from {
+    transform: scale(1);
+    opacity: 1;
+    border-radius: 25px;
+  }
+  to {
+    transform: scale(0.32);
+    opacity: 0;
+    border-radius: 50%;
+  }
+}
+.morph-content {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+/* Veil only covers stale content while hidden; never during zoom. */
+.morph-veil {
+  display: none;
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  overflow: hidden;
+  background: var(--bg);
+  pointer-events: none;
+}
+.app-shell[data-morph="closed"] .morph-veil {
+  display: block;
 }
 
 .brand-mark {
@@ -980,13 +1041,13 @@ html.launcher-window #root {
   border: 0;
   padding: 0;
   cursor: pointer;
-  color: #fff;
-  background: linear-gradient(145deg, #34e0c8 0%, #14b8a6 40%, #0f766e 100%);
+  color: var(--accent-contrast, #fff);
+  background: var(--brand-gradient, linear-gradient(145deg, #34e0c8 0%, #14b8a6 40%, #0f766e 100%));
   box-shadow:
-    0 10px 24px rgba(4, 47, 46, 0.45),
+    0 10px 24px color-mix(in srgb, var(--accent) 42%, transparent),
     0 2px 6px rgba(0, 0, 0, 0.25),
     inset 0 1px 0 rgba(255, 255, 255, 0.35),
-    inset 0 -6px 14px rgba(4, 47, 46, 0.35);
+    inset 0 -6px 14px rgba(0, 0, 0, 0.22);
   display: grid;
   place-items: center;
   transition: transform 180ms var(--ease), box-shadow 180ms var(--ease);
@@ -999,7 +1060,7 @@ html.launcher-window #root {
   transform: scale(0.95);
 }
 .launcher:focus-visible {
-  outline: 2px solid #fff;
+  outline: 2px solid var(--focus, #fff);
   outline-offset: 3px;
 }
 .launcher-glyph {
@@ -1025,10 +1086,10 @@ html.launcher-window #root {
   animation: ripple 1.6s infinite var(--ease);
 }
 .launcher.listening .launcher-ring {
-  box-shadow: 0 0 0 0 rgba(244, 63, 94, 0.55);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--danger, #f43f5e) 55%, transparent);
 }
 .launcher.speaking .launcher-ring {
-  box-shadow: 0 0 0 0 rgba(45, 212, 191, 0.6);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 60%, transparent);
 }
 .launcher.speaking .launcher-glyph path {
   animation: wave 0.9s infinite ease-in-out;
@@ -1036,10 +1097,10 @@ html.launcher-window #root {
 }
 @keyframes ripple {
   0% {
-    box-shadow: 0 0 0 0 rgba(45, 212, 191, 0.55);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 55%, transparent);
   }
   100% {
-    box-shadow: 0 0 0 11px rgba(45, 212, 191, 0);
+    box-shadow: 0 0 0 11px transparent;
   }
 }
 @keyframes wave {
