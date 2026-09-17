@@ -200,6 +200,9 @@ pub fn window_show_main(app: AppHandle) {
 
 #[tauri::command]
 pub fn open_settings_window(app: AppHandle, section: Option<String>) -> CmdResult<()> {
+    // Call DIRECTLY (worker thread): Tauri window ops self-dispatch to the
+    // main loop internally. Routing build() onto main first self-deadlocks:
+    // its inner main-loop rendezvous waits on the thread it already owns.
     window::open_settings(&app, section.as_deref())?;
     Ok(())
 }
