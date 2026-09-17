@@ -33,6 +33,8 @@ export function CallView() {
   }, []);
 
   const lastAssistant = useMemo(() => [...messages].reverse().find((m) => m.role === "assistant" && m.content), [messages]);
+  const lastUser = useMemo(() => [...messages].reverse().find((m) => m.role === "user" && m.content), [messages]);
+  const voiceNotice = useChat((s) => s.voiceNotice);
   const state = voice.speaking ? "speaking" : busy ? "thinking" : voice.phase === "transcribing" ? "transcribing" : "listening";
   const label = t(`call.${state}`);
   const caption = voice.partial || (state === "speaking" || state === "thinking" ? lastAssistant?.content ?? "" : voice.lastTranscript ?? "");
@@ -53,6 +55,19 @@ export function CallView() {
       <div className="call-caption" dir={caption ? textDir(caption) : "auto"}>
         {caption || t("call.saySomething")}
       </div>
+      {voiceNotice && (
+        <div className="notice warn" style={{ maxWidth: 340 }} role="alert">
+          <span style={{ flex: 1 }}>{voiceNotice}</span>
+          <button className="btn btn-sm" onClick={() => void ipc.openSettings("voice")}>
+            {t("app.openSettings")}
+          </button>
+        </div>
+      )}
+      {lastUser && state !== "listening" && (
+        <div className="call-you" dir={textDir(lastUser.content, lastUser.language)}>
+          {t("chat.youSaid")} “{lastUser.content}”
+        </div>
+      )}
       <div className="call-device">
         {micName ? t("call.usingMic", { device: micName }) : ""}
         {silent && (
