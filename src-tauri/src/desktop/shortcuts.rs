@@ -25,6 +25,12 @@ fn configured(app: &AppHandle) -> Vec<(Action, String)> {
     v.into_iter().filter(|(_, k)| !k.trim().is_empty()).collect()
 }
 
+/// Temporarily releases all global shortcuts so the key combination reaches
+/// the settings window while the user is recording a new one.
+pub fn unregister_all(app: &AppHandle) {
+    let _ = app.global_shortcut().unregister_all();
+}
+
 /// (Re-)registers all shortcuts; failures (e.g. taken by another app) are
 /// recorded for the settings UI instead of aborting.
 pub fn register_all(app: &AppHandle) {

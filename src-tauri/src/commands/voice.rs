@@ -49,12 +49,15 @@ pub fn tts_voices(state: State<'_, AppState>) -> Vec<VoiceInfo> {
 }
 
 #[tauri::command]
-pub fn tts_speak(state: State<'_, AppState>, text: String, language: Option<String>) -> CmdResult<()> {
+pub fn tts_speak(state: State<'_, AppState>, text: String, language: Option<String>, tag: Option<String>) -> CmdResult<()> {
     let lang = language.as_deref().and_then(Lang::from_code);
     if !state.tts.player.is_available() {
         return Err(AppError::Tts("audio output is not available".into()));
     }
-    state.tts.speak(&format!("speak-{}", uuid::Uuid::new_v4().simple()), &text, lang);
+    // Long answers are split into sentences and played one after another, so
+    // speech starts immediately and can be paused or stopped at any point.
+    let tag = tag.unwrap_or_else(|| format!("speak-{}", uuid::Uuid::new_v4().simple()));
+    state.tts.speak(&tag, &text, lang);
     Ok(())
 }
 
@@ -76,6 +79,24 @@ pub fn tts_test(state: State<'_, AppState>, language: String) -> CmdResult<()> {
 #[tauri::command]
 pub fn tts_stop(state: State<'_, AppState>) {
     state.tts.stop_all();
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TtsState {
+    pub speaking: bool,
+    pub paused: bool,
+}
+
+#[tauri::command]
+pub fn tts_set_paused(state: State<'_, AppState>, paused: bool) -> TtsState {
+    state.tts.set_paused(paused);
+    TtsState { speaking: state.tts.has_audio(), paused: state.tts.is_paused() }
+}
+
+#[tauri::command]
+pub fn tts_state(state: State<'_, AppState>) -> TtsState {
+    TtsState { speaking: state.tts.has_audio(), paused: state.tts.is_paused() }
 }
 
 #[tauri::command]
@@ -131,20 +152,31 @@ pub async fn models_download(app: AppHandle, state: State<'_, AppState>, ids: Ve
     }
     let store = state.models.clone();
     let app2 = app.clone();
+    // Reserve every requested model immediately: the UI greys them out as
+    // "queued" straight away, so they cannot be selected twice.
+    {
+        let mut d = state.downloads.lock().unwrap_or_else(|p| p.into_inner());
+        for m in &models {
+            if !store.is_installed(m.id) {
+                d.entry(m.id.to_string()).or_insert_with(CancellationToken::new);
+            }
+        }
+    }
+    let _ = app.emit("models://changed", ());
     tauri::async_runtime::spawn(async move {
         for m in models {
             let state = app2.state::<AppState>();
             if store.is_installed(m.id) {
+                state.downloads.lock().unwrap_or_else(|p| p.into_inner()).remove(m.id);
                 continue;
             }
-            let token = CancellationToken::new();
-            {
-                let mut d = state.downloads.lock().unwrap_or_else(|p| p.into_inner());
-                if d.contains_key(m.id) {
-                    continue;
+            let token = {
+                let d = state.downloads.lock().unwrap_or_else(|p| p.into_inner());
+                match d.get(m.id) {
+                    Some(t) => t.clone(),
+                    None => continue, // cancelled before it started
                 }
-                d.insert(m.id.to_string(), token.clone());
-            }
+            };
             let emitter = app2.clone();
             let progress = move |p: download::DownloadProgress| {
                 let _ = emitter.emit("models://download", p);

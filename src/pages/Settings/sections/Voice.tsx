@@ -257,6 +257,9 @@ export function SpeechSection() {
         </Row>
       </Card>
       <Card title={t("chat.handsFree")}>
+        <Row label={t("settings.speech.callView")} hint={t("settings.speech.callViewHint")} htmlFor="sw-call">
+          <Switch id="sw-call" label={t("settings.speech.callView")} checked={s.stt.callView} onChange={(v) => set((d) => void (d.stt.callView = v))} />
+        </Row>
         <Row label={t("settings.speech.vadThreshold")} htmlFor="rng-vad">
           <input id="rng-vad" type="range" min={0.2} max={0.9} step={0.05} value={s.stt.vadThreshold} onChange={(e) => set((d) => void (d.stt.vadThreshold = Number(e.target.value)))} style={{ maxWidth: 260 }} />
           <span className="range-value">{s.stt.vadThreshold.toFixed(2)}</span>
@@ -264,6 +267,14 @@ export function SpeechSection() {
         <Row label={t("settings.speech.silence")} htmlFor="rng-sil">
           <input id="rng-sil" type="range" min={300} max={2500} step={100} value={s.stt.silenceMs} onChange={(e) => set((d) => void (d.stt.silenceMs = Number(e.target.value)))} style={{ maxWidth: 260 }} />
           <span className="range-value">{s.stt.silenceMs} ms</span>
+        </Row>
+        <Row label={t("settings.speech.autoStop")} hint={t("settings.speech.autoStopHint")} htmlFor="rng-autostop">
+          <input id="rng-autostop" type="range" min={0} max={60} step={1} value={s.stt.autoStopSilenceSecs} onChange={(e) => set((d) => void (d.stt.autoStopSilenceSecs = Number(e.target.value)))} style={{ maxWidth: 260 }} />
+          <span className="range-value">{s.stt.autoStopSilenceSecs === 0 ? t("settings.speech.never") : t("settings.speech.seconds", { value: s.stt.autoStopSilenceSecs })}</span>
+        </Row>
+        <Row label={t("settings.speech.handsFreeTimeout")} htmlFor="rng-hftimeout">
+          <input id="rng-hftimeout" type="range" min={0} max={900} step={15} value={s.stt.handsFreeTimeoutSecs} onChange={(e) => set((d) => void (d.stt.handsFreeTimeoutSecs = Number(e.target.value)))} style={{ maxWidth: 260 }} />
+          <span className="range-value">{s.stt.handsFreeTimeoutSecs === 0 ? t("settings.speech.never") : t("settings.speech.seconds", { value: s.stt.handsFreeTimeoutSecs })}</span>
         </Row>
       </Card>
       <ModelManager kinds={["stt", "vad"]} title={t("settings.speech.models")} />

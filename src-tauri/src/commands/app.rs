@@ -72,6 +72,16 @@ pub async fn save_settings(app: AppHandle, state: State<'_, AppState>, settings:
     Ok(saved)
 }
 
+/// While the user records a shortcut, global shortcuts must not swallow the keys.
+#[tauri::command]
+pub fn shortcuts_capture(app: AppHandle, capturing: bool) {
+    if capturing {
+        shortcuts::unregister_all(&app);
+    } else {
+        shortcuts::register_all(&app);
+    }
+}
+
 #[tauri::command]
 pub fn shortcut_errors(state: State<'_, AppState>) -> Vec<String> {
     state.shortcut_errors.lock().unwrap_or_else(|p| p.into_inner()).clone()

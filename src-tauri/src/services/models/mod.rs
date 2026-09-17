@@ -57,7 +57,7 @@ pub fn recommend(_hw: &HardwareInfo) -> Recommendation {
         vad: "silero-vad",
         tts_en: "kitten-nano-en-v0_8-int8",
         tts_de: "piper-de_DE-thorsten-medium-int8",
-        tts_ar: "piper-ar_JO-kareem-low-int8",
+        tts_ar: "nabra-82m-arabic-int8",
     }
 }
 
@@ -315,7 +315,14 @@ pub fn detect_custom(dir: &Path, name: &str) -> Option<InstalledModel> {
     if has("voices.bin") && !tokens.is_empty() {
         // Kitten and Kokoro both ship a voices.bin; the folder name tells them apart.
         let engine = if path_hint.contains("kitten") { Engine::Kitten } else { Engine::Kokoro };
-        return Some(base(ModelKind::Tts, engine, vec!["en".into()], None, false, "mixed"));
+        let lang = if path_hint.contains("arab") || path_hint.contains("nabra") || path_hint.contains("-ar") {
+            "ar"
+        } else if path_hint.contains("multi-lang") || path_hint.contains("multilang") {
+            "*"
+        } else {
+            "en"
+        };
+        return Some(base(ModelKind::Tts, engine, vec![lang.into()], None, false, "mixed"));
     }
     if !tokens.is_empty() && (has("espeak-ng-data") || has("lexicon.txt")) {
         // Piper voices are named like "de_DE-thorsten-high.onnx".
@@ -358,7 +365,7 @@ mod tests {
         let rec = recommend(&HardwareInfo::default());
         assert_eq!(rec.stt, "whisper-base");
         let total: u64 = rec.ids().iter().filter_map(|id| catalog::find(id)).map(|m| m.download_size()).sum();
-        assert!(total < 320_000_000, "starter download should stay small, got {total}");
+        assert!(total < 400_000_000, "starter download should stay small, got {total}");
         for id in rec.ids() {
             assert!(catalog::find(id).is_some(), "{id}");
         }

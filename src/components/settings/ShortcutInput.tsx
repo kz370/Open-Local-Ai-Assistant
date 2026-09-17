@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { ipc } from "../../app/ipc";
 import { t } from "../../app/strings";
 
 const CODE_MAP: Record<string, string> = {
@@ -57,28 +58,44 @@ export function prettyAccelerator(acc: string): string {
 
 export function ShortcutInput(props: { value: string; defaultValue: string; onChange: (v: string) => void; label: string }) {
   const [recording, setRecording] = useState(false);
+  const btnRef = useRef<HTMLButtonElement>(null);
+
+  // While recording, the app releases its global shortcuts so combinations
+  // like Ctrl+Space actually reach this window, and a window-level listener
+  // catches keys the button would not receive.
+  useEffect(() => {
+    if (!recording) return;
+    void ipc.shortcutsCapture(true);
+    const onKey = (e: KeyboardEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.key === "Escape") {
+        setRecording(false);
+        return;
+      }
+      const acc = acceleratorFromEvent(e);
+      if (acc) {
+        props.onChange(acc);
+        setRecording(false);
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => {
+      window.removeEventListener("keydown", onKey, true);
+      void ipc.shortcutsCapture(false);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recording]);
+
   return (
     <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
       <button
+        ref={btnRef}
         type="button"
         className={`input kbd-input${recording ? " recording" : ""}`}
         aria-label={`${props.label}: ${prettyAccelerator(props.value)}`}
-        onClick={() => setRecording(true)}
+        onClick={() => setRecording((v) => !v)}
         onBlur={() => setRecording(false)}
-        onKeyDown={(e) => {
-          if (!recording) return;
-          e.preventDefault();
-          e.stopPropagation();
-          if (e.key === "Escape") {
-            setRecording(false);
-            return;
-          }
-          const acc = acceleratorFromEvent(e.nativeEvent);
-          if (acc) {
-            props.onChange(acc);
-            setRecording(false);
-          }
-        }}
       >
         {recording ? t("settings.shortcuts.record") : prettyAccelerator(props.value) || "—"}
       </button>

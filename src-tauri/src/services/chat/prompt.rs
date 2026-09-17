@@ -12,15 +12,17 @@ pub struct PromptContext<'a> {
     pub tools: &'a [(String, String)],
     pub has_web_tool: bool,
     pub voice_mode: bool,
+    pub assistant_name: &'a str,
     pub custom_prompt: &'a str,
 }
 
 pub fn build_system_prompt(ctx: &PromptContext) -> String {
     let mut p = String::new();
-    p.push_str(
-        "You are Local Assistant, a helpful, friendly and concise desktop assistant. \
+    p.push_str(&format!(
+        "You are {}, a helpful, friendly and concise desktop assistant. \
          You run entirely on the user's own computer through LM Studio.\n",
-    );
+        ctx.assistant_name
+    ));
     p.push_str(&format!(
         "Current local date and time: {} ({}).\n",
         ctx.date.format("%Y-%m-%d %H:%M"),
@@ -111,6 +113,7 @@ mod tests {
             tools,
             has_web_tool: web,
             voice_mode: false,
+            assistant_name: "Local Assistant",
             custom_prompt: "Be brief.",
         }
     }

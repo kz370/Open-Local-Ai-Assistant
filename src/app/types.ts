@@ -13,6 +13,8 @@ export interface WindowGeometry {
 export interface Settings {
   general: {
     theme: "system" | "light" | "dark";
+    accent: "teal" | "blue" | "green" | "amber" | "rose" | "slate";
+    assistantName: string;
     highContrast: boolean;
     fontScale: number;
     startWithOs: boolean;
@@ -54,6 +56,9 @@ export interface Settings {
     vadThreshold: number;
     silenceMs: number;
     extraModelDirs: string[];
+    callView: boolean;
+    autoStopSilenceSecs: number;
+    handsFreeTimeoutSecs: number;
   };
   tts: {
     speakResponses: boolean;
@@ -181,6 +186,8 @@ export type VoiceEvent =
 
 export type TtsEvent =
   | { type: "speaking"; tag: string }
+  | { type: "paused" }
+  | { type: "resumed" }
   | { type: "idle" }
   | { type: "voiceUnavailable"; language: string }
   | { type: "error"; detail: string };

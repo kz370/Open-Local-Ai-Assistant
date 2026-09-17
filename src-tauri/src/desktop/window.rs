@@ -263,6 +263,8 @@ pub fn on_main_window_event(app: &AppHandle, event: &tauri::WindowEvent) {
 pub fn set_compact(app: &AppHandle, compact: bool) {
     let state = app.state::<AppState>();
     let Ok(s) = state.settings.update(|s| s.general.compact = compact) else { return };
+    // Settings windows mirror this switch, so tell every window about it.
+    let _ = app.emit("settings://changed", &s);
     let Some(win) = main_window(app) else { return };
     suppress_persistence();
     if compact {

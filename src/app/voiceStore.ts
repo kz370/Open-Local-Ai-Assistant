@@ -11,7 +11,12 @@ interface VoiceState {
   level: number;
   levels: number[];
   speaking: boolean;
+  /// Tag of the audio currently playing (message id for "read aloud").
+  speakingTag: string | null;
+  paused: boolean;
   handsFree: boolean;
+  /// Live text while the user is still speaking.
+  partial: string;
   lastTranscript: string | null;
   error: AppErrorPayload | null;
   startPushToTalk: () => Promise<void>;
@@ -22,6 +27,7 @@ interface VoiceState {
 }
 
 const BARS = 24;
+let subscribed = false;
 
 export const useVoice = create<VoiceState>((set, get) => ({
   mode: null,
@@ -29,7 +35,10 @@ export const useVoice = create<VoiceState>((set, get) => ({
   level: 0,
   levels: new Array(BARS).fill(0),
   speaking: false,
+  speakingTag: null,
+  paused: false,
   handsFree: false,
+  partial: "",
   lastTranscript: null,
   error: null,
 
@@ -66,6 +75,10 @@ export const useVoice = create<VoiceState>((set, get) => ({
   },
 
   subscribe: async () => {
+    // Guard against double subscriptions: they would send every spoken
+    // sentence to the assistant twice.
+    if (subscribed) return () => undefined;
+    subscribed = true;
     const un1 = await on<VoiceEvent>("voice://event", (ev) => {
       if (ev.mode === "dictation" || ev.mode === "test") return;
       switch (ev.type) {
@@ -79,6 +92,9 @@ export const useVoice = create<VoiceState>((set, get) => ({
         case "level":
           set((s) => ({ level: ev.value, levels: [...s.levels.slice(1), ev.value] }));
           break;
+        case "partial":
+          set({ partial: ev.text });
+          break;
         case "transcript": {
           const text = ev.text.trim();
           const chat = useChat.getState();
@@ -86,7 +102,7 @@ export const useVoice = create<VoiceState>((set, get) => ({
             if (ev.mode === "pushToTalk") chat.setVoiceNotice(t("voice.noSpeech"));
             return;
           }
-          set({ lastTranscript: text });
+          set({ lastTranscript: text, partial: "" });
           const autoSubmit = useSettings.getState().settings?.stt.autoSubmit ?? true;
           if (ev.mode === "handsFree" || autoSubmit) {
             void chat.send(text, { spokenLanguage: ev.language, voice: true });
@@ -101,12 +117,15 @@ export const useVoice = create<VoiceState>((set, get) => ({
       }
     });
     const un2 = await on<TtsEvent>("tts://event", (ev) => {
-      if (ev.type === "speaking") set({ speaking: true });
-      if (ev.type === "idle") set({ speaking: false });
+      if (ev.type === "speaking") set({ speaking: true, speakingTag: ev.tag, paused: false });
+      if (ev.type === "paused") set({ paused: true });
+      if (ev.type === "resumed") set({ paused: false });
+      if (ev.type === "idle") set({ speaking: false, speakingTag: null, paused: false });
       if (ev.type === "voiceUnavailable") useChat.getState().setVoiceNotice(t("chat.voiceUnavailable", { language: languageName(ev.language) }));
     });
     const un3 = await on<AppErrorPayload>("voice://error", (e) => set({ error: e }));
     return () => {
+      subscribed = false;
       un1();
       un2();
       un3();

@@ -109,3 +109,78 @@ async fn custom_model_folder_transcribes() {
         assert!(got.contains(word), "expected '{word}' in {:?}", result.text);
     }
 }
+
+/// Drives the hands-free pipeline (VAD -> transcription -> events) with
+/// recorded speech instead of a microphone.
+#[tokio::test]
+async fn hands_free_pipeline_transcribes_utterances() {
+    let Ok(dir) = std::env::var("LA_MODELS_DIR") else {
+        eprintln!("LA_MODELS_DIR not set; skipping hands-free pipeline test");
+        return;
+    };
+    use local_ai_assistant_lib::services::audio::capture::CaptureEvent;
+    use local_ai_assistant_lib::services::stt::session::{run_session_for_test, ListenMode, VoiceEvent};
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Mutex;
+
+    let store = Arc::new(ModelStore::new(dir.into()));
+    for id in ["whisper-base", "silero-vad", "kokoro-int8-en-v0_19"] {
+        if !store.is_installed(id) {
+            let m = catalog::find(id).unwrap();
+            download::install(&store, m, CancellationToken::new(), &|_| {}).await.expect("install");
+        }
+    }
+    let db = Arc::new(Db::open_in_memory().unwrap());
+    let settings = Arc::new(SettingsStore::load(db).unwrap());
+    let hw = hardware::detect();
+    let tts = TtsService::new(store.clone(), settings.clone(), hw.clone(), Arc::new(|_| {}));
+    let stt = SttService::new(store.clone(), hw.clone());
+    let vad_path = stt.vad_model_path().expect("silero vad installed");
+
+    // Two spoken sentences with a pause between them.
+    let (speech, rate) = tts.synthesize("Hello assistant, what is the weather today?", Lang::En, hw.inference_threads()).unwrap();
+    let pcm = sherpa_onnx::LinearResampler::create(rate as i32, 16_000).unwrap().resample(&speech, true);
+
+    let (tx, rx) = std::sync::mpsc::channel();
+    let stop = Arc::new(AtomicBool::new(false));
+    let events: Arc<Mutex<Vec<VoiceEvent>>> = Arc::new(Mutex::new(Vec::new()));
+    let sink = events.clone();
+    let stop_feeder = stop.clone();
+    std::thread::spawn(move || {
+        // Feed the audio in 20 ms chunks like the microphone would, then silence.
+        for chunk in pcm.chunks(320) {
+            let _ = tx.send(CaptureEvent::Samples(chunk.to_vec()));
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        for _ in 0..80 {
+            let _ = tx.send(CaptureEvent::Samples(vec![0.0; 320]));
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        std::thread::sleep(std::time::Duration::from_secs(4));
+        stop_feeder.store(true, Ordering::Relaxed);
+    });
+
+    let stt_settings = settings.get().stt;
+    run_session_for_test(
+        &stt,
+        &stt_settings,
+        ListenMode::HandsFree,
+        &rx,
+        Some(&vad_path),
+        Arc::new(move |ev| sink.lock().unwrap().push(ev)),
+        stop,
+    );
+
+    let seen = events.lock().unwrap();
+    let transcripts: Vec<String> = seen
+        .iter()
+        .filter_map(|e| match e {
+            VoiceEvent::Transcript { text, .. } => Some(text.clone()),
+            _ => None,
+        })
+        .collect();
+    eprintln!("hands-free transcripts: {transcripts:?}");
+    assert!(!transcripts.is_empty(), "hands-free produced no transcript; events: {:?}", seen.len());
+    let joined = transcripts.join(" ").to_lowercase();
+    assert!(joined.contains("weather"), "unexpected transcript: {joined}");
+}

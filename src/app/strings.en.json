@@ -78,7 +78,10 @@
     "suggestion2": "What's the latest PHP version?",
     "suggestion3": "ما هو أحدث إصدار من PHP؟",
     "suggestion4": "Wie kann ich meine Dateien organisieren?",
-    "closeHint": "The assistant keeps running in the tray"
+    "closeHint": "The assistant keeps running in the tray",
+    "pause": "Pause",
+    "resume": "Resume",
+    "stopSpeaking": "Stop speaking"
   },
   "tools": {
     "searching": "Searching the web…",
@@ -259,7 +262,14 @@
       "noCustom": "No extra folders added.",
       "detected": "Detected models",
       "unsupported": "Found but not usable",
-      "unsupportedHint": "These folders contain models in a format the local speech engine cannot run."
+      "unsupportedHint": "These folders contain models in a format the local speech engine cannot run.",
+      "callView": "Call screen for hands-free",
+      "callViewHint": "Show a phone-call style screen while a voice conversation is running.",
+      "autoStop": "Stop listening after silence",
+      "autoStopHint": "Ends a recording when nobody speaks for this long (0 = never).",
+      "handsFreeTimeout": "Leave hands-free after silence",
+      "seconds": "{{value}} s",
+      "never": "Never"
     },
     "voice": {
       "provider": "Provider",
@@ -316,7 +326,9 @@
       "openFolder": "Open models folder",
       "customHint": "You can also copy compatible sherpa-onnx models into the models folder.",
       "custom": "Custom",
-      "languagesAll": "Multilingual"
+      "languagesAll": "Multilingual",
+      "queued": "Queued",
+      "installedShort": "Installed"
     },
     "mcp": {
       "intro": "MCP servers give the local model extra abilities such as web search. Servers are never installed or enabled automatically.",
@@ -385,7 +397,18 @@
       "light": "Light",
       "dark": "Dark",
       "highContrast": "High contrast",
-      "fontSize": "Font size"
+      "fontSize": "Font size",
+      "accent": "Accent colour",
+      "accents": {
+        "teal": "Teal",
+        "blue": "Blue",
+        "green": "Green",
+        "amber": "Amber",
+        "rose": "Rose",
+        "slate": "Slate"
+      },
+      "assistantName": "Assistant name",
+      "assistantNameHint": "Shown in the window and used when the assistant introduces itself."
     },
     "shortcuts": {
       "openAssistant": "Open / focus assistant",
@@ -469,5 +492,15 @@
     "listening": "Listening",
     "speaking": "Speaking",
     "thinking": "Thinking"
+  },
+  "call": {
+    "title": "Voice conversation",
+    "listening": "Listening",
+    "transcribing": "Transcribing",
+    "thinking": "Thinking",
+    "speaking": "Speaking",
+    "saySomething": "Say something to start",
+    "end": "End conversation",
+    "interrupt": "Stop speaking"
   }
 }

@@ -37,6 +37,7 @@ pub struct Player {
     volume_bits: Arc<AtomicU32>,
     device_rate: Arc<AtomicU32>,
     playing: Arc<AtomicBool>,
+    paused: Arc<AtomicBool>,
     cmd: Sender<Cmd>,
 }
 
@@ -46,13 +47,14 @@ impl Player {
         let volume_bits = Arc::new(AtomicU32::new(1.0f32.to_bits()));
         let device_rate = Arc::new(AtomicU32::new(0));
         let playing = Arc::new(AtomicBool::new(false));
+        let paused = Arc::new(AtomicBool::new(false));
         let (cmd, rx) = mpsc::channel();
-        let (s, v, r, p) = (shared.clone(), volume_bits.clone(), device_rate.clone(), playing.clone());
+        let (s, v, r, p, pa) = (shared.clone(), volume_bits.clone(), device_rate.clone(), playing.clone(), paused.clone());
         std::thread::Builder::new()
             .name("audio-playback".into())
-            .spawn(move || run(rx, s, v, r, p))
+            .spawn(move || run(rx, s, v, r, p, pa))
             .expect("spawn playback thread");
-        let player = Self { shared, volume_bits, device_rate, playing, cmd };
+        let player = Self { shared, volume_bits, device_rate, playing, paused, cmd };
         let _ = player.cmd.send(Cmd::Open(device_id));
         player
     }
@@ -93,6 +95,7 @@ impl Player {
                 s.current.clear();
                 s.current_tag = None;
                 s.pos = 0;
+                self.paused.store(false, Ordering::Relaxed);
             }
             Some(tag) => {
                 let queue: Vec<Vec<f32>> = s.queue.drain(..).collect();
@@ -109,6 +112,15 @@ impl Player {
                 }
             }
         }
+    }
+
+    /// Pauses or resumes playback without losing the queue.
+    pub fn set_paused(&self, paused: bool) {
+        self.paused.store(paused, Ordering::Relaxed);
+    }
+
+    pub fn is_paused(&self) -> bool {
+        self.paused.load(Ordering::Relaxed)
     }
 
     /// True while audio is queued or playing.
@@ -128,14 +140,14 @@ impl Drop for Player {
     }
 }
 
-fn run(rx: Receiver<Cmd>, shared: Arc<Mutex<Shared>>, volume: Arc<AtomicU32>, rate: Arc<AtomicU32>, playing: Arc<AtomicBool>) {
+fn run(rx: Receiver<Cmd>, shared: Arc<Mutex<Shared>>, volume: Arc<AtomicU32>, rate: Arc<AtomicU32>, playing: Arc<AtomicBool>, paused: Arc<AtomicBool>) {
     let mut stream: Option<cpal::Stream> = None;
     loop {
         match rx.recv_timeout(Duration::from_millis(500)) {
             Ok(Cmd::Open(id)) => {
                 drop(stream.take());
                 rate.store(0, Ordering::Relaxed);
-                match open(id.as_deref(), shared.clone(), volume.clone(), playing.clone()) {
+                match open(id.as_deref(), shared.clone(), volume.clone(), playing.clone(), paused.clone()) {
                     Ok((s, r)) => {
                         rate.store(r, Ordering::Relaxed);
                         stream = Some(s);
@@ -149,16 +161,16 @@ fn run(rx: Receiver<Cmd>, shared: Arc<Mutex<Shared>>, volume: Arc<AtomicU32>, ra
     }
 }
 
-fn open(id: Option<&str>, shared: Arc<Mutex<Shared>>, volume: Arc<AtomicU32>, playing: Arc<AtomicBool>) -> AppResult<(cpal::Stream, u32)> {
+fn open(id: Option<&str>, shared: Arc<Mutex<Shared>>, volume: Arc<AtomicU32>, playing: Arc<AtomicBool>, paused: Arc<AtomicBool>) -> AppResult<(cpal::Stream, u32)> {
     let device = devices::output_device(id)?;
     let supported = device.default_output_config().map_err(|e| AppError::Audio(e.to_string()))?;
     let config = supported.config();
     let r = config.sample_rate;
     let stream = match supported.sample_format() {
-        SampleFormat::F32 => build::<f32>(&device, config, shared, volume, playing),
-        SampleFormat::I16 => build::<i16>(&device, config, shared, volume, playing),
-        SampleFormat::U16 => build::<u16>(&device, config, shared, volume, playing),
-        SampleFormat::I32 => build::<i32>(&device, config, shared, volume, playing),
+        SampleFormat::F32 => build::<f32>(&device, config, shared, volume, playing, paused),
+        SampleFormat::I16 => build::<i16>(&device, config, shared, volume, playing, paused),
+        SampleFormat::U16 => build::<u16>(&device, config, shared, volume, playing, paused),
+        SampleFormat::I32 => build::<i32>(&device, config, shared, volume, playing, paused),
         other => Err(format!("unsupported output format {other:?}")),
     }
     .map_err(AppError::Audio)?;
@@ -166,7 +178,7 @@ fn open(id: Option<&str>, shared: Arc<Mutex<Shared>>, volume: Arc<AtomicU32>, pl
     Ok((stream, r))
 }
 
-fn build<T>(device: &cpal::Device, config: cpal::StreamConfig, shared: Arc<Mutex<Shared>>, volume: Arc<AtomicU32>, playing: Arc<AtomicBool>) -> Result<cpal::Stream, String>
+fn build<T>(device: &cpal::Device, config: cpal::StreamConfig, shared: Arc<Mutex<Shared>>, volume: Arc<AtomicU32>, playing: Arc<AtomicBool>, paused: Arc<AtomicBool>) -> Result<cpal::Stream, String>
 where
     T: SizedSample + cpal::FromSample<f32> + Send + 'static,
 {
@@ -175,6 +187,10 @@ where
         .build_output_stream::<T, _, _>(
             config,
             move |out: &mut [T], _| {
+                if paused.load(Ordering::Relaxed) {
+                    playing.store(false, Ordering::Relaxed);
+                    return; // the buffer is pre-filled with silence
+                }
                 let vol = f32::from_bits(volume.load(Ordering::Relaxed));
                 let mut s = shared.lock().unwrap_or_else(|p| p.into_inner());
                 let mut any = false;

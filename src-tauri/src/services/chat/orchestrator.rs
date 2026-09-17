@@ -235,6 +235,7 @@ impl ChatEngine {
             tools: &tool_desc,
             has_web_tool,
             voice_mode,
+            assistant_name: &settings.general.assistant_name,
             custom_prompt: &settings.ai.system_prompt,
         });
         if needs_fresh_info(&text) {
