@@ -154,6 +154,15 @@ describe("Composer", () => {
 
 describe("shortcuts", () => {
   const ev = (code: string, mods: Partial<Record<"ctrlKey" | "altKey" | "shiftKey" | "metaKey", boolean>> = {}) => ({ code, ctrlKey: false, altKey: false, shiftKey: false, metaKey: false, ...mods });
+
+  it("enables the global shortcut permission in Tauri", () => {
+    const fs = require("node:fs");
+    const path = require("node:path");
+    const capPath = path.join(process.cwd(), "src-tauri", "capabilities", "default.json");
+    const cap = JSON.parse(fs.readFileSync(capPath, "utf8"));
+    expect(cap.permissions).toContain("global-shortcut:default");
+  });
+
   it("builds Tauri accelerators", () => {
     expect(acceleratorFromEvent(ev("Space", { ctrlKey: true }))).toBe("CommandOrControl+Space");
     expect(acceleratorFromEvent(ev("KeyD", { ctrlKey: true, altKey: true }))).toBe("CommandOrControl+Alt+D");
