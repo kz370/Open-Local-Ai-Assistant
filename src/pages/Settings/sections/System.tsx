@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { AlertTriangle, CheckCircle2, Copy, FolderOpen, Info, RefreshCw, XCircle } from "lucide-react";
-import { ipc } from "../../../app/ipc";
+import { ipc, toAppError } from "../../../app/ipc";
 import { errorMessage, formatBytes, t } from "../../../app/strings";
 import type { AppInfo, CapabilityReport, PrivacyStatus } from "../../../app/types";
 import { Switch } from "../../../components/common/controls";
@@ -58,6 +58,69 @@ export function PrivacySection() {
         </Row>
       </Card>
     </>
+  );
+}
+
+/** Calls every command the UI depends on and reports which ones answer. */
+function SelfTest() {
+  const [results, setResults] = useState<{ name: string; ok: boolean; detail: string }[]>([]);
+  const [running, setRunning] = useState(false);
+
+  const run = async () => {
+    setRunning(true);
+    const checks: [string, () => Promise<unknown>][] = [
+      ["get_settings", () => ipc.getSettings()],
+      ["conv_list", () => ipc.convList(5)],
+      ["conv_search", () => ipc.convSearch("")],
+      ["models_catalog", () => ipc.modelsCatalog()],
+      ["models_installed", () => ipc.modelsInstalled()],
+      ["models_incompatible", () => ipc.modelsIncompatible()],
+      ["tts_voices", () => ipc.ttsVoices()],
+      ["tts_state", () => ipc.ttsState()],
+      ["audio_devices", () => ipc.audioDevices()],
+      ["mcp_list", () => ipc.mcpList()],
+      ["lmstudio_models", () => ipc.lmstudioModels(false)],
+      ["shortcut_errors", () => ipc.shortcutErrors()],
+      ["app_info", () => ipc.appInfo()],
+      ["privacy_status", () => ipc.privacyStatus()],
+    ];
+    const out: { name: string; ok: boolean; detail: string }[] = [];
+    for (const [name, call] of checks) {
+      try {
+        const value = await call();
+        const size = Array.isArray(value) ? `${value.length} items` : typeof value === "object" && value ? "ok" : String(value);
+        out.push({ name, ok: value !== undefined, detail: size });
+      } catch (e) {
+        out.push({ name, ok: false, detail: toAppError(e).detail });
+      }
+    }
+    setResults(out);
+    setRunning(false);
+  };
+
+  useEffect(() => {
+    void run();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <Card
+      title={t("settings.diagnostics.selfTest")}
+      actions={
+        <button className="btn btn-sm" onClick={() => void run()} disabled={running}>
+          {running ? t("app.loading") : t("settings.diagnostics.runSelfTest")}
+        </button>
+      }
+    >
+      <p className="row-hint" style={{ margin: "10px 0 4px" }}>
+        {t("settings.diagnostics.selfTestHint")}
+      </p>
+      <ul className="check-list" style={{ padding: "8px 0" }}>
+        {results.map((r) => (
+          <CheckItem key={r.name} level={r.ok ? "ok" : "err"} label={`${r.name}: ${r.detail}`} />
+        ))}
+      </ul>
+    </Card>
   );
 }
 
@@ -141,6 +204,7 @@ export function DiagnosticsSection() {
           {info && <Row label={t("settings.diagnostics.version")}>{info.version}</Row>}
         </Card>
       )}
+      <SelfTest />
       <Card
         title={t("settings.diagnostics.logTail")}
         actions={
