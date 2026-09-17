@@ -1,0 +1,57 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Local Assistant",
+  "mainBinaryName": "local-ai-assistant",
+  "version": "0.1.0",
+  "identifier": "com.localassistant.app",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "withGlobalTauri": false,
+    "windows": [
+      {
+        "label": "main",
+        "title": "Local Assistant",
+        "url": "index.html#/",
+        "width": 420,
+        "height": 640,
+        "minWidth": 340,
+        "minHeight": 160,
+        "decorations": false,
+        "transparent": false,
+        "shadow": true,
+        "resizable": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "visible": false,
+        "focus": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' data: asset:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src ipc: http://ipc.localhost; script-src 'self'",
+      "freezePrototype": true
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis", "msi"],
+    "publisher": "Local Assistant",
+    "shortDescription": "Local-first desktop AI assistant powered by LM Studio",
+    "longDescription": "A private desktop assistant that uses your local LM Studio server, local speech recognition and local neural text-to-speech.",
+    "category": "Productivity",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "windows": {
+      "nsis": { "installMode": "currentUser" }
+    }
+  }
+}
