@@ -1111,6 +1111,16 @@ html.launcher-window #root {
   max-width: 340px;
   user-select: text;
 }
+.call-device {
+  font-size: var(--text-xs);
+  color: var(--text-faint);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+  max-width: 340px;
+}
 .call-actions {
   display: flex;
   align-items: center;

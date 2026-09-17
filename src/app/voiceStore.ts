@@ -15,6 +15,8 @@ interface VoiceState {
   speakingTag: string | null;
   paused: boolean;
   handsFree: boolean;
+  /// Microphone the running session opened.
+  device: string | null;
   /// Live text while the user is still speaking.
   partial: string;
   lastTranscript: string | null;
@@ -27,7 +29,7 @@ interface VoiceState {
 }
 
 const BARS = 24;
-let subscribed = false;
+let subscription: Promise<void> | null = null;
 
 export const useVoice = create<VoiceState>((set, get) => ({
   mode: null,
@@ -38,6 +40,7 @@ export const useVoice = create<VoiceState>((set, get) => ({
   speakingTag: null,
   paused: false,
   handsFree: false,
+  device: null,
   partial: "",
   lastTranscript: null,
   error: null,
@@ -75,18 +78,22 @@ export const useVoice = create<VoiceState>((set, get) => ({
   },
 
   subscribe: async () => {
-    // Guard against double subscriptions: they would send every spoken
-    // sentence to the assistant twice.
-    if (subscribed) return () => undefined;
-    subscribed = true;
-    const un1 = await on<VoiceEvent>("voice://event", (ev) => {
+    // Listeners are registered once per window and kept for its lifetime:
+    // re-subscribing (React strict mode remounts) must never duplicate them,
+    // and an unmount must never leave the window without any listener.
+    if (subscription) {
+      await subscription;
+      return () => undefined;
+    }
+    subscription = (async () => {
+      await on<VoiceEvent>("voice://event", (ev) => {
       if (ev.mode === "dictation" || ev.mode === "test") return;
       switch (ev.type) {
         case "state":
           if (ev.state === "idle") {
             set((s) => ({ phase: "idle", level: 0, mode: s.handsFree && ev.mode === "handsFree" ? null : s.mode === ev.mode ? null : s.mode, handsFree: ev.mode === "handsFree" ? false : s.handsFree }));
           } else {
-            set({ phase: ev.state, mode: ev.mode, handsFree: ev.mode === "handsFree" ? true : get().handsFree });
+            set({ phase: ev.state, mode: ev.mode, handsFree: ev.mode === "handsFree" ? true : get().handsFree, ...(ev.device ? { device: ev.device } : {}) });
           }
           break;
         case "level":
@@ -116,19 +123,16 @@ export const useVoice = create<VoiceState>((set, get) => ({
           break;
       }
     });
-    const un2 = await on<TtsEvent>("tts://event", (ev) => {
+      await on<TtsEvent>("tts://event", (ev) => {
       if (ev.type === "speaking") set({ speaking: true, speakingTag: ev.tag, paused: false });
       if (ev.type === "paused") set({ paused: true });
       if (ev.type === "resumed") set({ paused: false });
       if (ev.type === "idle") set({ speaking: false, speakingTag: null, paused: false });
       if (ev.type === "voiceUnavailable") useChat.getState().setVoiceNotice(t("chat.voiceUnavailable", { language: languageName(ev.language) }));
     });
-    const un3 = await on<AppErrorPayload>("voice://error", (e) => set({ error: e }));
-    return () => {
-      subscribed = false;
-      un1();
-      un2();
-      un3();
-    };
+      await on<AppErrorPayload>("voice://error", (e) => set({ error: e }));
+    })();
+    await subscription;
+    return () => undefined;
   },
 }));

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Mic, Pause, PhoneOff, Play } from "lucide-react";
 import { useChat } from "../../app/chatStore";
 import { ipc } from "../../app/ipc";
+import { useSettings } from "../../app/settingsStore";
 import { t } from "../../app/strings";
 import { useVoice } from "../../app/voiceStore";
 import { BrandMark } from "../common/BrandMark";
@@ -20,6 +21,10 @@ export function CallView() {
   const busy = useChat((s) => s.turnId !== null);
   const stop = useChat((s) => s.stop);
   const [startedAt] = useState(() => Date.now());
+  const micName = useVoice((s) => s.device);
+  const silent = useVoice((s) => s.levels.every((v) => v < 0.03));
+  const openSpeechSettings = () => void ipc.openSettings("speech");
+  useSettings((s) => s.settings?.stt.microphone); // re-render when the device changes
   const [, tick] = useState(0);
 
   useEffect(() => {
@@ -47,6 +52,14 @@ export function CallView() {
       <LevelMeter levels={voice.levels} max={44} label={t("voice.level")} />
       <div className="call-caption" dir={caption ? textDir(caption) : "auto"}>
         {caption || t("call.saySomething")}
+      </div>
+      <div className="call-device">
+        {micName ? t("call.usingMic", { device: micName }) : ""}
+        {silent && (
+          <button className="btn btn-sm" onClick={openSpeechSettings}>
+            {t("call.changeMic")}
+          </button>
+        )}
       </div>
       <div className="call-actions">
         <button

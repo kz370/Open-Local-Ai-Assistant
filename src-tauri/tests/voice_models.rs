@@ -184,3 +184,35 @@ async fn hands_free_pipeline_transcribes_utterances() {
     let joined = transcripts.join(" ").to_lowercase();
     assert!(joined.contains("weather"), "unexpected transcript: {joined}");
 }
+
+/// Checks that the default microphone actually delivers audio events.
+/// Runs only when LA_MIC_TEST=1 (needs a real input device).
+#[test]
+fn microphone_delivers_audio_events() {
+    if std::env::var("LA_MIC_TEST").ok().as_deref() != Some("1") {
+        eprintln!("LA_MIC_TEST not set; skipping microphone capture test");
+        return;
+    }
+    use local_ai_assistant_lib::services::audio::capture::{Capture, CaptureEvent};
+    let (mut capture, rx) = Capture::start(None).expect("microphone opens");
+    eprintln!("device: {}", capture.device_name);
+    let mut samples = 0usize;
+    let mut levels = 0usize;
+    let mut peak = 0f32;
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    while std::time::Instant::now() < deadline {
+        match rx.recv_timeout(std::time::Duration::from_millis(300)) {
+            Ok(CaptureEvent::Samples(s)) => samples += s.len(),
+            Ok(CaptureEvent::Level(v)) => {
+                levels += 1;
+                peak = peak.max(v);
+            }
+            Ok(CaptureEvent::Error(e)) => panic!("capture error: {e}"),
+            Err(_) => {}
+        }
+    }
+    capture.stop();
+    eprintln!("received {samples} samples and {levels} level updates in 2 s; peak level {peak:.3}");
+    assert!(samples > 16_000, "microphone delivered too little audio: {samples} samples");
+    assert!(levels > 10, "no level updates");
+}

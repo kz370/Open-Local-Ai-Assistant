@@ -56,6 +56,7 @@ export const Composer = forwardRef<ComposerHandle, { onVoiceSetup: () => void; a
             )}
           </div>
           <LevelMeter levels={voice.levels} label={t("voice.level")} />
+          {voice.device && <span className="row-hint" style={{ margin: 0 }}>{t("call.usingMic", { device: voice.device })}</span>}
           {voice.phase === "listening" && (
             <div className="recording-actions">
               <button className="btn btn-primary" onClick={() => void voice.stopPushToTalk(true)} autoFocus>
