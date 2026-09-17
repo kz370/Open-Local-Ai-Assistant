@@ -39,6 +39,10 @@ export function ChatApp() {
   const stickToBottom = useRef(true);
 
   const handsFree = useVoice((s) => s.handsFree);
+  const voiceMode = useVoice((s) => s.mode);
+  const voicePhase = useVoice((s) => s.phase);
+  const stopPtt = useVoice((s) => s.stopPushToTalk);
+  const recording = voiceMode === "pushToTalk" && voicePhase !== "idle";
   const callView = (settings?.stt.callView ?? true) && handsFree;
   const developer = settings?.general.developerMode ?? false;
   const compact = settings?.general.compact ?? false;
@@ -126,6 +130,14 @@ export function ChatApp() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // Esc cancels push-to-talk record (listening AND transcribing),
+      // discarding audio. Takes priority over minimize.
+      if (e.key === "Escape" && recording) {
+        e.preventDefault();
+        e.stopPropagation();
+        void stopPtt(false);
+        return;
+      }
       const mod = e.ctrlKey || e.metaKey;
       if (mod && e.key.toLowerCase() === "n") {
         e.preventDefault();
@@ -136,14 +148,14 @@ export function ChatApp() {
         setShowHistory((v) => !v);
       } else if (mod && e.key === ",") {
         e.preventDefault();
-        void ipc.openSettings();
+        void ipc.openSettings().catch((err) => console.error("open settings failed", err));
       } else if (e.key === "Escape" && !busy && !showHistory && !document.querySelector(".dialog, .picker-menu")) {
         void ipc.minimizeWindow();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [busy, showHistory, newConversation]);
+  }, [busy, showHistory, newConversation, recording, stopPtt]);
 
   useEffect(() => {
     const el = listRef.current;
@@ -206,7 +218,7 @@ export function ChatApp() {
           <button className={`icon-btn${showHistory ? " active" : ""}`} aria-label={t("app.history")} title={`${t("app.history")} (Ctrl+H)`} aria-pressed={showHistory} onClick={() => setShowHistory((v) => !v)}>
             <History size={16} />
           </button>
-          <button className="icon-btn" aria-label={t("app.settings")} title={`${t("app.settings")} (Ctrl+,)`} onClick={() => void ipc.openSettings()}>
+          <button className="icon-btn" aria-label={t("app.settings")} title={`${t("app.settings")} (Ctrl+,)`} onClick={() => void ipc.openSettings().catch((err) => console.error("open settings failed", err))}>
             <Settings2 size={16} />
           </button>
           <span className="header-sep" aria-hidden />

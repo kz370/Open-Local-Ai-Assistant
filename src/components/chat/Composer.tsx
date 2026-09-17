@@ -62,7 +62,7 @@ export const Composer = forwardRef<ComposerHandle, { onVoiceSetup: () => void; a
               <button className="btn btn-primary" onClick={() => void voice.stopPushToTalk(true)} autoFocus>
                 <Square size={12} fill="currentColor" /> {t("voice.stop")}
               </button>
-              <button className="btn" onClick={() => void voice.stopPushToTalk(false)}>
+              <button className="btn" onClick={() => void voice.stopPushToTalk(false)} title="Esc">
                 {t("voice.cancel")}
               </button>
             </div>

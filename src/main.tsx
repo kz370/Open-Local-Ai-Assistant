@@ -36,6 +36,13 @@ function Root() {
   const settings = useSettings((s) => s.settings);
   const [ready, setReady] = useState(false);
   const [startupError, setStartupError] = useState<string | null>(null);
+  // Stuck detector: if boot takes >3s (hang, not crash), say so visibly.
+  const [stuck, setStuck] = useState(false);
+  useEffect(() => {
+    if (ready) return;
+    const id = window.setTimeout(() => setStuck(true), 3000);
+    return () => window.clearTimeout(id);
+  }, [ready]);
 
   useEffect(() => {
     document.documentElement.dataset.route = route;
@@ -76,7 +83,16 @@ function Root() {
     );
   }
   // Always render something so the window is never truly empty.
-  if (!ready || !settings) return <div className="boot" aria-busy="true" />;
+  if (!ready || !settings)
+    return (
+      <div className="boot" aria-busy="true">
+        {stuck && (
+          <div style={{ padding: 24, fontSize: 13, color: "var(--text-muted)", userSelect: "text" }}>
+            Still loading “{route}”… backend not answering. Quit from tray, restart dev, retry.
+          </div>
+        )}
+      </div>
+    );
   const screen =
     route === "overlay" ? (
       <Overlay />

@@ -264,15 +264,7 @@ pub fn show_main(app: &AppHandle, focus_input: bool) {
     if win.is_minimized().unwrap_or(false) {
         let _ = win.unminimize();
     }
-    suppress_persistence();
-    // Snap to anchor. Resize loop sluggish on Windows; morph veil in
-    // webview (GPU) gives continuity with zero native resize.
-    if let Some((tx, ty, _, _)) = target {
-        let _ = win.set_position(PhysicalPosition::new(tx, ty));
-    }
-    let _ = win.show();
-    let _ = win.set_focus();
-    hide_bubble(app);
+    let animated = bubble_rect.is_some() && was_hidden;
     // Bubble center in main logical px so shell zooms from bubble spot.
     // Custom-pos windows keep their place; origin outside box still gives
     // directional grow toward bubble.
@@ -294,8 +286,21 @@ pub fn show_main(app: &AppHandle, focus_input: bool) {
             }
         }
     };
-    let animated = bubble_rect.is_some() && was_hidden;
+    // Pre-arm BEFORE swapping: hidden webview still runs JS, so opening
+    // state commits offscreen. First visible frame already mid-zoom at bubble
+    // spot. Never a frame with both bubble + full chat, never stale veil.
     let _ = app.emit_to(MAIN, "app://window-shown", serde_json::json!({ "origin": origin, "animated": animated, "fx": fx, "fy": fy }));
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    suppress_persistence();
+    // Snap to anchor. Resize loop sluggish on Windows; shell zoom in webview
+    // (GPU) gives continuity with zero native resize.
+    if let Some((tx, ty, _, _)) = target {
+        let _ = win.set_position(PhysicalPosition::new(tx, ty));
+    }
+    // Hide FIRST, same tick as show: never both visible.
+    hide_bubble(app);
+    let _ = win.show();
+    let _ = win.set_focus();
     if focus_input {
         let _ = app.emit_to(MAIN, "app://focus-input", ());
     }
@@ -415,20 +420,39 @@ pub fn set_compact(app: &AppHandle, compact: bool) {
 
 pub fn open_settings(app: &AppHandle, section: Option<&str>) -> tauri::Result<()> {
     let route = format!("index.html#/settings/{}", section.unwrap_or("general"));
+    tracing::info!(route = %route, "open_settings requested");
     if let Some(w) = app.get_webview_window(SETTINGS) {
+        tracing::info!("open_settings reusing existing window");
         let _ = app.emit_to(SETTINGS, "app://navigate", format!("/settings/{}", section.unwrap_or("general")));
         let _ = w.unminimize();
-        w.show()?;
-        w.set_focus()?;
+        if let Err(e) = w.show() {
+            tracing::error!(error = %e, "open_settings reuse show failed");
+            return Err(e.into());
+        }
+        if let Err(e) = w.set_focus() {
+            tracing::error!(error = %e, "open_settings reuse focus failed");
+            return Err(e.into());
+        }
         return Ok(());
     }
-    let w = WebviewWindowBuilder::new(app, SETTINGS, WebviewUrl::App(route.into()))
+    tracing::info!("open_settings creating new window");
+    let w = match WebviewWindowBuilder::new(app, SETTINGS, WebviewUrl::App(route.into()))
         .title("Local Assistant — Settings")
         .inner_size(1000.0, 720.0)
         .min_inner_size(720.0, 520.0)
         .center()
-        .visible(true)
-        .build()?;
+        // Transparent like every working window (bubble/overlay/main):
+        // CSS paints opaque bg, so look identical when healthy.
+        .transparent(true)
+        .visible(false)
+        .build()
+    {
+        Ok(w) => w,
+        Err(e) => {
+            tracing::error!(error = %e, "open_settings build failed");
+            return Err(e.into());
+        }
+    };
     // Hide rather than destroy on close: rebuilding this window from scratch
     // can render blank (WebView2 re-creates the same label too quickly), and
     // destroying it while a shortcut is mid-recording would skip the cleanup
@@ -444,7 +468,14 @@ pub fn open_settings(app: &AppHandle, section: Option<&str>) -> tauri::Result<()
             }
         }
     });
-    w.set_focus()?;
+    // Show after build (all working windows do this): building visible races
+    // WebView2 init and paints blank.
+    if let Err(e) = w.show() {
+        tracing::error!(error = %e, "open_settings show failed");
+    }
+    if let Err(e) = w.set_focus() {
+        tracing::error!(error = %e, "open_settings focus failed");
+    }
     Ok(())
 }
 
