@@ -117,7 +117,7 @@ impl TtsService {
             Lang::Ar => s.voice_ar,
             Lang::De => s.voice_de,
         };
-        select_voice(&self.voices(), lang, &pref)
+        select_voice(&self.voices(), lang, &pref, &s.preferred_gender)
     }
 
     pub fn apply_settings(&self) {
@@ -154,6 +154,13 @@ impl TtsService {
                 config.model.vits.model = path(onnx);
                 config.model.vits.tokens = path(tokens);
                 config.model.vits.data_dir = path(data_dir);
+                config.model.vits.lexicon = dir.join("lexicon.txt").exists().then(|| dir.join("lexicon.txt").to_string_lossy().to_string());
+            }
+            Engine::Kitten => {
+                config.model.kitten.model = path(onnx);
+                config.model.kitten.voices = path(dir.join("voices.bin"));
+                config.model.kitten.tokens = path(tokens);
+                config.model.kitten.data_dir = path(data_dir);
             }
             _ => return Err(AppError::Tts("not a TTS model".into())),
         }

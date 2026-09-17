@@ -144,6 +144,28 @@
 .model-item:last-child {
   border-bottom: 0;
 }
+.folder-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 0 12px;
+}
+.folder-item {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 10px;
+}
+.folder-path {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  direction: ltr;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  user-select: text;
+}
 .alias-input {
   width: 150px !important;
   min-height: 28px;
@@ -332,29 +354,65 @@
 
 /* ---------- Dictation overlay ---------- */
 html.overlay,
-html.overlay body {
-  background: transparent;
+html.overlay body,
+html.overlay #root {
+  background: transparent !important;
 }
-.overlay-pill {
-  margin: 6px;
-  height: 52px;
+.overlay-card {
+  margin: 8px;
+  height: calc(100% - 16px);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 16px;
+  border-radius: 18px;
+  background: var(--popover);
+  border: 1px solid var(--hairline);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+.overlay-card.done {
+  border-color: color-mix(in srgb, var(--success) 50%, var(--hairline));
+}
+.overlay-head {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 0 16px;
-  border-radius: 26px;
-  background: var(--surface);
-  border: 1px solid var(--border-strong);
-  box-shadow: var(--shadow-md);
   font-size: var(--text-sm);
-  font-weight: 500;
+  font-weight: 600;
+  flex: none;
 }
-.overlay-pill .meter {
-  height: 22px;
+.overlay-head .ic-listening {
+  color: var(--danger);
+  animation: pulse 1.2s infinite;
+}
+.overlay-label {
+  white-space: nowrap;
+}
+.overlay-head .meter {
+  height: 18px;
   flex: 1;
+  justify-content: flex-start;
 }
-.overlay-pill .meter span {
+.overlay-head .meter span {
   width: 3px;
+}
+.overlay-hint {
+  font-size: var(--text-xs);
+  font-weight: 400;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+.overlay-text {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  font-size: var(--text-md);
+  line-height: 1.5;
+  user-select: text;
+}
+.overlay-text.empty {
+  color: var(--text-faint);
 }
 
 @media (max-width: 700px) {

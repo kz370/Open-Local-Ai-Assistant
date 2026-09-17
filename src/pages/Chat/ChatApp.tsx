@@ -163,7 +163,7 @@ export function ChatApp() {
           <button className="icon-btn" aria-label={t("app.minimize")} title={t("app.minimize")} onClick={() => void ipc.minimizeWindow()}>
             <Minus size={16} />
           </button>
-          <button className="icon-btn danger" aria-label={t("app.quit")} title={t("app.quit")} onClick={() => void ipc.quit()}>
+          <button className="icon-btn danger" aria-label={t("app.close")} title={`${t("app.close")} — ${t("chat.closeHint")}`} onClick={() => void ipc.hideWindow()}>
             <X size={16} />
           </button>
         </div>

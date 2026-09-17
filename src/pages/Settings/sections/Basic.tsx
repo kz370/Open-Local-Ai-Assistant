@@ -20,7 +20,7 @@ export function GeneralSection() {
     <>
       <SectionHeader title={t("settings.sections.general")} />
       <Card>
-        <Row label={t("settings.general.startWithOs")} htmlFor="sw-os">
+        <Row label={t("settings.general.startWithOs")} hint={t("settings.general.startWithOsHint")} htmlFor="sw-os">
           <Switch id="sw-os" label={t("settings.general.startWithOs")} checked={g.startWithOs} onChange={(v) => set((d) => void (d.general.startWithOs = v))} />
         </Row>
         <Row label={t("settings.general.startMinimized")} htmlFor="sw-min">

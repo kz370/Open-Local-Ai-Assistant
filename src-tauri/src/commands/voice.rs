@@ -115,6 +115,12 @@ pub fn models_installed(state: State<'_, AppState>) -> Vec<crate::services::mode
     state.models.installed()
 }
 
+/// Model folders the app found but cannot run (e.g. PyTorch-only exports).
+#[tauri::command]
+pub fn models_incompatible(state: State<'_, AppState>) -> Vec<crate::services::models::IncompatibleModel> {
+    state.models.incompatible()
+}
+
 /// Downloads the given catalog models sequentially. Called only after the
 /// user explicitly confirmed the download in the UI.
 #[tauri::command]

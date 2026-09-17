@@ -1,7 +1,7 @@
 {
   "app": {
     "name": "Local Assistant",
-    "close": "Close",
+    "close": "Close to tray",
     "hide": "Hide",
     "minimize": "Minimize to bubble",
     "compact": "Compact mode",
@@ -77,7 +77,8 @@
     "suggestion1": "Explain dependency injection in simple terms",
     "suggestion2": "What's the latest PHP version?",
     "suggestion3": "ما هو أحدث إصدار من PHP؟",
-    "suggestion4": "Wie kann ich meine Dateien organisieren?"
+    "suggestion4": "Wie kann ich meine Dateien organisieren?",
+    "closeHint": "The assistant keeps running in the tray"
   },
   "tools": {
     "searching": "Searching the web…",
@@ -174,7 +175,7 @@
       "diagnostics": "Diagnostics"
     },
     "general": {
-      "startWithOs": "Start with operating system",
+      "startWithOs": "Start with Windows",
       "startMinimized": "Start minimized to tray",
       "alwaysOnTop": "Always on top",
       "windowPosition": "Window position",
@@ -187,7 +188,8 @@
       "windowSize": "Window size",
       "compact": "Compact mode",
       "developerMode": "Developer mode",
-      "developerModeHint": "Show MCP server, tool name, arguments, results and timing for every tool call."
+      "developerModeHint": "Show MCP server, tool name, arguments, results and timing for every tool call.",
+      "startWithOsHint": "Launch the assistant automatically when you sign in."
     },
     "ai": {
       "server": "LM Studio server",
@@ -245,7 +247,19 @@
       "vadThreshold": "Speech detection sensitivity",
       "silence": "Pause before an utterance ends (ms)",
       "models": "Speech models",
-      "noModel": "No speech recognition model installed."
+      "noModel": "No speech recognition model installed.",
+      "folders": "Model folders",
+      "foldersHint": "Models installed by the app live in its own folder. Add your own folders to use models you downloaded yourself (Whisper, Parakeet/NeMo, SenseVoice, Moonshine, Paraformer).",
+      "addFolder": "Add folder",
+      "removeFolder": "Remove folder",
+      "appFolder": "App models folder",
+      "loadedFrom": "Loaded from",
+      "family": "Type",
+      "streaming": "Live text",
+      "noCustom": "No extra folders added.",
+      "detected": "Detected models",
+      "unsupported": "Found but not usable",
+      "unsupportedHint": "These folders contain models in a format the local speech engine cannot run."
     },
     "voice": {
       "provider": "Provider",
@@ -257,7 +271,13 @@
       "testVoice": "Test voice",
       "stop": "Stop",
       "models": "Voice models",
-      "none": "No voice installed"
+      "none": "No voice installed",
+      "gender": "Preferred voice",
+      "genderHint": "Used when a voice is chosen automatically.",
+      "genderAny": "Any",
+      "genderFemale": "Female",
+      "genderMale": "Male",
+      "localHint": "Voices can also be loaded from your own folders (see Speech Recognition - Model folders)."
     },
     "language": {
       "response": "Response language",
@@ -434,7 +454,10 @@
     "correcting": "Correcting…",
     "inserted": "Inserted",
     "empty": "No speech detected",
-    "error": "Dictation failed"
+    "error": "Dictation failed",
+    "speakNow": "Speak now",
+    "hint": "Release to insert",
+    "hintToggle": "Press the shortcut again to insert"
   },
   "languages": {
     "en": "English",

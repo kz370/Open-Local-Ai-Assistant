@@ -103,7 +103,8 @@ impl LocalCapabilityManager {
     pub fn detect_voice(&self, settings: &Settings) -> VoiceCapability {
         let installed = self.store.installed();
         let voices = self.tts.voices();
-        let voice_name = |lang: Lang, pref: &str| crate::services::tts::voices::select_voice(&voices, lang, pref).map(|v| v.name);
+        let gender = settings.tts.preferred_gender.clone();
+        let voice_name = |lang: Lang, pref: &str| crate::services::tts::voices::select_voice(&voices, lang, pref, &gender).map(|v| v.name);
         VoiceCapability {
             stt_model: self.stt.resolve_model(&settings.stt).map(|m| m.id),
             vad_ready: installed.iter().any(|m| m.kind == ModelKind::Vad),

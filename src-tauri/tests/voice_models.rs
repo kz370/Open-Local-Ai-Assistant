@@ -71,3 +71,41 @@ async fn tts_stt_roundtrip_three_languages() {
         }
     }
 }
+
+/// Verifies a user-supplied model folder (any sherpa-onnx family), e.g.
+/// `LA_STREAM_MODEL='H:\Models\openwhispr\parakeet-models\nemotron-3.5-asr-streaming-0.6b'`.
+#[tokio::test]
+async fn custom_model_folder_transcribes() {
+    let (Ok(models_dir), Ok(model_path)) = (std::env::var("LA_MODELS_DIR"), std::env::var("LA_STREAM_MODEL")) else {
+        eprintln!("LA_MODELS_DIR/LA_STREAM_MODEL not set; skipping custom-model test");
+        return;
+    };
+    let model_dir = std::path::PathBuf::from(&model_path);
+    let files = local_ai_assistant_lib::services::stt::engine::detect(&model_dir).expect("recognized model folder");
+    eprintln!("detected family: {} (streaming: {})", files.family.label(), files.family.is_streaming());
+
+    // Speak a sentence with the local TTS, then transcribe it with the user's model.
+    let store = Arc::new(ModelStore::new(models_dir.into()));
+    let db = Arc::new(Db::open_in_memory().unwrap());
+    let settings = Arc::new(SettingsStore::load(db).unwrap());
+    let hw = hardware::detect();
+    let tts = TtsService::new(store.clone(), settings.clone(), hw.clone(), Arc::new(|_| {}));
+    let text = "The assistant can transcribe speech with a local model.";
+    let (samples, rate) = tts.synthesize(text, Lang::En, hw.inference_threads()).expect("synthesize");
+    let mut pcm = sherpa_onnx::LinearResampler::create(rate as i32, 16_000).unwrap().resample(&samples, true);
+    pcm.extend(std::iter::repeat(0.0).take(8_000));
+
+    // The model lives outside the app folder: register it as an extra folder.
+    store.set_extra_dirs(vec![model_dir.parent().unwrap().to_path_buf()]);
+    let stt = SttService::new(store, hw);
+    let mut stt_settings = settings.get().stt;
+    stt_settings.model = model_dir.file_name().unwrap().to_string_lossy().to_string();
+    assert!(stt.is_ready(&stt_settings), "model not discovered in the extra folder");
+
+    let result = stt.transcribe(&pcm, &stt_settings).expect("transcribe");
+    eprintln!("[{}] {} ms -> {:?}", result.model_id, result.elapsed_ms, result.text);
+    let got = result.text.to_lowercase();
+    for word in ["transcribe", "local", "model"] {
+        assert!(got.contains(word), "expected '{word}' in {:?}", result.text);
+    }
+}

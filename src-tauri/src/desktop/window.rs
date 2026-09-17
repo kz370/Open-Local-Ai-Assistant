@@ -194,6 +194,15 @@ pub fn show_main(app: &AppHandle, focus_input: bool) {
     }
 }
 
+/// Hides every window: the app keeps running in the system tray.
+pub fn hide_to_tray(app: &AppHandle) {
+    for label in [MAIN, BUBBLE, OVERLAY] {
+        if let Some(w) = app.get_webview_window(label) {
+            let _ = w.hide();
+        }
+    }
+}
+
 /// Hides the chat window and returns to the floating bubble.
 pub fn minimize_to_bubble(app: &AppHandle) {
     if let Some(w) = main_window(app) {
@@ -217,9 +226,9 @@ pub fn toggle_main(app: &AppHandle) {
 pub fn on_main_window_event(app: &AppHandle, event: &tauri::WindowEvent) {
     match event {
         tauri::WindowEvent::CloseRequested { api, .. } => {
-            // Alt+F4 and similar behave like minimize; the close button quits explicitly.
+            // Closing (X or Alt+F4) hides to the tray; quitting happens from the tray menu.
             api.prevent_close();
-            minimize_to_bubble(app);
+            hide_to_tray(app);
         }
         tauri::WindowEvent::Moved(pos) => {
             if now_ms() < SUPPRESS_UNTIL.load(Ordering::Relaxed) {
@@ -293,7 +302,7 @@ pub fn create_overlay(app: &AppHandle) -> tauri::Result<WebviewWindow> {
     }
     WebviewWindowBuilder::new(app, OVERLAY, WebviewUrl::App("index.html#/overlay".into()))
         .title("Dictation")
-        .inner_size(300.0, 72.0)
+        .inner_size(440.0, 128.0)
         .decorations(false)
         .transparent(true)
         .shadow(false)
@@ -311,7 +320,7 @@ pub fn show_overlay(app: &AppHandle) {
     let Ok(w) = create_overlay(app) else { return };
     if let Ok(Some(m)) = w.primary_monitor() {
         let area = m.work_area();
-        let size = w.outer_size().unwrap_or(PhysicalSize::new(300, 72));
+        let size = w.outer_size().unwrap_or(PhysicalSize::new(440, 128));
         let x = area.position.x + (area.size.width as i32 - size.width as i32) / 2;
         let y = area.position.y + area.size.height as i32 - size.height as i32 - 40;
         let _ = w.set_position(PhysicalPosition::new(x, y));
