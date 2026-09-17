@@ -294,6 +294,21 @@ pub fn open_settings(app: &AppHandle, section: Option<&str>) -> tauri::Result<()
         .center()
         .visible(true)
         .build()?;
+    // Hide rather than destroy on close: rebuilding this window from scratch
+    // can render blank (WebView2 re-creates the same label too quickly), and
+    // destroying it while a shortcut is mid-recording would skip the cleanup
+    // that re-registers global shortcuts, leaving them dead for the session.
+    // register_all() here is a safety net for that second case regardless.
+    let h = app.clone();
+    w.on_window_event(move |e| {
+        if let tauri::WindowEvent::CloseRequested { api, .. } = e {
+            api.prevent_close();
+            super::shortcuts::register_all(&h);
+            if let Some(w) = h.get_webview_window(SETTINGS) {
+                let _ = w.hide();
+            }
+        }
+    });
     w.set_focus()?;
     Ok(())
 }
