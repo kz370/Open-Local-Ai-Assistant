@@ -29,7 +29,15 @@ pub async fn save_settings(app: AppHandle, state: State<'_, AppState>, settings:
     if before.ai.request_timeout_secs != saved.ai.request_timeout_secs {
         state.lmstudio.set_timeout(saved.ai.request_timeout_secs);
     }
-    if before.stt.model != saved.stt.model || before.stt.language != saved.stt.language {
+    if before.stt.extra_model_dirs != saved.stt.extra_model_dirs {
+        state.models.set_extra_dirs(saved.stt.extra_model_dirs.iter().map(std::path::PathBuf::from).collect());
+        let _ = app.emit("models://changed", ());
+    }
+    if before.stt.model != saved.stt.model
+        || before.stt.language != saved.stt.language
+        || before.stt.extra_model_dirs != saved.stt.extra_model_dirs
+        || before.stt.silence_ms != saved.stt.silence_ms
+    {
         state.stt.unload();
     }
     if before.tts.output_device != saved.tts.output_device || before.tts.volume != saved.tts.volume {
@@ -154,9 +162,10 @@ pub fn window_set_compact(app: AppHandle, compact: bool) {
     window::set_compact(&app, compact);
 }
 
+/// Closes the assistant to the system tray (all windows hidden).
 #[tauri::command]
 pub fn window_hide(app: AppHandle) {
-    window::minimize_to_bubble(&app);
+    window::hide_to_tray(&app);
 }
 
 /// Called by the bubble when clicked.

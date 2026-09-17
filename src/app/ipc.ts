@@ -12,6 +12,7 @@ import type {
   ConnectionStatus,
   Conversation,
   ImportCandidate,
+  IncompatibleModel,
   InstalledModel,
   ListenMode,
   McpServerConfig,
@@ -98,6 +99,7 @@ export const ipc = {
   // models
   modelsCatalog: () => invoke<CatalogEntry[]>("models_catalog"),
   modelsInstalled: () => invoke<InstalledModel[]>("models_installed"),
+  modelsIncompatible: () => invoke<IncompatibleModel[]>("models_incompatible"),
   modelsDownload: (ids: string[]) => invoke<void>("models_download", { ids }),
   modelsCancel: (id: string) => invoke<void>("models_cancel", { id }),
   modelsDelete: (id: string) => invoke<void>("models_delete", { id }),

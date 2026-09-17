@@ -4,6 +4,7 @@ import { useChat } from "./app/chatStore";
 import { ipc } from "./app/ipc";
 import { useSettings } from "./app/settingsStore";
 import { useVoice } from "./app/voiceStore";
+import { ErrorBoundary } from "./components/common/ErrorBoundary";
 import { Bubble } from "./pages/Bubble/Bubble";
 import { ChatApp } from "./pages/Chat/ChatApp";
 import { Overlay } from "./pages/Overlay/Overlay";
@@ -34,6 +35,7 @@ function Root() {
   const [route] = useState(routeFromHash);
   const settings = useSettings((s) => s.settings);
   const [ready, setReady] = useState(false);
+  const [startupError, setStartupError] = useState<string | null>(null);
 
   useEffect(() => {
     const cleanups: (() => void)[] = [];
@@ -48,16 +50,39 @@ function Root() {
       }
       setReady(true);
       if (route === "chat") void ipc.appReady();
-    })();
+    })().catch((e: unknown) => {
+      console.error("startup failed", e);
+      setStartupError(e instanceof Error ? e.message : JSON.stringify(e));
+      setReady(true);
+    });
     return () => cleanups.forEach((c) => c());
   }, [route]);
 
+  if (startupError || (ready && !settings)) {
+    return (
+      <div style={{ padding: 20, userSelect: "text" }}>
+        <h1 style={{ fontSize: 16, margin: "0 0 6px" }}>Local Assistant could not start.</h1>
+        <p style={{ fontSize: 13, color: "var(--text-muted)" }}>{startupError ?? "Settings could not be loaded."}</p>
+        <button className="btn" onClick={() => location.reload()}>
+          Retry
+        </button>
+      </div>
+    );
+  }
   if (!ready || !settings) return null;
-  if (route === "overlay") return <Overlay />;
-  if (route === "bubble") return <Bubble />;
-  if (route === "settings") return <SettingsApp />;
-  if (!settings.general.firstRunComplete) return <SetupWizard onDone={() => void useSettings.getState().load()} />;
-  return <ChatApp />;
+  const screen =
+    route === "overlay" ? (
+      <Overlay />
+    ) : route === "bubble" ? (
+      <Bubble />
+    ) : route === "settings" ? (
+      <SettingsApp />
+    ) : !settings.general.firstRunComplete ? (
+      <SetupWizard onDone={() => void useSettings.getState().load()} />
+    ) : (
+      <ChatApp />
+    );
+  return <ErrorBoundary where={route}>{screen}</ErrorBoundary>;
 }
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(

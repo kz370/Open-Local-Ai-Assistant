@@ -53,6 +53,7 @@ export interface Settings {
     pushToTalk: boolean;
     vadThreshold: number;
     silenceMs: number;
+    extraModelDirs: string[];
   };
   tts: {
     speakResponses: boolean;
@@ -62,6 +63,7 @@ export interface Settings {
     speed: number;
     volume: number;
     outputDevice: string | null;
+    preferredGender: "any" | "female" | "male";
   };
   dictation: {
     enabled: boolean;
@@ -171,7 +173,8 @@ export type ChatEvent =
 export type ListenMode = "pushToTalk" | "handsFree" | "dictation" | "test";
 
 export type VoiceEvent =
-  | { type: "state"; mode: ListenMode; state: "listening" | "transcribing" | "idle"; device: string | null }
+  | { type: "state"; mode: ListenMode; state: "listening" | "transcribing" | "idle"; device: string | null; streaming: boolean }
+  | { type: "partial"; mode: ListenMode; text: string }
   | { type: "level"; mode: ListenMode; value: number }
   | { type: "transcript"; mode: ListenMode; text: string; language: string | null; audioMs: number; elapsedMs: number }
   | { type: "error"; mode: ListenMode; code: string; detail: string };
@@ -196,6 +199,7 @@ export interface VoiceInfo {
   speakerId: number;
   engine: string;
   quality: number;
+  gender: string;
 }
 
 export interface CatalogEntry {
@@ -221,6 +225,16 @@ export interface InstalledModel {
   languages: string[];
   path: string;
   source: "catalog" | "custom";
+  family: string | null;
+  streaming: boolean;
+  gender: string;
+  sizeBytes: number;
+}
+
+export interface IncompatibleModel {
+  name: string;
+  path: string;
+  reason: string;
 }
 
 export interface DownloadProgress {
@@ -337,6 +351,7 @@ export interface PrivacyStatus {
 
 export interface DictationStateEvent {
   state: "listening" | "transcribing" | "idle" | "correcting" | "inserted" | "empty" | "error";
+  text?: string;
   error?: AppErrorPayload;
   result?: { raw: string; inserted: string; corrected: boolean; correctionError: string | null };
 }

@@ -1,13 +1,19 @@
-//! Local speech-to-text with Whisper (sherpa-onnx). Audio never leaves the machine.
+//! Local speech-to-text. Audio never leaves the machine.
+//!
+//! Works with any compatible sherpa-onnx model folder (Whisper, NeMo/Parakeet
+//! transducers, NeMo CTC, SenseVoice, Moonshine, Paraformer), including models
+//! the user downloaded from Hugging Face into their own folders.
 
+pub mod engine;
 pub mod session;
 
 use crate::errors::{AppError, AppResult};
 use crate::services::hardware::HardwareInfo;
 use crate::services::language::{detect, Lang};
-use crate::services::models::catalog::{self, Engine, ModelKind};
+use crate::services::models::catalog::{self, ModelKind};
 use crate::services::models::{find_file, InstalledModel, ModelStore};
 use crate::settings::SttSettings;
+use engine::{EngineOptions, Recognizer};
 use serde::Serialize;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -25,7 +31,7 @@ pub struct Transcription {
 
 struct Loaded {
     key: String,
-    recognizer: sherpa_onnx::OfflineRecognizer,
+    recognizer: Recognizer,
 }
 
 pub struct SttService {
@@ -34,7 +40,7 @@ pub struct SttService {
     loaded: Mutex<Option<Loaded>>,
 }
 
-/// Minimum audio length worth transcribing (Whisper hallucinates on near-silence).
+/// Minimum audio length worth transcribing (models hallucinate on near-silence).
 pub const MIN_AUDIO_MS: u64 = 350;
 
 impl SttService {
@@ -44,12 +50,7 @@ impl SttService {
 
     /// Chooses the configured model, or the best installed one automatically.
     pub fn resolve_model(&self, settings: &SttSettings) -> Option<InstalledModel> {
-        let installed: Vec<InstalledModel> = self
-            .store
-            .installed()
-            .into_iter()
-            .filter(|m| m.kind == ModelKind::Stt && m.engine == Engine::Whisper)
-            .collect();
+        let installed: Vec<InstalledModel> = self.store.installed().into_iter().filter(|m| m.kind == ModelKind::Stt).collect();
         if settings.model != "auto" {
             if let Some(m) = installed.iter().find(|m| m.id == settings.model) {
                 return Some(m.clone());
@@ -60,7 +61,7 @@ impl SttService {
             .into_iter()
             .max_by_key(|m| {
                 let c = catalog::find(&m.id);
-                let quality = c.map(|c| c.quality).unwrap_or(3) as i64;
+                let quality = c.map(|c| c.quality as i64).unwrap_or(4); // user-supplied models rank above the tiny defaults
                 let fits = c.map(|c| ram_gb >= c.min_ram_gb as u64).unwrap_or(true);
                 (fits, quality)
             })
@@ -71,11 +72,16 @@ impl SttService {
             .installed()
             .into_iter()
             .find(|m| m.kind == ModelKind::Vad)
-            .and_then(|m| find_file(&m.path, |n| n.starts_with("silero_vad") && n.ends_with(".onnx")))
+            .and_then(|m| find_file(&m.path, |n| (n.starts_with("silero_vad") || n.starts_with("ten-vad")) && n.ends_with(".onnx")))
     }
 
     pub fn is_ready(&self, settings: &SttSettings) -> bool {
         self.resolve_model(settings).is_some()
+    }
+
+    /// True when the selected model produces live text while speaking.
+    pub fn is_streaming(&self, settings: &SttSettings) -> bool {
+        self.resolve_model(settings).map(|m| m.streaming).unwrap_or(false)
     }
 
     /// Drops the loaded recognizer (e.g. after the model setting changed).
@@ -83,87 +89,74 @@ impl SttService {
         *self.loaded.lock().unwrap_or_else(|p| p.into_inner()) = None;
     }
 
-    fn create_recognizer(&self, model: &InstalledModel, language: &str) -> AppResult<sherpa_onnx::OfflineRecognizer> {
-        let dir = &model.path;
-        let enc = find_file(dir, |n| n.contains("encoder") && n.ends_with(".int8.onnx"))
-            .or_else(|| find_file(dir, |n| n.contains("encoder") && n.ends_with(".onnx")))
-            .ok_or_else(|| AppError::Stt("Whisper encoder file missing".into()))?;
-        let dec = find_file(dir, |n| n.contains("decoder") && n.ends_with(".int8.onnx"))
-            .or_else(|| find_file(dir, |n| n.contains("decoder") && n.ends_with(".onnx")))
-            .ok_or_else(|| AppError::Stt("Whisper decoder file missing".into()))?;
-        let tokens = find_file(dir, |n| n.ends_with("tokens.txt")).ok_or_else(|| AppError::Stt("tokens file missing".into()))?;
-        let s = |p: std::path::PathBuf| Some(p.to_string_lossy().to_string());
-        let mut config = sherpa_onnx::OfflineRecognizerConfig::default();
-        config.model_config.whisper = sherpa_onnx::OfflineWhisperModelConfig {
-            encoder: s(enc),
-            decoder: s(dec),
-            language: Some(language.to_string()),
-            task: Some("transcribe".into()),
-            tail_paddings: -1,
-            ..Default::default()
-        };
-        config.model_config.tokens = s(tokens);
-        config.model_config.num_threads = self.hw.inference_threads();
-        config.model_config.provider = Some("cpu".into());
-        config.decoding_method = Some("greedy_search".into());
-        let started = Instant::now();
-        let r = sherpa_onnx::OfflineRecognizer::create(&config).ok_or_else(|| AppError::Stt(format!("failed to load speech model {}", model.id)))?;
-        tracing::info!(model = %model.id, language, ms = started.elapsed().as_millis() as u64, "stt model loaded");
-        Ok(r)
+    fn options(&self, settings: &SttSettings) -> EngineOptions {
+        EngineOptions {
+            threads: self.hw.inference_threads(),
+            language: Lang::from_code(&settings.language).map(|l| l.code().to_string()).unwrap_or_default(),
+            endpoint_silence: settings.silence_ms as f32 / 1000.0,
+        }
+    }
+
+    /// Runs `f` with the loaded recognizer, loading it first if needed.
+    /// The recognizer stays loaded for the next call.
+    pub fn with_recognizer<R>(&self, settings: &SttSettings, f: impl FnOnce(&Recognizer, &InstalledModel) -> R) -> AppResult<R> {
+        let model = self
+            .resolve_model(settings)
+            .ok_or_else(|| AppError::Stt("no local speech recognition model is installed".into()))?;
+        let opts = self.options(settings);
+        let key = format!("{}|{}|{}", model.path.display(), opts.language, opts.endpoint_silence);
+        let mut guard = self.loaded.lock().unwrap_or_else(|p| p.into_inner());
+        if guard.as_ref().map(|l| l.key != key).unwrap_or(true) {
+            *guard = None; // free the previous model before loading another
+            let files = engine::detect(&model.path).ok_or_else(|| AppError::Stt(format!("{} is not a recognizable speech model folder", model.path.display())))?;
+            let started = Instant::now();
+            let recognizer = engine::create(&files, &opts)?;
+            tracing::info!(model = %model.id, family = files.family.label(), ms = started.elapsed().as_millis() as u64, "speech model loaded");
+            *guard = Some(Loaded { key, recognizer });
+        }
+        let loaded = guard.as_ref().expect("recognizer loaded");
+        Ok(f(&loaded.recognizer, &model))
     }
 
     /// Transcribes 16 kHz mono samples. Blocking: call from a worker thread.
     pub fn transcribe(&self, samples: &[f32], settings: &SttSettings) -> AppResult<Transcription> {
-        let model = self
-            .resolve_model(settings)
-            .ok_or_else(|| AppError::Stt("no local speech recognition model is installed".into()))?;
         let audio_ms = samples.len() as u64 * 1000 / 16_000;
         if audio_ms < MIN_AUDIO_MS {
-            return Ok(Transcription { text: String::new(), language: None, model_id: model.id, audio_ms, elapsed_ms: 0 });
+            let model_id = self.resolve_model(settings).map(|m| m.id).unwrap_or_default();
+            return Ok(Transcription { text: String::new(), language: None, model_id, audio_ms, elapsed_ms: 0 });
         }
-        // Forced language improves accuracy; "" lets Whisper detect it.
-        let forced = Lang::from_code(&settings.language);
-        let whisper_lang = forced.map(|l| l.code()).unwrap_or("");
-        let key = format!("{}|{}", model.id, whisper_lang);
-
         let started = Instant::now();
-        let mut guard = self.loaded.lock().unwrap_or_else(|p| p.into_inner());
-        if guard.as_ref().map(|l| l.key != key).unwrap_or(true) {
-            *guard = None; // free the previous model first
-            *guard = Some(Loaded { key: key.clone(), recognizer: self.create_recognizer(&model, whisper_lang)? });
-        }
-        let recognizer = &guard.as_ref().expect("loaded").recognizer;
-        // Whisper works on up to 30 s windows: decode long audio in chunks.
-        let mut text = String::new();
-        const CHUNK: usize = 16_000 * 28;
-        for chunk in samples.chunks(CHUNK) {
-            if chunk.len() < 16_000 * MIN_AUDIO_MS as usize / 1000 {
-                continue;
-            }
-            let stream = recognizer.create_stream();
-            stream.accept_waveform(16_000, chunk);
-            recognizer.decode(&stream);
-            let part = stream.get_result().map(|r| r.text).unwrap_or_default();
-            let part = part.trim();
-            if !part.is_empty() {
-                if !text.is_empty() {
-                    text.push(' ');
+        let (text, model_id) = self.with_recognizer(settings, |rec, model| {
+            // Whisper works on 30 s windows: decode long audio in chunks.
+            const CHUNK: usize = 16_000 * 28;
+            let mut text = String::new();
+            for chunk in samples.chunks(CHUNK) {
+                if (chunk.len() as u64) * 1000 / 16_000 < MIN_AUDIO_MS {
+                    continue;
                 }
-                text.push_str(part);
+                let part = rec.transcribe(chunk);
+                let part = part.trim();
+                if !part.is_empty() {
+                    if !text.is_empty() {
+                        text.push(' ');
+                    }
+                    text.push_str(part);
+                }
             }
-        }
-        drop(guard);
+            (text, model.id.clone())
+        })?;
         let text = clean_transcript(&text);
+        let forced = Lang::from_code(&settings.language);
         let language = forced.or_else(|| detect(&text).map(|d| d.lang)).map(|l| l.code().to_string());
-        Ok(Transcription { text, language, model_id: model.id, audio_ms, elapsed_ms: started.elapsed().as_millis() as u64 })
+        Ok(Transcription { text, language, model_id, audio_ms, elapsed_ms: started.elapsed().as_millis() as u64 })
     }
 }
 
-/// Removes Whisper artifacts: bracketed non-speech tags and common
-/// hallucinations on silence.
+/// Removes recognizer artifacts: bracketed non-speech tags and the common
+/// hallucinations models produce on silence.
 pub fn clean_transcript(text: &str) -> String {
     let mut t = text.trim().to_string();
-    for tag in ["[BLANK_AUDIO]", "[MUSIC]", "(music)", "[Music]", "[silence]", "(silence)", "[NOISE]"] {
+    for tag in ["[BLANK_AUDIO]", "[MUSIC]", "(music)", "[Music]", "[silence]", "(silence)", "[NOISE]", "<|nospeech|>"] {
         t = t.replace(tag, "");
     }
     let lower = t.trim().to_lowercase();
@@ -182,7 +175,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn cleans_whisper_artifacts() {
+    fn cleans_artifacts() {
         assert_eq!(clean_transcript(" [BLANK_AUDIO] "), "");
         assert_eq!(clean_transcript("Thank you."), "");
         assert_eq!(clean_transcript("Hello   world [MUSIC]"), "Hello world");
@@ -196,5 +189,31 @@ mod tests {
         let err = svc.transcribe(&vec![0.0; 16_000], &SttSettings::default()).unwrap_err();
         assert_eq!(err.code(), "stt_unavailable");
         assert!(!svc.is_ready(&SttSettings::default()));
+        assert!(!svc.is_streaming(&SttSettings::default()));
+    }
+
+    #[test]
+    fn user_models_outrank_the_tiny_default() {
+        let app = tempfile::tempdir().unwrap();
+        let store = Arc::new(ModelStore::new(app.path().to_path_buf()));
+        // A catalog model (quality 1) plus a user-provided streaming model.
+        let base = app.path().join("whisper-base");
+        std::fs::create_dir_all(&base).unwrap();
+        for f in ["encoder.int8.onnx", "decoder.int8.onnx", "tokens.txt", ".complete"] {
+            std::fs::write(base.join(f), b"x").unwrap();
+        }
+        let custom = app.path().join("nemotron-3.5-asr-streaming-0.6b");
+        std::fs::create_dir_all(&custom).unwrap();
+        for f in ["encoder.int8.onnx", "decoder.int8.onnx", "joiner.int8.onnx", "tokens.txt"] {
+            std::fs::write(custom.join(f), b"x").unwrap();
+        }
+        let svc = SttService::new(store, HardwareInfo { total_ram_bytes: 16 << 30, ..Default::default() });
+        let mut settings = SttSettings::default();
+        assert_eq!(svc.resolve_model(&settings).unwrap().id, "nemotron-3.5-asr-streaming-0.6b");
+        assert!(svc.is_streaming(&settings));
+        // Explicit choice wins.
+        settings.model = "whisper-base".into();
+        assert_eq!(svc.resolve_model(&settings).unwrap().id, "whisper-base");
+        assert!(!svc.is_streaming(&settings));
     }
 }

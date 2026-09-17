@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
-import { Play, Square } from "lucide-react";
+import { FolderOpen, FolderPlus, Play, Square, Trash2 } from "lucide-react";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { ipc, on, toAppError } from "../../../app/ipc";
-import { t } from "../../../app/strings";
-import type { AppErrorPayload, AudioDevice, InstalledModel, LangCode, LangSetting, VoiceEvent, VoiceInfo } from "../../../app/types";
-import { ErrorNotice, Switch } from "../../../components/common/controls";
+import { formatBytes, t } from "../../../app/strings";
+import type { AppErrorPayload, AppInfo, AudioDevice, IncompatibleModel, InstalledModel, LangCode, LangSetting, VoiceEvent, VoiceInfo } from "../../../app/types";
+import { ErrorNotice, Segmented, Switch } from "../../../components/common/controls";
 import { Card, Row, SectionHeader } from "../../../components/settings/layout";
 import { ModelManager } from "../../../components/settings/ModelManager";
 import { LevelMeter } from "../../../components/voice/LevelMeter";
@@ -84,6 +85,115 @@ function MicTest({ microphone }: { microphone: string | null }) {
   );
 }
 
+/** Shows where models are loaded from and lets the user add their own folders. */
+function ModelFolders({ installed }: { installed: InstalledModel[] }) {
+  const [s, set] = useS();
+  const [info, setInfo] = useState<AppInfo | null>(null);
+  const [unusable, setUnusable] = useState<IncompatibleModel[]>([]);
+  useEffect(() => void ipc.appInfo().then(setInfo), []);
+  useEffect(() => {
+    void ipc.modelsIncompatible().then((x) => setUnusable(x ?? []));
+  }, [s.stt.extraModelDirs.join("|")]);
+
+  const addFolder = async () => {
+    const picked = await openDialog({ directory: true, multiple: false, title: t("settings.speech.addFolder") });
+    if (!picked || Array.isArray(picked)) return;
+    if (s.stt.extraModelDirs.includes(picked)) return;
+    set((d) => void d.stt.extraModelDirs.push(picked));
+  };
+
+  return (
+    <Card
+      title={t("settings.speech.folders")}
+      actions={
+        <>
+          <button className="btn btn-sm" onClick={() => void ipc.openFolder("models")}>
+            <FolderOpen size={13} /> {t("settings.models.openFolder")}
+          </button>
+          <button className="btn btn-sm btn-primary" onClick={() => void addFolder()}>
+            <FolderPlus size={13} /> {t("settings.speech.addFolder")}
+          </button>
+        </>
+      }
+    >
+      <p className="row-hint" style={{ margin: "10px 0 6px" }}>
+        {t("settings.speech.foldersHint")}
+      </p>
+      <div className="folder-list">
+        <div className="folder-item">
+          <span className="badge">{t("settings.speech.appFolder")}</span>
+          <span className="folder-path" title={info?.paths.modelsDir}>
+            {info?.paths.modelsDir ?? "…"}
+          </span>
+          <span />
+        </div>
+        {s.stt.extraModelDirs.length === 0 && <p className="row-hint">{t("settings.speech.noCustom")}</p>}
+        {s.stt.extraModelDirs.map((dir) => (
+          <div className="folder-item" key={dir}>
+            <span className="badge">{t("settings.models.custom")}</span>
+            <span className="folder-path" title={dir}>
+              {dir}
+            </span>
+            <button
+              className="icon-btn danger"
+              aria-label={`${t("settings.speech.removeFolder")}: ${dir}`}
+              title={t("settings.speech.removeFolder")}
+              onClick={() => set((d) => void (d.stt.extraModelDirs = d.stt.extraModelDirs.filter((x) => x !== dir)))}
+            >
+              <Trash2 size={14} />
+            </button>
+          </div>
+        ))}
+      </div>
+      {unusable.length > 0 && (
+        <div className="row stack">
+          <span className="row-label">
+            {t("settings.speech.unsupported")}
+            <span className="row-hint">{t("settings.speech.unsupportedHint")}</span>
+          </span>
+          <div className="folder-list">
+            {unusable.map((m) => (
+              <div className="folder-item" key={m.path}>
+                <span className="badge warn">{m.name}</span>
+                <span className="folder-path" title={m.path}>
+                  {m.path}
+                </span>
+                <span className="row-hint" style={{ margin: 0, whiteSpace: "nowrap" }}>
+                  {m.reason}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      <div className="row stack">
+        <span className="row-label">{t("settings.speech.detected")}</span>
+        <div className="model-list">
+          {installed.length === 0 && <p className="row-hint">{t("settings.speech.noModel")}</p>}
+          {installed.map((m) => (
+            <div className="model-item" key={m.path}>
+              <span className="badge">{m.kind.toUpperCase()}</span>
+              <div style={{ minWidth: 0 }}>
+                <div className="model-name">{m.name}</div>
+                <div className="model-meta">
+                  {m.family && <span>{m.family}</span>}
+                  {m.streaming && <span className="badge accent">{t("settings.speech.streaming")}</span>}
+                  {m.gender && <span className="badge">{t(`settings.voice.gender${m.gender === "female" ? "Female" : m.gender === "male" ? "Male" : "Any"}`)}</span>}
+                  {m.sizeBytes > 0 && <span>{formatBytes(m.sizeBytes)}</span>}
+                </div>
+                <div className="folder-path" title={m.path}>
+                  {t("settings.speech.loadedFrom")}: {m.path}
+                </div>
+              </div>
+              <span />
+            </div>
+          ))}
+        </div>
+      </div>
+    </Card>
+  );
+}
+
 const LANGS: LangCode[] = ["en", "ar", "de"];
 
 export function SpeechSection() {
@@ -104,6 +214,8 @@ export function SpeechSection() {
             {sttModels.map((m) => (
               <option key={m.id} value={m.id}>
                 {m.name}
+                {m.family ? ` — ${m.family}` : ""}
+                {m.streaming ? ` (${t("settings.speech.streaming")})` : ""}
               </option>
             ))}
           </select>
@@ -155,6 +267,7 @@ export function SpeechSection() {
         </Row>
       </Card>
       <ModelManager kinds={["stt", "vad"]} title={t("settings.speech.models")} />
+      <ModelFolders installed={installed} />
     </>
   );
 }
@@ -187,6 +300,18 @@ export function VoiceSection() {
         <Row label={t("settings.voice.speakResponses")} htmlFor="sw-speak">
           <Switch id="sw-speak" label={t("settings.voice.speakResponses")} checked={s.tts.speakResponses} onChange={(v) => set((d) => void (d.tts.speakResponses = v))} />
         </Row>
+        <Row label={t("settings.voice.gender")} hint={t("settings.voice.genderHint")}>
+          <Segmented
+            label={t("settings.voice.gender")}
+            value={s.tts.preferredGender}
+            options={[
+              { value: "any" as const, label: t("settings.voice.genderAny") },
+              { value: "female" as const, label: t("settings.voice.genderFemale") },
+              { value: "male" as const, label: t("settings.voice.genderMale") },
+            ]}
+            onChange={(v) => set((d) => void (d.tts.preferredGender = v))}
+          />
+        </Row>
         {LANGS.map((l) => {
           const list = voices.filter((v) => v.language === l);
           return (
@@ -196,6 +321,7 @@ export function VoiceSection() {
                 {list.map((v) => (
                   <option key={v.id} value={v.id}>
                     {v.name}
+                    {v.gender && !v.name.toLowerCase().includes(v.gender) ? ` — ${t(`settings.voice.gender${v.gender === "female" ? "Female" : "Male"}`)}` : ""}
                   </option>
                 ))}
               </select>
@@ -240,6 +366,7 @@ export function VoiceSection() {
         )}
       </Card>
       <ModelManager kinds={["tts"]} title={t("settings.voice.models")} />
+      <p className="settings-intro">{t("settings.voice.localHint")}</p>
     </>
   );
 }

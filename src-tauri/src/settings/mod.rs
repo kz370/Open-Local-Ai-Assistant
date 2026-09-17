@@ -139,6 +139,8 @@ pub struct SttSettings {
     pub push_to_talk: bool,
     pub vad_threshold: f32,
     pub silence_ms: u32,
+    /// Extra folders scanned for speech/voice models (read-only).
+    pub extra_model_dirs: Vec<String>,
 }
 
 impl Default for SttSettings {
@@ -153,6 +155,7 @@ impl Default for SttSettings {
             push_to_talk: true,
             vad_threshold: 0.5,
             silence_ms: 800,
+            extra_model_dirs: Vec::new(),
         }
     }
 }
@@ -169,6 +172,8 @@ pub struct TtsSettings {
     pub volume: f32,
     /// None = automatic (system default output)
     pub output_device: Option<String>,
+    /// "any" | "female" | "male" - used when a voice is chosen automatically.
+    pub preferred_gender: String,
 }
 
 impl Default for TtsSettings {
@@ -181,6 +186,7 @@ impl Default for TtsSettings {
             speed: 1.0,
             volume: 1.0,
             output_device: None,
+            preferred_gender: "any".into(),
         }
     }
 }
@@ -265,6 +271,15 @@ impl Settings {
         self.tts.volume = self.tts.volume.clamp(0.0, 1.0);
         self.stt.vad_threshold = self.stt.vad_threshold.clamp(0.1, 0.95);
         self.stt.silence_ms = self.stt.silence_ms.clamp(200, 5000);
+        self.stt.extra_model_dirs = std::mem::take(&mut self.stt.extra_model_dirs)
+            .into_iter()
+            .map(|d| d.trim().to_string())
+            .filter(|d| !d.is_empty())
+            .collect();
+        self.stt.extra_model_dirs.dedup();
+        if !matches!(self.tts.preferred_gender.as_str(), "any" | "female" | "male") {
+            self.tts.preferred_gender = "any".into();
+        }
         if !matches!(self.dictation.mode.as_str(), "hold" | "toggle") {
             self.dictation.mode = "hold".into();
         }

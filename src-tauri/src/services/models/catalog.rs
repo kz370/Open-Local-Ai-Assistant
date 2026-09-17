@@ -21,6 +21,7 @@ pub enum Engine {
     SileroVad,
     Kokoro,
     Piper,
+    Kitten,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -50,6 +51,8 @@ pub struct CatalogModel {
     /// Suggested minimum RAM in GB for comfortable CPU use.
     pub min_ram_gb: u32,
     pub license: &'static str,
+    /// "female" | "male" | "mixed" (voice models only).
+    pub gender: &'static str,
 }
 
 impl CatalogModel {
@@ -112,6 +115,23 @@ pub static CATALOG: &[CatalogModel] = &[
         quality: 5,
         min_ram_gb: 12,
         license: "MIT",
+        gender: "",
+    },
+    CatalogModel {
+        id: "whisper-tiny",
+        kind: ModelKind::Stt,
+        engine: Engine::Whisper,
+        name: "Whisper tiny (int8) — smallest",
+        languages: &["*"],
+        files: &[
+            RemoteFile { url: url!(HF, "/sherpa-onnx-whisper-tiny/resolve/main/tiny-encoder.int8.onnx"), sha256: Some("d24fb083ae3b1041fc24e97971d60e280c9342201fbb67b0ab428a8b4a51a434"), dest: "encoder.int8.onnx", archive: false, size_bytes: 12_900_000 },
+            RemoteFile { url: url!(HF, "/sherpa-onnx-whisper-tiny/resolve/main/tiny-decoder.int8.onnx"), sha256: Some("d2fece8dd42771f1df975c6c0445770d0c292bf7547c2cae04a6c0cc57540925"), dest: "decoder.int8.onnx", archive: false, size_bytes: 89_900_000 },
+            RemoteFile { url: url!(HF, "/sherpa-onnx-whisper-tiny/resolve/main/tiny-tokens.txt"), sha256: Some(WHISPER_TOKENS_SHA), dest: "tokens.txt", archive: false, size_bytes: 816_730 },
+        ],
+        quality: 1,
+        min_ram_gb: 1,
+        license: "MIT",
+        gender: "",
     },
     CatalogModel {
         id: "whisper-small",
@@ -127,6 +147,7 @@ pub static CATALOG: &[CatalogModel] = &[
         quality: 3,
         min_ram_gb: 4,
         license: "MIT",
+        gender: "",
     },
     CatalogModel {
         id: "whisper-base",
@@ -142,6 +163,7 @@ pub static CATALOG: &[CatalogModel] = &[
         quality: 2,
         min_ram_gb: 2,
         license: "MIT",
+        gender: "",
     },
     // ---------------- Voice activity detection ----------------
     CatalogModel {
@@ -154,8 +176,33 @@ pub static CATALOG: &[CatalogModel] = &[
         quality: 5,
         min_ram_gb: 1,
         license: "MIT",
+        gender: "",
     },
     // ---------------- Text-to-speech ----------------
+    CatalogModel {
+        id: "kitten-nano-en-v0_8-int8",
+        kind: ModelKind::Tts,
+        engine: Engine::Kitten,
+        name: "Kitten nano English - smallest natural voice",
+        languages: &["en"],
+        files: &[RemoteFile { url: url!(GH_TTS, "/kitten-nano-en-v0_8-int8.tar.bz2"), sha256: Some("6fa5be852612ce761094ba74ee6123b4fc4acfefa79bf64dc63acae4a83af2fd"), dest: "", archive: true, size_bytes: 31_200_000 }],
+        quality: 4,
+        min_ram_gb: 1,
+        license: "Apache-2.0",
+        gender: "mixed",
+    },
+    CatalogModel {
+        id: "piper-en_US-amy-medium-int8",
+        kind: ModelKind::Tts,
+        engine: Engine::Piper,
+        name: "Amy (English, female, compact)",
+        languages: &["en"],
+        files: &[RemoteFile { url: url!(GH_TTS, "/vits-piper-en_US-amy-medium-int8.tar.bz2"), sha256: Some("bd23c0aa629eb3719448582f45ede49e8fa6a679061fed5eab16a6a6fd8e7e82"), dest: "", archive: true, size_bytes: 21_000_000 }],
+        quality: 3,
+        min_ram_gb: 1,
+        license: "CC-BY-4.0",
+        gender: "female",
+    },
     CatalogModel {
         id: "kokoro-en-v0_19",
         kind: ModelKind::Tts,
@@ -166,6 +213,7 @@ pub static CATALOG: &[CatalogModel] = &[
         quality: 5,
         min_ram_gb: 4,
         license: "Apache-2.0",
+        gender: "mixed",
     },
     CatalogModel {
         id: "kokoro-int8-en-v0_19",
@@ -177,6 +225,7 @@ pub static CATALOG: &[CatalogModel] = &[
         quality: 4,
         min_ram_gb: 2,
         license: "Apache-2.0",
+        gender: "mixed",
     },
     CatalogModel {
         id: "piper-de_DE-thorsten-high",
@@ -188,6 +237,7 @@ pub static CATALOG: &[CatalogModel] = &[
         quality: 5,
         min_ram_gb: 2,
         license: "CC0-1.0",
+        gender: "male",
     },
     CatalogModel {
         id: "piper-de_DE-thorsten-medium-int8",
@@ -199,6 +249,7 @@ pub static CATALOG: &[CatalogModel] = &[
         quality: 3,
         min_ram_gb: 1,
         license: "CC0-1.0",
+        gender: "male",
     },
     CatalogModel {
         id: "piper-ar_JO-kareem-medium",
@@ -210,6 +261,7 @@ pub static CATALOG: &[CatalogModel] = &[
         quality: 4,
         min_ram_gb: 1,
         license: "CC-BY-4.0",
+        gender: "male",
     },
     CatalogModel {
         id: "piper-ar_JO-SA_miro_V2-high",
@@ -221,6 +273,55 @@ pub static CATALOG: &[CatalogModel] = &[
         quality: 4,
         min_ram_gb: 1,
         license: "see model card",
+        gender: "male",
+    },
+    CatalogModel {
+        id: "piper-de_DE-eva_k-x_low-int8",
+        kind: ModelKind::Tts,
+        engine: Engine::Piper,
+        name: "Eva (German, female, compact)",
+        languages: &["de"],
+        files: &[RemoteFile { url: url!(GH_TTS, "/vits-piper-de_DE-eva_k-x_low-int8.tar.bz2"), sha256: Some("0501123c7e184571a40690e79943f4111a57b988632f7f60a9d2344fd061e2a2"), dest: "", archive: true, size_bytes: 13_300_000 }],
+        quality: 3,
+        min_ram_gb: 1,
+        license: "CC-BY-4.0",
+        gender: "female",
+    },
+    CatalogModel {
+        id: "piper-de_DE-kerstin-low-int8",
+        kind: ModelKind::Tts,
+        engine: Engine::Piper,
+        name: "Kerstin (German, female)",
+        languages: &["de"],
+        files: &[RemoteFile { url: url!(GH_TTS, "/vits-piper-de_DE-kerstin-low-int8.tar.bz2"), sha256: Some("bcd8039667940cf2efc939b844f4b33d0823096572fcc1a8caaa2faa77f3379c"), dest: "", archive: true, size_bytes: 21_200_000 }],
+        quality: 3,
+        min_ram_gb: 1,
+        license: "CC-BY-4.0",
+        gender: "female",
+    },
+    CatalogModel {
+        id: "piper-ar_JO-kareem-low-int8",
+        kind: ModelKind::Tts,
+        engine: Engine::Piper,
+        name: "Kareem (Arabic, compact)",
+        languages: &["ar"],
+        files: &[RemoteFile { url: url!(GH_TTS, "/vits-piper-ar_JO-kareem-low-int8.tar.bz2"), sha256: Some("315b7da69862313988d8aff46d457452b8a11a3ac4c5cd18e02d48fd0eb0395a"), dest: "", archive: true, size_bytes: 21_200_000 }],
+        quality: 3,
+        min_ram_gb: 1,
+        license: "CC-BY-4.0",
+        gender: "male",
+    },
+    CatalogModel {
+        id: "piper-ar_JO-SA_dii-high-int8",
+        kind: ModelKind::Tts,
+        engine: Engine::Piper,
+        name: "Dii (Arabic, female)",
+        languages: &["ar"],
+        files: &[RemoteFile { url: url!(GH_TTS, "/vits-piper-ar_JO-SA_dii-high-int8.tar.bz2"), sha256: Some("02f6f990b31323b7f36c8c68c3a5dc7f7c9f3db555c632310693cf7d82b9540e"), dest: "", archive: true, size_bytes: 22_000_000 }],
+        quality: 4,
+        min_ram_gb: 1,
+        license: "see model card",
+        gender: "female",
     },
 ];
 

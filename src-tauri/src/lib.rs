@@ -45,6 +45,7 @@ fn init_state(app: &AppHandle) -> Result<AppState, Box<dyn std::error::Error>> {
     let lmstudio = Arc::new(LmStudioService::new(&s.ai.server_url, s.ai.request_timeout_secs));
     let resolver = Arc::new(ModelResolver::with_hardware(lmstudio.clone(), hardware.clone()));
     let models = Arc::new(ModelStore::new(paths.models_dir.clone()));
+    models.set_extra_dirs(s.stt.extra_model_dirs.iter().map(std::path::PathBuf::from).collect());
 
     let handle = app.clone();
     let mcp = Arc::new(McpManager::new(db.clone(), Arc::new(move || {
@@ -106,8 +107,9 @@ fn on_voice_event(app: &AppHandle, ev: VoiceEvent) {
         }
         _ => {}
     }
-    if let VoiceEvent::Level { mode: ListenMode::Dictation, value } = &ev {
-        let _ = app.emit_to(window::OVERLAY, "voice://event", VoiceEvent::Level { mode: ListenMode::Dictation, value: *value });
+    // Dictation feedback (levels and live partial text) goes to the overlay only.
+    if matches!(&ev, VoiceEvent::Level { mode: ListenMode::Dictation, .. } | VoiceEvent::Partial { mode: ListenMode::Dictation, .. }) {
+        let _ = app.emit_to(window::OVERLAY, "voice://event", ev);
         return;
     }
     let _ = app.emit("voice://event", ev);
@@ -176,7 +178,9 @@ async fn run_dictation(app: AppHandle, raw: String) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // Only one instance runs: a second launch focuses the existing assistant.
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            tracing::info!("second instance launched; focusing the existing window");
             window::show_main(app, true);
         }))
         .plugin(tauri_plugin_global_shortcut::Builder::new().with_handler(shortcuts::handle).build())
@@ -204,6 +208,16 @@ pub fn run() {
             if let Some(main) = window::main_window(&handle) {
                 let h = handle.clone();
                 main.on_window_event(move |event| window::on_main_window_event(&h, event));
+            }
+
+            // Debug helper: LA_OPEN=chat|settings opens that window at startup.
+            match std::env::var("LA_OPEN").ok().as_deref() {
+                Some("chat") => window::show_main(&handle, true),
+                Some(other) if other.starts_with("settings") => {
+                    let section = other.split_once(':').map(|(_, s)| s.to_string());
+                    let _ = window::open_settings(&handle, section.as_deref());
+                }
+                _ => {}
             }
 
             tauri::async_runtime::spawn(async move { mcp.connect_enabled().await });
@@ -260,6 +274,7 @@ pub fn run() {
             commands::voice::tts_replay_last,
             commands::voice::models_catalog,
             commands::voice::models_installed,
+            commands::voice::models_incompatible,
             commands::voice::models_download,
             commands::voice::models_cancel,
             commands::voice::models_delete,
