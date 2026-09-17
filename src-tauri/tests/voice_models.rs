@@ -216,3 +216,113 @@ fn microphone_delivers_audio_events() {
     assert!(samples > 16_000, "microphone delivered too little audio: {samples} samples");
     assert!(levels > 10, "no level updates");
 }
+
+/// Full hands-free round trip: recorded speech -> transcript -> LM Studio ->
+/// spoken reply. Needs LA_MODELS_DIR and a running LM Studio (LA_LIVE_LMSTUDIO=1).
+#[tokio::test(flavor = "multi_thread")]
+async fn hands_free_conversation_speaks_the_answer() {
+    let (Ok(models_dir), Some("1")) = (std::env::var("LA_MODELS_DIR"), std::env::var("LA_LIVE_LMSTUDIO").ok().as_deref()) else {
+        eprintln!("LA_MODELS_DIR/LA_LIVE_LMSTUDIO not set; skipping hands-free conversation test");
+        return;
+    };
+    use local_ai_assistant_lib::services::ai::lmstudio::LmStudioService;
+    use local_ai_assistant_lib::services::audio::capture::CaptureEvent;
+    use local_ai_assistant_lib::services::chat::orchestrator::Emit;
+    use local_ai_assistant_lib::services::chat::tools::NoTools;
+    use local_ai_assistant_lib::services::chat::{ChatEngine, ChatEvent, ModelResolver, SendInput};
+    use local_ai_assistant_lib::services::stt::session::{run_session_for_test, ListenMode, VoiceEvent};
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Mutex;
+
+    let store = Arc::new(ModelStore::new(models_dir.into()));
+    let db = Arc::new(Db::open_in_memory().unwrap());
+    let settings = Arc::new(SettingsStore::load(db.clone()).unwrap());
+    settings.update(|s| s.tts.speak_responses = false).unwrap(); // voice turns must speak on their own
+    let hw = hardware::detect();
+    let tts = TtsService::new(store.clone(), settings.clone(), hw.clone(), Arc::new(|_| {}));
+    let stt = Arc::new(SttService::new(store.clone(), hw.clone()));
+    let vad = stt.vad_model_path().expect("vad installed");
+
+    // Say something out loud (synthesised) and feed it to the session.
+    let (speech, rate) = tts.synthesize("Please answer in one short sentence: what is two plus two?", Lang::En, hw.inference_threads()).unwrap();
+    let pcm = sherpa_onnx::LinearResampler::create(rate as i32, 16_000).unwrap().resample(&speech, true);
+    let (tx, rx) = std::sync::mpsc::channel();
+    let stop = Arc::new(AtomicBool::new(false));
+    let stop_feeder = stop.clone();
+    std::thread::spawn(move || {
+        for chunk in pcm.chunks(320) {
+            let _ = tx.send(CaptureEvent::Samples(chunk.to_vec()));
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        for _ in 0..100 {
+            let _ = tx.send(CaptureEvent::Samples(vec![0.0; 320]));
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        std::thread::sleep(std::time::Duration::from_secs(3));
+        stop_feeder.store(true, Ordering::Relaxed);
+    });
+
+    let heard: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let sink = heard.clone();
+    let stt_settings = settings.get().stt;
+    let stt2 = stt.clone();
+    let listen = std::thread::spawn(move || {
+        run_session_for_test(
+            &stt2,
+            &stt_settings,
+            ListenMode::HandsFree,
+            &rx,
+            Some(&vad),
+            Arc::new(move |ev| {
+                if let VoiceEvent::Transcript { text, .. } = ev {
+                    if !text.trim().is_empty() {
+                        sink.lock().unwrap().push(text);
+                    }
+                }
+            }),
+            stop,
+        );
+    });
+    listen.join().unwrap();
+    let spoken = heard.lock().unwrap().clone();
+    assert!(!spoken.is_empty(), "nothing was transcribed");
+    eprintln!("user said: {:?}", spoken[0]);
+
+    // The assistant answers that transcript as a voice turn.
+    let ai = Arc::new(LmStudioService::new(&settings.get().ai.server_url, 300));
+    let resolver = Arc::new(ModelResolver::with_hardware(ai.clone(), hw.clone()));
+    let engine = ChatEngine::new(db, settings, ai, resolver, Arc::new(NoTools), tts.clone());
+    let events: Arc<Mutex<Vec<ChatEvent>>> = Arc::new(Mutex::new(Vec::new()));
+    let sink = events.clone();
+    let emit: Emit = Arc::new(move |ev| sink.lock().unwrap().push(ev));
+    engine
+        .send(
+            SendInput { turn_id: "call-1".into(), conversation_id: None, text: spoken[0].clone(), spoken_language: Some("en".into()), voice: true },
+            emit,
+        )
+        .await
+        .expect("turn");
+
+    let answer = events
+        .lock()
+        .unwrap()
+        .iter()
+        .find_map(|e| match e {
+            ChatEvent::Done { message, .. } => Some(message.content.clone()),
+            _ => None,
+        })
+        .expect("assistant answered");
+    eprintln!("assistant said: {answer:?}");
+
+    // The reply must actually be spoken: audio is queued or playing.
+    let mut audible = false;
+    for _ in 0..80 {
+        if tts.has_audio() {
+            audible = true;
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+    }
+    assert!(audible, "the assistant's voice reply was never queued for playback");
+    eprintln!("assistant is speaking: {}", tts.is_speaking());
+}

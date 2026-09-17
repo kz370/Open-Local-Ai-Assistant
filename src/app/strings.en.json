@@ -441,7 +441,10 @@
       "copyReport": "Copy report",
       "version": "Version",
       "acceleration": "Voice models run on the CPU.",
-      "mcpSummary": "{{connected}} of {{enabled}} enabled servers connected"
+      "mcpSummary": "{{connected}} of {{enabled}} enabled servers connected",
+      "selfTest": "Self-test",
+      "runSelfTest": "Run self-test",
+      "selfTestHint": "Calls every backend command this window uses and reports which ones answer."
     }
   },
   "setup": {
