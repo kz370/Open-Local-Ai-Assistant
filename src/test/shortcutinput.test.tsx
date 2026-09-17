@@ -26,4 +26,15 @@ describe("ShortcutInput", () => {
     fireEvent.keyUp(window, { code: "AltLeft", ctrlKey: true, altKey: false });
     expect(onChange).toHaveBeenCalledWith("CommandOrControl+Alt");
   });
+
+  it("rejects single-modifier shortcuts like Alt alone", () => {
+    const onChange = vi.fn();
+    render(<ShortcutInput label="Open" value="CommandOrControl+Space" defaultValue="CommandOrControl+Space" onChange={onChange} />);
+    const btn = screen.getByLabelText(/Open:/);
+    fireEvent.click(btn);
+    fireEvent.keyDown(window, { code: "AltLeft", altKey: true });
+    expect(onChange).not.toHaveBeenCalled();
+    fireEvent.keyUp(window, { code: "AltLeft", altKey: false });
+    expect(onChange).not.toHaveBeenCalled();
+  });
 });

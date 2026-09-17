@@ -35,6 +35,35 @@ pub fn main_window(app: &AppHandle) -> Option<WebviewWindow> {
     app.get_webview_window(MAIN)
 }
 
+/// Ease-out cubic for window morph (fast start, soft land).
+fn ease_out_cubic(t: f32) -> f32 {
+    1.0 - (1.0 - t).powi(3)
+}
+
+fn lerp(a: i32, b: i32, t: f32) -> i32 {
+    (a as f32 + (b as f32 - a as f32) * t).round() as i32
+}
+
+/// Animates native window rect start -> end. Frame moves, content fades via CSS.
+/// Unused now: per-frame set_position/set_size round-trips block on
+/// Windows (~20-50ms each) and feel sluggish. Kept for tests.
+#[allow(dead_code)]
+fn animate_rect(win: &WebviewWindow, start: (i32, i32, u32, u32), end: (i32, i32, u32, u32)) {
+    const FRAMES: i32 = 12;
+    for i in 1..=FRAMES {
+        let t = ease_out_cubic(i as f32 / FRAMES as f32);
+        let x = lerp(start.0, end.0, t);
+        let y = lerp(start.1, end.1, t);
+        let w = lerp(start.2 as i32, end.2 as i32, t).max(1) as u32;
+        let h = lerp(start.3 as i32, end.3 as i32, t).max(1) as u32;
+        let _ = win.set_position(PhysicalPosition::new(x, y));
+        let _ = win.set_size(PhysicalSize::new(w, h));
+        if i < FRAMES {
+            std::thread::sleep(std::time::Duration::from_millis(15));
+        }
+    }
+}
+
 /// Computes the top-left position for a preset inside the monitor work area.
 pub fn preset_position(preset: &str, work_pos: (i32, i32), work_size: (u32, u32), win: (u32, u32)) -> (i32, i32) {
     let (wx, wy) = work_pos;
@@ -159,26 +188,75 @@ pub fn show_bubble(app: &AppHandle) {
     }
 }
 
+/// Bubble center relative to main origin, in logical (CSS) px for veil.
+fn rel_logical(main_x: i32, main_y: i32, cx: i32, cy: i32, scale: f64) -> (f32, f32) {
+    let s = if scale > 0.0 { scale } else { 1.0 };
+    (((cx - main_x) as f64 / s) as f32, ((cy - main_y) as f64 / s) as f32)
+}
+
+/// Target chat size in physical px. Heals collapsed window (shrink anim
+/// must never persist): falls back to saved settings, else 420x640 logical.
+fn chat_target_size(win: &WebviewWindow, s: &crate::settings::Settings) -> PhysicalSize<u32> {
+    if let Ok(sz) = win.outer_size() {
+        if sz.width >= 240 && sz.height >= 240 {
+            return sz;
+        }
+    }
+    if s.general.compact {
+        let scale = win.scale_factor().unwrap_or(1.0);
+        return PhysicalSize::new((COMPACT_SIZE.0 * scale).round() as u32, (COMPACT_SIZE.1 * scale).round() as u32);
+    }
+    let g = &s.general.window;
+    if g.width >= 320 && g.height >= 260 {
+        return PhysicalSize::new(g.width, g.height);
+    }
+    let scale = win.scale_factor().unwrap_or(1.0);
+    PhysicalSize::new((420.0 * scale).round() as u32, (640.0 * scale).round() as u32)
+}
+
 pub fn hide_bubble(app: &AppHandle) {
     if let Some(b) = app.get_webview_window(BUBBLE) {
         let _ = b.hide();
     }
 }
 
-/// Opens the chat window next to where the bubble is (unless the user placed the chat window).
+/// Opens chat anchored to bubble. Instant show + CSS fade.
+/// No native resize loop: 24 window-manager ops block, feel sluggish.
 pub fn show_main(app: &AppHandle, focus_input: bool) {
     let Some(win) = main_window(app) else { return };
     let s = app.state::<AppState>().settings.get().general;
-    if !win.is_visible().unwrap_or(false) && s.window_position != "custom" {
-        if let (Some(bubble), Ok(size)) = (app.get_webview_window(BUBBLE), win.outer_size()) {
-            if bubble.is_visible().unwrap_or(false) {
-                if let (Ok(bp), Ok(bs), Ok(Some(m))) = (bubble.outer_position(), bubble.outer_size(), bubble.current_monitor()) {
-                    // Anchor the chat's bottom-right corner to the bubble's bottom-right corner.
+    let mut origin = "bottom-right".to_string();
+    let was_hidden = !win.is_visible().unwrap_or(false);
+    // Capture bubble rect before hiding (zoom origin).
+    let bubble_rect: Option<(i32, i32, u32, u32)> = app
+        .get_webview_window(BUBBLE)
+        .filter(|b| b.is_visible().unwrap_or(false))
+        .and_then(|b| match (b.outer_position(), b.outer_size()) {
+            (Ok(p), Ok(sz)) => Some((p.x, p.y, sz.width, sz.height)),
+            _ => None,
+        });
+    let mut target: Option<(i32, i32, u32, u32)> = None;
+    if was_hidden && s.window_position != "custom" {
+        // Heal collapsed size from previous shrink (never persist tiny).
+        let size = chat_target_size(&win, &app.state::<AppState>().settings.get());
+        if let Ok(cur) = win.outer_size() {
+            if cur.width != size.width || cur.height != size.height {
+                suppress_persistence();
+                let _ = win.set_size(size);
+            }
+        }
+        if let Some((bx, by, bw, bh)) = bubble_rect {
+            if let Some(bubble) = app.get_webview_window(BUBBLE) {
+                if let Ok(Some(m)) = bubble.current_monitor() {
                     let area = m.work_area();
-                    let desired = (bp.x + bs.width as i32 - size.width as i32, bp.y + bs.height as i32 - size.height as i32);
+                    let desired = (bx + bw as i32 - size.width as i32, by + bh as i32 - size.height as i32);
                     let (x, y) = clamp_into((area.position.x, area.position.y), (area.size.width, area.size.height), desired, (size.width, size.height));
-                    suppress_persistence();
-                    let _ = win.set_position(PhysicalPosition::new(x, y));
+                    if x <= area.position.x + 4 {
+                        origin = "bottom-left".to_string();
+                    } else if y <= area.position.y + 4 {
+                        origin = "top-right".to_string();
+                    }
+                    target = Some((x, y, size.width, size.height));
                 }
             }
         }
@@ -186,9 +264,38 @@ pub fn show_main(app: &AppHandle, focus_input: bool) {
     if win.is_minimized().unwrap_or(false) {
         let _ = win.unminimize();
     }
+    suppress_persistence();
+    // Snap to anchor. Resize loop sluggish on Windows; morph veil in
+    // webview (GPU) gives continuity with zero native resize.
+    if let Some((tx, ty, _, _)) = target {
+        let _ = win.set_position(PhysicalPosition::new(tx, ty));
+    }
     let _ = win.show();
     let _ = win.set_focus();
     hide_bubble(app);
+    // Bubble center in main logical px so shell zooms from bubble spot.
+    // Custom-pos windows keep their place; origin outside box still gives
+    // directional grow toward bubble.
+    let scale = win.scale_factor().unwrap_or(1.0);
+    let main_origin: (i32, i32) = target
+        .map(|(tx, ty, _, _)| (tx, ty))
+        .or_else(|| win.outer_position().map(|p| (p.x, p.y)).ok())
+        .unwrap_or((0, 0));
+    let (fx, fy) = match bubble_rect {
+        Some((bx, by, bw, bh)) => rel_logical(main_origin.0, main_origin.1, bx + bw as i32 / 2, by + bh as i32 / 2, scale),
+        _ => {
+            // Fallback: origin corner of current window size.
+            let sz = win.outer_size().unwrap_or(PhysicalSize::new(420, 640));
+            let (w, h) = (sz.width as f64 / scale, sz.height as f64 / scale);
+            match origin.as_str() {
+                "bottom-left" => (24.0, (h - 24.0) as f32),
+                "top-right" => ((w - 24.0) as f32, 24.0),
+                _ => ((w - 24.0) as f32, (h - 24.0) as f32),
+            }
+        }
+    };
+    let animated = bubble_rect.is_some() && was_hidden;
+    let _ = app.emit_to(MAIN, "app://window-shown", serde_json::json!({ "origin": origin, "animated": animated, "fx": fx, "fy": fy }));
     if focus_input {
         let _ = app.emit_to(MAIN, "app://focus-input", ());
     }
@@ -203,11 +310,39 @@ pub fn hide_to_tray(app: &AppHandle) {
     }
 }
 
-/// Hides the chat window and returns to the floating bubble.
+/// Hides chat, shows bubble. Emits closing veil first (190ms shrink),
+/// then swaps windows so blob lands exactly on bubble. Instant hide_to_tray
+/// unaffected. Heals collapsed size while hidden so next open full.
 pub fn minimize_to_bubble(app: &AppHandle) {
-    if let Some(w) = main_window(app) {
-        let _ = w.hide();
+    let Some(w) = main_window(app) else {
+        show_bubble(app);
+        return;
+    };
+    if let Ok(sz) = w.outer_size() {
+        if sz.width < 240 || sz.height < 240 {
+            let full = chat_target_size(&w, &app.state::<AppState>().settings.get());
+            let _ = w.hide();
+            suppress_persistence();
+            let _ = w.set_size(full);
+            show_bubble(app);
+            return;
+        }
     }
+    // Bubble center in main logical px for shrink target. Bubble hidden but
+    // retains last position.
+    let (fx, fy) = match (w.outer_position(), w.outer_size(), app.get_webview_window(BUBBLE)) {
+        (Ok(mp), Ok(_), Some(b)) => match (b.outer_position(), b.outer_size()) {
+            (Ok(bp), Ok(bs)) => {
+                let scale = w.scale_factor().unwrap_or(1.0);
+                rel_logical(mp.x, mp.y, bp.x + bs.width as i32 / 2, bp.y + bs.height as i32 / 2, scale)
+            }
+            _ => (0.0, 0.0),
+        },
+        _ => (0.0, 0.0),
+    };
+    let _ = app.emit_to(MAIN, "app://window-closing", serde_json::json!({ "fx": fx, "fy": fy }));
+    std::thread::sleep(std::time::Duration::from_millis(190));
+    let _ = w.hide();
     show_bubble(app);
 }
 
@@ -353,7 +488,7 @@ pub fn hide_overlay(app: &AppHandle) {
 
 #[cfg(test)]
 mod tests {
-    use super::{clamp_into, preset_position};
+    use super::{clamp_into, ease_out_cubic, lerp, preset_position, rel_logical};
 
     #[test]
     fn presets() {
@@ -372,5 +507,27 @@ mod tests {
         assert_eq!(clamp_into((0, 0), (1920, 1040), (-300, -500), (400, 600)), (0, 0));
         assert_eq!(clamp_into((0, 0), (1920, 1040), (1600, 500), (400, 600)), (1520, 440));
         assert_eq!(clamp_into((0, 0), (1920, 1040), (100, 100), (400, 600)), (100, 100));
+    }
+
+    #[test]
+    fn morph_easing_monotonic() {
+        assert!((ease_out_cubic(0.0) - 0.0).abs() < 1e-6);
+        assert!((ease_out_cubic(1.0) - 1.0).abs() < 1e-6);
+        let a = ease_out_cubic(0.25);
+        let b = ease_out_cubic(0.75);
+        assert!(a > 0.25 && b > a && b < 1.0);
+        assert_eq!(lerp(0, 100, 0.0), 0);
+        assert_eq!(lerp(0, 100, 1.0), 100);
+        assert_eq!(lerp(84, 420, 0.5), 252);
+    }
+
+    #[test]
+    fn veil_point_tracks_bubble_center() {
+        // Main at (100,100) phys, bubble center (500,700) phys, scale 2.
+        let (fx, fy) = rel_logical(100, 100, 500, 700, 2.0);
+        assert!((fx - 200.0).abs() < 1e-6);
+        assert!((fy - 300.0).abs() < 1e-6);
+        // Zero scale falls back to 1.
+        assert_eq!(rel_logical(0, 0, 60, 80, 0.0), (60.0, 80.0));
     }
 }
