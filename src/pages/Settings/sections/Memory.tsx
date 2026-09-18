@@ -93,7 +93,7 @@ export function MemorySection() {
             <Row key={item.key} label={rowLabel(item)} hint={item.model || t("settings.memory.none")}>
               <span className={`badge${BADGE[item.state]}`}>
                 {working && <span className="spinner" style={{ width: 10, height: 10 }} />} {t(`settings.memory.states.${working ? "loading" : item.state}`)}
-                {item.detail && item.state !== "failed" && item.detail !== "silma" ? ` · ${item.detail}` : ""}
+                {item.detail && item.state !== "failed" ? ` · ${item.detail}` : ""}
               </span>
               {canLoad && item.key !== "llm" && (
                 <button className="btn btn-sm" disabled={working} onClick={() => void run(item.key, "load")}>
