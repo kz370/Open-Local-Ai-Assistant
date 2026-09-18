@@ -12,6 +12,7 @@ use crate::services::audio::capture::{Capture, CaptureEvent, LoopbackMonitor};
 use crate::services::language::{detect, Lang};
 use crate::settings::{SettingsStore, SttSettings};
 use serde::{Deserialize, Serialize};
+use std::cell::Cell;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::sync::{Arc, Mutex};
@@ -100,7 +101,19 @@ impl VoiceSessions {
         let device = capture.device_name.clone();
         // Best-effort: if the speaker loopback can't be opened, sessions just
         // run without system-audio gating instead of failing to start.
-        let loopback = (settings.stt.isolate_system_audio && mode != ListenMode::Test).then(|| LoopbackMonitor::start().ok()).flatten();
+        let loopback = if settings.stt.isolate_system_audio && mode != ListenMode::Test {
+            // Watch the very output the assistant speaks through, not just the
+            // system default, or nothing is gated when they differ.
+            match LoopbackMonitor::start(settings.tts.output_device.as_deref()) {
+                Ok(m) => Some(m),
+                Err(e) => {
+                    tracing::warn!(error = %e, "system audio isolation is on but the speaker monitor could not start");
+                    None
+                }
+            }
+        } else {
+            None
+        };
         let system_audio = loopback.as_ref().map(|l| l.level_handle());
         let stop = Arc::new(AtomicBool::new(false));
         let discard = Arc::new(AtomicBool::new(false));
@@ -114,7 +127,16 @@ impl VoiceSessions {
             .name("voice-session".into())
             .spawn(move || {
                 let (mut capture, mut loopback) = (capture, loopback);
-                let ctx = SessionCtx { mode, emit: emit.clone(), speaking, settings: stt_settings.clone(), stop: stop2, discard: discard2, system_audio };
+                let ctx = SessionCtx {
+                    mode,
+                    emit: emit.clone(),
+                    speaking,
+                    settings: stt_settings.clone(),
+                    stop: stop2,
+                    discard: discard2,
+                    system_audio,
+                    muted_until: Cell::new(None),
+                };
                 run_session(&stt, &ctx, &rx, vad_path.as_deref());
                 capture.stop();
                 if let Some(lb) = loopback.as_mut() {
@@ -186,6 +208,7 @@ pub fn run_session_for_test(
         stop,
         discard: Arc::new(AtomicBool::new(false)),
         system_audio: None,
+        muted_until: Cell::new(None),
     };
     run_session(stt, &ctx, rx, vad_path);
 }
@@ -217,6 +240,10 @@ struct SessionCtx {
     discard: Arc<AtomicBool>,
     /// Live speaker-loopback level, when "isolate system audio" is on.
     system_audio: Option<Arc<AtomicU32>>,
+    /// Keeps the microphone gated for a short tail after the speakers go quiet.
+    /// Captured audio reaches this loop later than the loopback level does, so
+    /// without the tail the end of every spoken phrase still bleeds in.
+    muted_until: Cell<Option<Instant>>,
 }
 
 /// Watches how long the microphone has heard nothing and ends the session
@@ -245,16 +272,35 @@ impl SilenceGuard {
 const SPEECH_LEVEL: f32 = 0.22;
 /// Level above which we consider the speakers to be audibly playing something.
 const SYSTEM_AUDIO_LEVEL: f32 = 0.12;
+/// How long the microphone stays gated after the last audible speaker sample:
+/// covers the playback/capture latency and the room tail of the last word, and
+/// bridges the short silences between words so the gate does not flap.
+const AUDIO_TAIL: Duration = Duration::from_millis(700);
 
 impl SessionCtx {
     fn stopped(&self) -> bool {
         self.stop.load(Ordering::Relaxed)
     }
 
-    /// True while "isolate system audio" is on and the speakers are audibly
-    /// playing something, so this sample should be ignored, not transcribed.
-    fn system_audio_active(&self) -> bool {
-        self.system_audio.as_ref().is_some_and(|a| f32::from_bits(a.load(Ordering::Relaxed)) > SYSTEM_AUDIO_LEVEL)
+    /// True while this sample should be ignored instead of transcribed: the
+    /// assistant is speaking (hands-free), or "isolate system audio" is on and
+    /// the speakers are audibly playing something, or either was true within
+    /// the last `AUDIO_TAIL`.
+    fn input_muted(&self, hands_free: bool) -> bool {
+        let assistant = hands_free && (self.speaking)();
+        let speakers = self.system_audio.as_ref().is_some_and(|a| f32::from_bits(a.load(Ordering::Relaxed)) > SYSTEM_AUDIO_LEVEL);
+        if assistant || speakers {
+            self.muted_until.set(Some(Instant::now() + AUDIO_TAIL));
+            return true;
+        }
+        match self.muted_until.get() {
+            Some(t) if Instant::now() < t => true,
+            Some(_) => {
+                self.muted_until.set(None);
+                false
+            }
+            None => false,
+        }
     }
 
     fn emit_state(&self, state: &str) {
@@ -315,7 +361,7 @@ impl SessionCtx {
                     (self.emit)(VoiceEvent::Level { mode: self.mode, value: v });
                 }
                 Ok(CaptureEvent::Samples(s)) => {
-                    if (hands_free && (self.speaking)()) || self.system_audio_active() {
+                    if self.input_muted(hands_free) {
                         silence.heard_speech(); // the assistant/PC is making noise, not a silent room
                         continue; // ignore audio bleeding in from the speakers
                     }
@@ -398,7 +444,7 @@ impl SessionCtx {
                     (self.emit)(VoiceEvent::Level { mode: self.mode, value: v });
                 }
                 Ok(CaptureEvent::Samples(s)) => {
-                    if (hands_free && (self.speaking)()) || self.system_audio_active() {
+                    if self.input_muted(hands_free) {
                         silence.heard_speech();
                         pending.clear();
                         if let (Some(vad), false) = (vad.as_ref(), was_speaking) {
@@ -487,5 +533,53 @@ impl SessionCtx {
             }
         }
         self.emit_transcript(&text, samples_seen * 1000 / 16_000, t0.elapsed().as_millis() as u64);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ctx(system_audio: Option<Arc<AtomicU32>>, speaking: bool) -> SessionCtx {
+        SessionCtx {
+            mode: ListenMode::Dictation,
+            emit: Arc::new(|_| {}),
+            speaking: Arc::new(move || speaking),
+            settings: SttSettings::default(),
+            stop: Arc::new(AtomicBool::new(false)),
+            discard: Arc::new(AtomicBool::new(false)),
+            system_audio,
+            muted_until: Cell::new(None),
+        }
+    }
+
+    #[test]
+    fn no_gating_without_the_monitor() {
+        assert!(!ctx(None, false).input_muted(false));
+    }
+
+    #[test]
+    fn speakers_gate_the_microphone_and_keep_gating_for_the_tail() {
+        let level = Arc::new(AtomicU32::new(0.0f32.to_bits()));
+        let c = ctx(Some(level.clone()), false);
+        assert!(!c.input_muted(false), "silent speakers must not gate");
+
+        level.store(0.5f32.to_bits(), Ordering::Relaxed);
+        assert!(c.input_muted(false));
+
+        // The speakers go quiet: the microphone stays gated for the tail, because
+        // the audio it captured while they played arrives here a moment later.
+        level.store(0.0f32.to_bits(), Ordering::Relaxed);
+        assert!(c.input_muted(false), "the tail must still be gated");
+
+        c.muted_until.set(Some(Instant::now() - Duration::from_millis(1)));
+        assert!(!c.input_muted(false), "gate must reopen once the tail has passed");
+    }
+
+    #[test]
+    fn assistant_speech_gates_hands_free_only() {
+        let c = ctx(None, true);
+        assert!(c.input_muted(true));
+        assert!(!ctx(None, true).input_muted(false));
     }
 }

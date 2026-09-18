@@ -78,7 +78,7 @@ pub fn tts_test(state: State<'_, AppState>, language: String) -> CmdResult<()> {
     let text = match lang {
         Lang::En => "Hello! This is your local assistant speaking. Everything you hear was generated on this computer.",
         Lang::De => "Hallo! Hier spricht dein lokaler Assistent. Alles, was du hörst, wurde auf diesem Computer erzeugt.",
-        Lang::Ar => "مَرْحَبًا! أَنَا مُسَاعِدُكَ الْمَحَلِّيُّ. كُلُّ مَا تَسْمَعُهُ تَمَّ تَوْلِيدُهُ عَلَى هَذَا الْحَاسُوبِ.",
+        Lang::Ar => "مَرْحَبًا! أَنَا مُسَاعِدُكَ الْمَحَلِّيُّ، وَكُلُّ مَا تَسْمَعُهُ صَوْتٌ مُوَلَّدٌ عَلَى هَذَا الْحَاسُوبِ.",
     };
     state.tts.speak("test-voice", text, Some(lang));
     Ok(())

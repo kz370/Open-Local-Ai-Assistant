@@ -10,7 +10,7 @@ use std::sync::{Arc, RwLock};
 
 const KEY: &str = "app_settings";
 pub const DEFAULT_LMSTUDIO_URL: &str = "http://localhost:1234/v1";
-const CURRENT_VERSION: u32 = 2;
+const CURRENT_VERSION: u32 = 3;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", default)]
@@ -153,6 +153,7 @@ pub struct SttSettings {
     /// true = ignore microphone audio while the PC's own speakers are
     /// playing (via WASAPI loopback level), so system audio can't bleed
     /// into a real microphone's recording.
+    #[serde(default = "default_true")]
     pub isolate_system_audio: bool,
     /// "auto" | "cpu"
     pub hardware: String,
@@ -178,7 +179,7 @@ impl Default for SttSettings {
             language: "auto".into(),
             microphone: None,
             mic_only: true,
-            isolate_system_audio: false,
+            isolate_system_audio: true,
             hardware: "auto".into(),
             auto_submit: true,
             hands_free: false,
@@ -393,6 +394,11 @@ impl SettingsStore {
                 // v2: dictation became a default feature.
                 s.dictation.enabled = true;
             }
+            if s.version < 3 {
+                // v3: system-audio isolation is on by default, so the microphone
+                // no longer transcribes what the speakers are playing.
+                s.stt.isolate_system_audio = true;
+            }
             s.version = CURRENT_VERSION;
         })?;
         Ok(())
@@ -474,6 +480,17 @@ mod tests {
         let s: Settings = serde_json::from_str(r#"{"ai":{"temperature":0.2}}"#).unwrap();
         assert_eq!(s.ai.temperature, 0.2);
         assert_eq!(s.ai.server_url, DEFAULT_LMSTUDIO_URL);
+    }
+
+    #[test]
+    fn migration_turns_on_system_audio_isolation() {
+        let db = Arc::new(Db::open_in_memory().unwrap());
+        db.set_kv(KEY, r#"{"version":2,"stt":{"isolateSystemAudio":false}}"#).unwrap();
+        let store = SettingsStore::load(db.clone()).unwrap();
+        assert!(store.get().stt.isolate_system_audio);
+        // A later explicit opt-out is respected.
+        store.update(|s| s.stt.isolate_system_audio = false).unwrap();
+        assert!(!SettingsStore::load(db).unwrap().get().stt.isolate_system_audio);
     }
 
     #[test]
