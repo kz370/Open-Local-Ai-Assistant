@@ -51,6 +51,7 @@ export interface Settings {
     language: LangSetting;
     microphone: string | null;
     micOnly: boolean;
+    isolateSystemAudio: boolean;
     hardware: string;
     autoSubmit: boolean;
     handsFree: boolean;

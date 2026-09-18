@@ -227,14 +227,16 @@ impl ChatEngine {
         let tool_map: HashMap<String, ToolSpec> = specs.iter().map(|s| (s.llm_name.clone(), s.clone())).collect();
         let has_web_tool = specs.iter().any(|s| s.category == ToolCategory::Search);
         let tool_desc: Vec<(String, String)> = specs.iter().map(|s| (s.llm_name.clone(), s.description.clone())).collect();
-        let voice_mode = input.voice;
+        // Whether this reply will be spoken aloud: voice input always replies by
+        // voice, and "speak responses" also reads out replies to typed messages.
+        let speak = input.voice || settings.tts.speak_responses;
         let mut system = build_system_prompt(&PromptContext {
             date: chrono::Local::now(),
             forced_language: forced,
             detected_language: detected,
             tools: &tool_desc,
             has_web_tool,
-            voice_mode,
+            voice_mode: speak,
             assistant_name: &settings.general.assistant_name,
             custom_prompt: &settings.ai.system_prompt,
         });
@@ -265,7 +267,6 @@ impl ChatEngine {
             })
             .collect();
 
-        let speak = voice_mode || settings.tts.speak_responses;
         if speak {
             self.speech.begin(&turn_id);
         }

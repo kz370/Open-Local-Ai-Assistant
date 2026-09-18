@@ -150,6 +150,10 @@ pub struct SttSettings {
     /// true = microphone only (loopback / Stereo Mix excluded)
     #[serde(default = "default_true")]
     pub mic_only: bool,
+    /// true = ignore microphone audio while the PC's own speakers are
+    /// playing (via WASAPI loopback level), so system audio can't bleed
+    /// into a real microphone's recording.
+    pub isolate_system_audio: bool,
     /// "auto" | "cpu"
     pub hardware: String,
     pub auto_submit: bool,
@@ -174,6 +178,7 @@ impl Default for SttSettings {
             language: "auto".into(),
             microphone: None,
             mic_only: true,
+            isolate_system_audio: false,
             hardware: "auto".into(),
             auto_submit: true,
             hands_free: false,

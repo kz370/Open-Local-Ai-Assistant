@@ -247,6 +247,9 @@ export function SpeechSection() {
         <Row label={t("settings.speech.micOnly")} hint={t("settings.speech.micOnlyHint")} htmlFor="sw-miconly">
           <Switch id="sw-miconly" label={t("settings.speech.micOnly")} checked={s.stt.micOnly} onChange={(v) => set((d) => void (d.stt.micOnly = v))} />
         </Row>
+        <Row label={t("settings.speech.isolateSystemAudio")} hint={t("settings.speech.isolateSystemAudioHint")} htmlFor="sw-isolate">
+          <Switch id="sw-isolate" label={t("settings.speech.isolateSystemAudio")} checked={s.stt.isolateSystemAudio} onChange={(v) => set((d) => void (d.stt.isolateSystemAudio = v))} />
+        </Row>
         <Row label={t("settings.speech.hardware")}>
           <span className="badge">
             {t("app.automatic")} · {t("settings.speech.cpu")}

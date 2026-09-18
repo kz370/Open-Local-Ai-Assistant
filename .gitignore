@@ -25,3 +25,5 @@ dist-ssr
 
 # Rust test build output
 src-tauri/target-test
+release/Open Local Assistant.exe
+release/Open-Local-Assistant-0.1.0-setup.exe

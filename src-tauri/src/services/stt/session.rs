@@ -8,11 +8,11 @@
 use super::engine::Recognizer;
 use super::SttService;
 use crate::errors::{AppError, AppResult};
-use crate::services::audio::capture::{Capture, CaptureEvent};
+use crate::services::audio::capture::{Capture, CaptureEvent, LoopbackMonitor};
 use crate::services::language::{detect, Lang};
 use crate::settings::{SettingsStore, SttSettings};
 use serde::{Deserialize, Serialize};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -98,6 +98,10 @@ impl VoiceSessions {
 
         let (capture, rx) = Capture::start(settings.stt.microphone.as_deref(), settings.stt.mic_only)?;
         let device = capture.device_name.clone();
+        // Best-effort: if the speaker loopback can't be opened, sessions just
+        // run without system-audio gating instead of failing to start.
+        let loopback = (settings.stt.isolate_system_audio && mode != ListenMode::Test).then(|| LoopbackMonitor::start().ok()).flatten();
+        let system_audio = loopback.as_ref().map(|l| l.level_handle());
         let stop = Arc::new(AtomicBool::new(false));
         let discard = Arc::new(AtomicBool::new(false));
         let (stt, emit, speaking) = (self.stt.clone(), self.emit.clone(), self.speaking.clone());
@@ -109,10 +113,13 @@ impl VoiceSessions {
         let thread = std::thread::Builder::new()
             .name("voice-session".into())
             .spawn(move || {
-                let mut capture = capture;
-                let ctx = SessionCtx { mode, emit: emit.clone(), speaking, settings: stt_settings.clone(), stop: stop2, discard: discard2 };
+                let (mut capture, mut loopback) = (capture, loopback);
+                let ctx = SessionCtx { mode, emit: emit.clone(), speaking, settings: stt_settings.clone(), stop: stop2, discard: discard2, system_audio };
                 run_session(&stt, &ctx, &rx, vad_path.as_deref());
                 capture.stop();
+                if let Some(lb) = loopback.as_mut() {
+                    lb.stop();
+                }
                 emit(VoiceEvent::State { mode, state: "idle".into(), device: None, streaming });
             })
             .map_err(|e| AppError::Audio(e.to_string()))?;
@@ -178,6 +185,7 @@ pub fn run_session_for_test(
         settings: settings.clone(),
         stop,
         discard: Arc::new(AtomicBool::new(false)),
+        system_audio: None,
     };
     run_session(stt, &ctx, rx, vad_path);
 }
@@ -207,6 +215,8 @@ struct SessionCtx {
     settings: SttSettings,
     stop: Arc<AtomicBool>,
     discard: Arc<AtomicBool>,
+    /// Live speaker-loopback level, when "isolate system audio" is on.
+    system_audio: Option<Arc<AtomicU32>>,
 }
 
 /// Watches how long the microphone has heard nothing and ends the session
@@ -233,10 +243,18 @@ impl SilenceGuard {
 
 /// Level above which we consider the microphone to be picking up speech.
 const SPEECH_LEVEL: f32 = 0.22;
+/// Level above which we consider the speakers to be audibly playing something.
+const SYSTEM_AUDIO_LEVEL: f32 = 0.12;
 
 impl SessionCtx {
     fn stopped(&self) -> bool {
         self.stop.load(Ordering::Relaxed)
+    }
+
+    /// True while "isolate system audio" is on and the speakers are audibly
+    /// playing something, so this sample should be ignored, not transcribed.
+    fn system_audio_active(&self) -> bool {
+        self.system_audio.as_ref().is_some_and(|a| f32::from_bits(a.load(Ordering::Relaxed)) > SYSTEM_AUDIO_LEVEL)
     }
 
     fn emit_state(&self, state: &str) {
@@ -297,9 +315,9 @@ impl SessionCtx {
                     (self.emit)(VoiceEvent::Level { mode: self.mode, value: v });
                 }
                 Ok(CaptureEvent::Samples(s)) => {
-                    if hands_free && (self.speaking)() {
-                        silence.heard_speech(); // the assistant is talking, not a silent room
-                        continue; // ignore our own voice from the speakers
+                    if (hands_free && (self.speaking)()) || self.system_audio_active() {
+                        silence.heard_speech(); // the assistant/PC is making noise, not a silent room
+                        continue; // ignore audio bleeding in from the speakers
                     }
                     samples_seen += s.len() as u64;
                     session.accept(&s);
@@ -380,7 +398,7 @@ impl SessionCtx {
                     (self.emit)(VoiceEvent::Level { mode: self.mode, value: v });
                 }
                 Ok(CaptureEvent::Samples(s)) => {
-                    if hands_free && (self.speaking)() {
+                    if (hands_free && (self.speaking)()) || self.system_audio_active() {
                         silence.heard_speech();
                         pending.clear();
                         if let (Some(vad), false) = (vad.as_ref(), was_speaking) {

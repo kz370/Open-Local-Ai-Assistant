@@ -63,6 +63,9 @@ export function DictationSection() {
         <Row label={t("settings.speech.micOnly")} hint={t("settings.speech.micOnlyHint")} htmlFor="sw-miconly-dict">
           <Switch id="sw-miconly-dict" label={t("settings.speech.micOnly")} checked={s.stt.micOnly} onChange={(v) => set((x) => void (x.stt.micOnly = v))} />
         </Row>
+        <Row label={t("settings.speech.isolateSystemAudio")} hint={t("settings.speech.isolateSystemAudioHint")} htmlFor="sw-isolate-dict">
+          <Switch id="sw-isolate-dict" label={t("settings.speech.isolateSystemAudio")} checked={s.stt.isolateSystemAudio} onChange={(v) => set((x) => void (x.stt.isolateSystemAudio = v))} />
+        </Row>
       </Card>
       <Card title={t("settings.dictation.correction")}>
         <Row label={t("settings.dictation.correction")} hint={t("settings.dictation.correctionHint")} htmlFor="sw-corr">

@@ -43,7 +43,7 @@ const SETTINGS: Settings = {
     modelAliases: { "qwen/qwen3.5-9b": "Qwen 9B" },
   },
   language: { responseLanguage: "auto" },
-  stt: { model: "auto", language: "auto", microphone: null, micOnly: true, hardware: "auto", autoSubmit: true, handsFree: false, pushToTalk: true, vadThreshold: 0.5, silenceMs: 800, extraModelDirs: [], callView: true, autoStopSilenceSecs: 8, handsFreeTimeoutSecs: 300 },
+  stt: { model: "auto", language: "auto", microphone: null, micOnly: true, isolateSystemAudio: false, hardware: "auto", autoSubmit: true, handsFree: false, pushToTalk: true, vadThreshold: 0.5, silenceMs: 800, extraModelDirs: [], callView: true, autoStopSilenceSecs: 8, handsFreeTimeoutSecs: 300 },
   tts: { speakResponses: false, voiceEn: "auto", voiceAr: "auto", voiceDe: "auto", speed: 1, volume: 1, outputDevice: null, preferredGender: "any" },
   dictation: { enabled: true, shortcut: "CommandOrControl+Alt+Space", mode: "hold", correctionEnabled: false, correctionModel: null, insertMethod: "type", addTrailingSpace: true },
   lastConversationId: null,
