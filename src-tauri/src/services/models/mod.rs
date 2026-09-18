@@ -57,7 +57,7 @@ pub fn recommend(_hw: &HardwareInfo) -> Recommendation {
         vad: "silero-vad",
         tts_en: "kitten-nano-en-v0_8-int8",
         tts_de: "piper-de_DE-thorsten-medium-int8",
-        tts_ar: "nabra-82m-arabic-int8",
+        tts_ar: "piper-ar_JO-SA_miro_V2-high",
     }
 }
 

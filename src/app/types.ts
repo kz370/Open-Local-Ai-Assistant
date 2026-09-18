@@ -33,6 +33,7 @@ export interface Settings {
   };
   ai: {
     serverUrl: string;
+    apiKey: string | null;
     modelMode: "auto" | "manual";
     model: string | null;
     temperature: number;

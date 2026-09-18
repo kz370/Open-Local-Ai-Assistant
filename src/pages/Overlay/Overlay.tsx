@@ -81,13 +81,13 @@ export function Overlay() {
       break;
   }
 
+  const placeholder = mode === "toggle" ? t("overlay.listeningToggle") : t("overlay.listening");
+
   return (
     <div className={`overlay-card${state === "inserted" ? " done" : ""}`} role="status" aria-live="polite">
       <div className="overlay-head">
         {icon}
         <span className="overlay-label">{label}</span>
-        {listening && <LevelMeter levels={levels} max={18} label={t("voice.level")} />}
-        {hint && <span className="overlay-hint">{hint}</span>}
         <span style={{ flex: 1 }} />
         <button
           type="button"
@@ -100,8 +100,14 @@ export function Overlay() {
           <X size={14} />
         </button>
       </div>
+      {listening && (
+        <div className="overlay-status">
+          <LevelMeter levels={levels} max={16} label={t("voice.level")} />
+          {hint && <span className="overlay-hint">{hint}</span>}
+        </div>
+      )}
       <div className={`overlay-text${text ? "" : " empty"}`} ref={textRef} dir={text ? textDir(text) : "auto"}>
-        {text || t("overlay.listening")}
+        {text || placeholder}
       </div>
     </div>
   );

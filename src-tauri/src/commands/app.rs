@@ -26,6 +26,10 @@ pub async fn save_settings(app: AppHandle, state: State<'_, AppState>, settings:
         state.lmstudio.set_base_url(&saved.ai.server_url);
         state.resolver.invalidate().await;
     }
+    if before.ai.api_key != saved.ai.api_key {
+        state.lmstudio.set_api_key(saved.ai.api_key.clone());
+        state.resolver.invalidate().await;
+    }
     if before.ai.request_timeout_secs != saved.ai.request_timeout_secs {
         state.lmstudio.set_timeout(saved.ai.request_timeout_secs);
     }
@@ -150,14 +154,15 @@ pub async fn scan_capabilities(state: State<'_, AppState>) -> CmdResult<Capabili
 }
 
 #[tauri::command]
-pub async fn lmstudio_test(state: State<'_, AppState>, url: Option<String>) -> CmdResult<ConnectionStatus> {
-    match url {
-        Some(u) if u.trim() != state.lmstudio.base_url() => {
-            let probe = crate::services::ai::lmstudio::LmStudioService::new(&u, 10);
-            probe.test_connection().await
-        }
-        _ => state.lmstudio.test_connection().await,
+pub async fn lmstudio_test(state: State<'_, AppState>, url: Option<String>, api_key: Option<String>) -> CmdResult<ConnectionStatus> {
+    let url_changed = url.as_deref().is_some_and(|u| u.trim() != state.lmstudio.base_url());
+    let key_changed = api_key != state.lmstudio.api_key();
+    if !url_changed && !key_changed {
+        return state.lmstudio.test_connection().await;
     }
+    let probe = crate::services::ai::lmstudio::LmStudioService::new(url.as_deref().unwrap_or(&state.lmstudio.base_url()), 10);
+    probe.set_api_key(if key_changed { api_key } else { state.lmstudio.api_key() });
+    probe.test_connection().await
 }
 
 #[tauri::command]

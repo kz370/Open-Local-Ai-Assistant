@@ -20,6 +20,24 @@ const MARGIN: i32 = 16;
 pub const COMPACT_SIZE: (f64, f64) = (380.0, 170.0);
 /// Logical size of the bubble window (the visible circle is smaller, leaving room for its shadow).
 pub const BUBBLE_SIZE: f64 = 84.0;
+/// Chat window bounds outside compact mode: narrow/short enough and the
+/// header, messages and composer start overlapping instead of stacking.
+const CHAT_MIN_WIDTH: f64 = 480.0;
+const CHAT_MAX_WIDTH: f64 = 760.0;
+const CHAT_MIN_HEIGHT: f64 = 480.0;
+
+/// Locks the window to an exact size in compact mode, or applies the normal
+/// chat size bounds otherwise (drag-resize can never go smaller/larger than
+/// the layout can actually render).
+fn apply_size_bounds(win: &WebviewWindow, compact: bool) {
+    if compact {
+        let _ = win.set_min_size(Some(LogicalSize::new(COMPACT_SIZE.0, COMPACT_SIZE.1)));
+        let _ = win.set_max_size(Some(LogicalSize::new(COMPACT_SIZE.0, COMPACT_SIZE.1)));
+    } else {
+        let _ = win.set_min_size(Some(LogicalSize::new(CHAT_MIN_WIDTH, CHAT_MIN_HEIGHT)));
+        let _ = win.set_max_size(Some(LogicalSize::new(CHAT_MAX_WIDTH, 4000.0)));
+    }
+}
 
 /// Timestamp (ms) until which Moved/Resized events are programmatic and must not be persisted.
 static SUPPRESS_UNTIL: AtomicU64 = AtomicU64::new(0);
@@ -118,6 +136,7 @@ pub fn restore(app: &AppHandle) {
     let s = state.settings.get().general;
     if let Some(win) = main_window(app) {
         suppress_persistence();
+        apply_size_bounds(&win, s.compact);
         if s.compact {
             let _ = win.set_size(LogicalSize::new(COMPACT_SIZE.0, COMPACT_SIZE.1));
         } else if s.window.width > 0 && s.window.height > 0 {
@@ -408,6 +427,7 @@ pub fn set_compact(app: &AppHandle, compact: bool) {
     let _ = app.emit("settings://changed", &s);
     let Some(win) = main_window(app) else { return };
     suppress_persistence();
+    apply_size_bounds(&win, compact);
     if compact {
         let _ = win.set_size(LogicalSize::new(COMPACT_SIZE.0, COMPACT_SIZE.1));
     } else {
@@ -431,6 +451,7 @@ pub fn ensure_settings(app: &AppHandle) -> tauri::Result<WebviewWindow> {
         .title("Local Assistant — Settings")
         .inner_size(1000.0, 720.0)
         .min_inner_size(720.0, 520.0)
+        .max_inner_size(1400.0, 1000.0)
         .center()
         // Transparent like every working window (bubble/overlay/main):
         // CSS paints opaque bg, so look identical when healthy.
