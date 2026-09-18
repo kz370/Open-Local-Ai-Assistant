@@ -89,9 +89,34 @@ export interface Settings {
     maxResults: number;
     searxngUrl: string;
   };
+  captions: CaptionSettings;
   lastConversationId: string | null;
   version: number;
 }
+
+export interface CaptionSettings {
+  shortcut: string;
+  /** "auto" or a Whisper language code ("fr", "ja", …). */
+  language: string;
+  translate: boolean;
+  /** "auto" = the speech recognition model. */
+  model: string;
+  audioSource: string | null;
+  fontSize: number;
+  fontWeight: number;
+  italic: boolean;
+  textColor: string;
+  backgroundColor: string;
+  backgroundOpacity: number;
+  maxLines: number;
+  window: WindowGeometry | null;
+}
+
+export type CaptionEvent =
+  | { type: "state"; state: "starting" | "listening" | "idle"; device: string | null }
+  | { type: "partial"; text: string }
+  | { type: "line"; text: string }
+  | { type: "error"; code: string; detail: string };
 
 export interface AppErrorPayload {
   code: string;

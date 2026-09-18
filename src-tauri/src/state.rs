@@ -4,6 +4,7 @@ use crate::capabilities::LocalCapabilityManager;
 use crate::database::Db;
 use crate::services::ai::lmstudio::LmStudioService;
 use crate::services::attachments::AttachmentStore;
+use crate::services::captions::LiveCaptions;
 use crate::services::chat::{ChatEngine, ModelResolver};
 use crate::services::hardware::HardwareInfo;
 use crate::services::mcp::McpManager;
@@ -40,6 +41,7 @@ pub struct AppState {
     pub stt: Arc<SttService>,
     pub tts: Arc<TtsService>,
     pub voice: Arc<VoiceSessions>,
+    pub captions: Arc<LiveCaptions>,
     pub hardware: HardwareInfo,
     pub downloads: Mutex<HashMap<String, CancellationToken>>,
     pub dictation_busy: AtomicBool,

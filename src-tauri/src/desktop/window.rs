@@ -1,5 +1,5 @@
-//! Window management: the floating bubble, the chat window, settings and the
-//! dictation overlay.
+//! Window management: the floating bubble, the chat window, settings, the
+//! dictation overlay and the live-caption bar.
 //!
 //! The bubble is the resting state. Clicking it (or the global shortcut)
 //! opens the chat window and hides the bubble; minimizing the chat returns to
@@ -15,6 +15,7 @@ pub const MAIN: &str = "main";
 pub const BUBBLE: &str = "bubble";
 pub const SETTINGS: &str = "settings";
 pub const OVERLAY: &str = "overlay";
+pub const CAPTIONS: &str = "captions";
 
 const MARGIN: i32 = 16;
 pub const COMPACT_SIZE: (f64, f64) = (380.0, 170.0);
@@ -553,6 +554,119 @@ pub fn show_overlay(app: &AppHandle) {
 pub fn hide_overlay(app: &AppHandle) {
     if let Some(w) = app.get_webview_window(OVERLAY) {
         let _ = w.hide();
+    }
+}
+
+/// Logical size of a freshly placed caption bar.
+const CAPTIONS_SIZE: (f64, f64) = (960.0, 150.0);
+
+/// Creates the caption bar hidden (idempotent). It floats above every app,
+/// never takes focus when shown, and remembers where the user put it.
+pub fn create_captions(app: &AppHandle) -> tauri::Result<WebviewWindow> {
+    if let Some(w) = app.get_webview_window(CAPTIONS) {
+        return Ok(w);
+    }
+    let w = WebviewWindowBuilder::new(app, CAPTIONS, WebviewUrl::App("index.html#/captions".into()))
+        .title("Live Captions")
+        .inner_size(CAPTIONS_SIZE.0, CAPTIONS_SIZE.1)
+        .min_inner_size(260.0, 60.0)
+        .decorations(false)
+        .transparent(true)
+        .shadow(false)
+        .resizable(true)
+        .maximizable(false)
+        .minimizable(false)
+        .always_on_top(true)
+        .visible_on_all_workspaces(true)
+        .skip_taskbar(true)
+        .focused(false)
+        .visible(false)
+        .build()?;
+    place_captions(app, &w);
+    let h = app.clone();
+    w.on_window_event(move |e| {
+        let save = |f: &dyn Fn(&mut WindowGeometry)| {
+            if now_ms() < SUPPRESS_UNTIL.load(Ordering::Relaxed) {
+                return;
+            }
+            let _ = h.state::<AppState>().settings.update(|s| {
+                let mut g = s.captions.window.clone().unwrap_or_default();
+                f(&mut g);
+                s.captions.window = Some(g);
+            });
+        };
+        match e {
+            tauri::WindowEvent::Moved(pos) => save(&|g| {
+                g.x = pos.x;
+                g.y = pos.y;
+            }),
+            tauri::WindowEvent::Resized(size) if size.width > 0 && size.height > 0 => save(&|g| {
+                g.width = size.width;
+                g.height = size.height;
+            }),
+            tauri::WindowEvent::CloseRequested { api, .. } => {
+                api.prevent_close();
+                stop_captions(&h);
+            }
+            _ => {}
+        }
+    });
+    Ok(w)
+}
+
+/// Saved spot if it is still on a monitor, else bottom center of the primary one.
+fn place_captions(app: &AppHandle, w: &WebviewWindow) {
+    suppress_persistence();
+    if let Some(g) = app.state::<AppState>().settings.get().captions.window {
+        if g.width >= 100 && g.height >= 40 && on_any_monitor(w, g.x, g.y) {
+            let _ = w.set_size(PhysicalSize::new(g.width, g.height));
+            let _ = w.set_position(PhysicalPosition::new(g.x, g.y));
+            return;
+        }
+    }
+    if let Some(m) = w.primary_monitor().ok().flatten() {
+        let area = m.work_area();
+        let scale = m.scale_factor();
+        let width = ((CAPTIONS_SIZE.0 * scale) as u32).min(area.size.width * 9 / 10);
+        let height = (CAPTIONS_SIZE.1 * scale) as u32;
+        let _ = w.set_size(PhysicalSize::new(width, height));
+        let x = area.position.x + (area.size.width as i32 - width as i32) / 2;
+        let y = area.position.y + area.size.height as i32 - height as i32 - (60.0 * scale) as i32;
+        let _ = w.set_position(PhysicalPosition::new(x, y));
+    }
+}
+
+/// Starts live captions and shows the caption bar (without stealing focus).
+pub fn start_captions(app: &AppHandle) -> crate::errors::AppResult<()> {
+    let w = create_captions(app).map_err(|e| crate::errors::AppError::Other(e.to_string()))?;
+    // Show first so a failure to start is reported in the bar itself.
+    if !w.is_visible().unwrap_or(false) {
+        place_captions(app, &w);
+        let _ = w.show();
+    }
+    super::tray::set_captions_checked(true);
+    let res = app.state::<AppState>().captions.start();
+    if let Err(e) = &res {
+        let _ = app.emit("captions://event", serde_json::json!({ "type": "error", "code": e.code(), "detail": e.to_string() }));
+    }
+    res
+}
+
+pub fn stop_captions(app: &AppHandle) {
+    app.state::<AppState>().captions.stop();
+    if let Some(w) = app.get_webview_window(CAPTIONS) {
+        let _ = w.hide();
+    }
+    super::tray::set_captions_checked(false);
+}
+
+/// Shortcut / tray: turn captions on or off.
+pub fn toggle_captions(app: &AppHandle) {
+    let visible = app.get_webview_window(CAPTIONS).is_some_and(|w| w.is_visible().unwrap_or(false));
+    if app.state::<AppState>().captions.is_active() || visible {
+        stop_captions(app);
+    } else if let Err(e) = start_captions(app) {
+        tracing::warn!(error = %e, "live captions could not start");
     }
 }
 

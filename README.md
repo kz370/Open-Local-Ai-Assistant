@@ -8,6 +8,7 @@ A small, fast, local-first desktop AI assistant. It lives in a floating window (
 - **Text-to-speech:** local neural voices. Kitten nano (31 MB) is the small, natural-sounding English default; Kokoro and the German/Arabic Piper voices are one click away, and you can prefer male or female voices.
 - **Tools:** generic MCP (Model Context Protocol) client with explicit per-tool permissions. Web search comes from an MCP server you choose.
 - **Dictation:** a global hotkey (`Ctrl+Alt+Space`) types what you say into any application. A small window shows the text live while you speak, with optional grammar cleanup by a small LM Studio model you pick.
+- **Live captions:** subtitles for anything the PC plays (videos, calls, streams) in any language Whisper knows, with optional translation to English. Sound is captured from the speakers, never the microphone. Toggle with `Ctrl+Alt+C` or from the tray menu; font size, weight, italic, text and background color are adjustable.
 - **Privacy:** conversations, settings and logs stay on disk locally. There is no telemetry. Logs contain no conversation content unless you turn that on.
 
 ## Requirements
@@ -47,6 +48,7 @@ Each model shows its type (Whisper, streaming transducer, Kokoro, Piper, …) an
 | Open / focus assistant | `Ctrl+Space` |
 | Push-to-talk (hold) | `Ctrl+Shift+Space` |
 | Dictation into other apps | `Ctrl+Alt+Space` |
+| Live captions on / off | `Ctrl+Alt+C` |
 | New conversation / History / Settings (in window) | `Ctrl+N` / `Ctrl+H` / `Ctrl+,` |
 
 All shortcuts can be changed in **Settings → Keyboard Shortcuts**.
@@ -67,6 +69,7 @@ src-tauri/src/
   services/mcp/              MCP manager (stdio + streamable HTTP), permission policy, source extraction
   services/models/           voice model catalog, discovery, consented downloads
   services/dictation.rs      correction with a small LM Studio model, text insertion
+  services/captions.rs       live captions of system audio (WASAPI loopback)
   capabilities/              LocalCapabilityManager (scan of everything available locally)
   database/                  SQLite (conversations, messages + FTS5, settings, MCP config)
   desktop/                   tray, floating window placement and persistence, global shortcuts

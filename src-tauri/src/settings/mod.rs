@@ -284,6 +284,59 @@ impl Default for DictationSettings {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct CaptionSettings {
+    /// Toggles the caption window from anywhere ("" = no shortcut).
+    pub shortcut: String,
+    /// "auto" (detect per sentence) or a Whisper language code ("fr", "ja", ...).
+    pub language: String,
+    /// Whisper only: show English captions whatever language is spoken.
+    pub translate: bool,
+    /// "auto" = the speech recognition model, otherwise an installed model id.
+    pub model: String,
+    /// Output device whose sound is captioned; None = system default output.
+    pub audio_source: Option<String>,
+    pub font_size: u32,
+    /// CSS font weight, 300..900.
+    pub font_weight: u32,
+    pub italic: bool,
+    /// "#rrggbb"
+    pub text_color: String,
+    /// "#rrggbb"
+    pub background_color: String,
+    /// 0 (transparent) .. 1 (solid).
+    pub background_opacity: f32,
+    /// Caption lines kept on screen.
+    pub max_lines: u32,
+    /// Where the user left the caption window (physical pixels).
+    pub window: Option<WindowGeometry>,
+}
+
+impl Default for CaptionSettings {
+    fn default() -> Self {
+        Self {
+            shortcut: "CommandOrControl+Alt+C".into(),
+            language: "auto".into(),
+            translate: false,
+            model: "auto".into(),
+            audio_source: None,
+            font_size: 28,
+            font_weight: 600,
+            italic: false,
+            text_color: "#ffffff".into(),
+            background_color: "#000000".into(),
+            background_opacity: 0.6,
+            max_lines: 2,
+            window: None,
+        }
+    }
+}
+
+fn is_hex_color(s: &str) -> bool {
+    s.len() == 7 && s.starts_with('#') && s[1..].chars().all(|c| c.is_ascii_hexdigit())
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Settings {
@@ -294,6 +347,7 @@ pub struct Settings {
     pub tts: TtsSettings,
     pub dictation: DictationSettings,
     pub search: SearchSettings,
+    pub captions: CaptionSettings,
     pub last_conversation_id: Option<String>,
     /// Schema version of the stored settings, used for one-time migrations.
     pub version: u32,
@@ -395,6 +449,30 @@ impl Settings {
         if !matches!(self.dictation.insert_method.as_str(), "type" | "paste") {
             self.dictation.insert_method = "type".into();
         }
+        let c = &mut self.captions;
+        if is_single_modifier(&c.shortcut) {
+            c.shortcut = CaptionSettings::default().shortcut;
+        }
+        c.language = c.language.trim().to_ascii_lowercase();
+        let lang_code = (2..=3).contains(&c.language.len()) && c.language.chars().all(|ch| ch.is_ascii_lowercase());
+        if c.language != "auto" && !lang_code {
+            c.language = "auto".into();
+        }
+        if c.model.trim().is_empty() {
+            c.model = "auto".into();
+        }
+        c.font_size = c.font_size.clamp(12, 96);
+        c.font_weight = (c.font_weight.clamp(300, 900) / 100) * 100;
+        c.text_color = c.text_color.trim().to_ascii_lowercase();
+        if !is_hex_color(&c.text_color) {
+            c.text_color = "#ffffff".into();
+        }
+        c.background_color = c.background_color.trim().to_ascii_lowercase();
+        if !is_hex_color(&c.background_color) {
+            c.background_color = "#000000".into();
+        }
+        c.background_opacity = if c.background_opacity.is_finite() { c.background_opacity.clamp(0.0, 1.0) } else { 0.6 };
+        c.max_lines = c.max_lines.clamp(1, 6);
     }
 }
 
@@ -525,6 +603,28 @@ mod tests {
         // A later explicit opt-out is respected.
         store.update(|s| s.stt.isolate_system_audio = false).unwrap();
         assert!(!SettingsStore::load(db).unwrap().get().stt.isolate_system_audio);
+    }
+
+    #[test]
+    fn caption_settings_are_sanitized() {
+        let mut s = Settings::default();
+        assert_eq!(s.captions.language, "auto");
+        s.captions.language = "FR".into();
+        s.captions.font_size = 500;
+        s.captions.font_weight = 650;
+        s.captions.text_color = "red".into();
+        s.captions.background_opacity = f32::NAN;
+        s.captions.max_lines = 0;
+        s.sanitize();
+        assert_eq!(s.captions.language, "fr");
+        assert_eq!(s.captions.font_size, 96);
+        assert_eq!(s.captions.font_weight, 600);
+        assert_eq!(s.captions.text_color, "#ffffff");
+        assert_eq!(s.captions.background_opacity, 0.6);
+        assert_eq!(s.captions.max_lines, 1);
+        s.captions.language = "french".into();
+        s.sanitize();
+        assert_eq!(s.captions.language, "auto");
     }
 
     #[test]
