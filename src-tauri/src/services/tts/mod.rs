@@ -27,6 +27,9 @@ use voices::{list_voices, select_voice, VoiceInfo};
 #[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum TtsEvent {
     Speaking { tag: String },
+    /// A sentence started playing: what is being said right now and how long it
+    /// takes, so the UI can follow the speech word by word.
+    Sentence { tag: String, text: String, duration_ms: u64 },
     Paused,
     Resumed,
     Idle,
@@ -39,6 +42,14 @@ struct Job {
     tag: String,
     text: String,
     lang: Lang,
+}
+
+/// A clip handed to the player, kept until it has been played so the progress
+/// watcher can tell the UI which sentence is being spoken.
+struct QueuedSentence {
+    tag: String,
+    text: String,
+    duration_ms: u64,
 }
 
 struct TurnState {
@@ -56,6 +67,8 @@ pub struct TtsService {
     /// Bumped by stop_all/begin; queued jobs from older generations are dropped.
     generation: Arc<AtomicU64>,
     turns: Mutex<HashMap<String, TurnState>>,
+    /// Clip id -> the sentence that clip speaks.
+    queued: Arc<Mutex<HashMap<u64, QueuedSentence>>>,
     cancelled: Arc<Mutex<HashSet<String>>>,
     last_turn: Mutex<Option<Vec<(String, Lang)>>>,
     engines: Arc<Mutex<HashMap<String, Arc<sherpa_onnx::OfflineTts>>>>,
@@ -76,12 +89,14 @@ impl TtsService {
             jobs: tx,
             generation: Arc::new(AtomicU64::new(0)),
             turns: Mutex::new(HashMap::new()),
+            queued: Arc::new(Mutex::new(HashMap::new())),
             cancelled: Arc::new(Mutex::new(HashSet::new())),
             last_turn: Mutex::new(None),
             engines: Arc::new(Mutex::new(HashMap::new())),
             emit,
             warned: Mutex::new(HashSet::new()),
         });
+        svc.clone().watch_playback();
         let weak = Arc::downgrade(&svc);
         let threads = hw.inference_threads().min(4);
         std::thread::Builder::new()
@@ -102,6 +117,47 @@ impl TtsService {
             })
             .expect("spawn tts thread");
         svc
+    }
+
+    /// Follows the player clip by clip and tells the UI which sentence is being
+    /// spoken (and when speech has finished), which the enqueue-time `Speaking`
+    /// event cannot do: clips are synthesized well before they are played.
+    fn watch_playback(self: Arc<Self>) {
+        let weak = Arc::downgrade(&self);
+        drop(self);
+        std::thread::Builder::new()
+            .name("tts-progress".into())
+            .spawn(move || {
+                let mut last: u64 = 0;
+                let mut spoke = false;
+                loop {
+                    std::thread::sleep(std::time::Duration::from_millis(40));
+                    let Some(svc) = weak.upgrade() else { break };
+                    let current = svc.player.current_clip();
+                    if current == last {
+                        continue;
+                    }
+                    last = current;
+                    if current == 0 {
+                        // Nothing playing any more: the queue ran dry on its own.
+                        if spoke && !svc.player.is_active() {
+                            spoke = false;
+                            (svc.emit)(TtsEvent::Idle);
+                        }
+                        continue;
+                    }
+                    spoke = true;
+                    let mut queued = svc.queued.lock().unwrap_or_else(|p| p.into_inner());
+                    queued.retain(|id, _| *id >= current);
+                    let Some(sentence) = queued.get(&current) else { continue };
+                    (svc.emit)(TtsEvent::Sentence {
+                        tag: sentence.tag.clone(),
+                        text: sentence.text.clone(),
+                        duration_ms: sentence.duration_ms,
+                    });
+                }
+            })
+            .expect("spawn tts progress thread");
     }
 
     pub fn voices(&self) -> Vec<VoiceInfo> {
@@ -199,7 +255,13 @@ impl TtsService {
             return Ok(());
         }
         (self.emit)(TtsEvent::Speaking { tag: job.tag.clone() });
-        self.player.enqueue(Clip { samples, sample_rate: rate, tag: job.tag.clone() })
+        let duration_ms = samples.len() as u64 * 1000 / rate.max(1) as u64;
+        let id = self.player.enqueue(Clip { samples, sample_rate: rate, tag: job.tag.clone() })?;
+        self.queued.lock().unwrap_or_else(|p| p.into_inner()).insert(
+            id,
+            QueuedSentence { tag: job.tag.clone(), text: job.text.clone(), duration_ms },
+        );
+        Ok(())
     }
 
     fn queue_sentence(&self, tag: &str, sentence: String, fallback: Option<Lang>) -> Lang {
@@ -240,6 +302,7 @@ impl TtsService {
     pub fn stop_all(&self) {
         self.generation.fetch_add(1, Ordering::SeqCst);
         self.turns.lock().unwrap_or_else(|p| p.into_inner()).clear();
+        self.queued.lock().unwrap_or_else(|p| p.into_inner()).clear();
         self.player.stop(None);
         (self.emit)(TtsEvent::Idle);
     }

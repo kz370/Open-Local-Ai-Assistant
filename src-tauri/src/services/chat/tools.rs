@@ -69,6 +69,36 @@ pub trait ToolProvider: Send + Sync {
     async fn call_tool(&self, spec: &ToolSpec, args: serde_json::Value) -> AppResult<ToolOutput>;
 }
 
+/// Serves the tools of several providers as one list; calls go back to the
+/// provider that owns the tool's server.
+pub struct CombinedTools(Vec<std::sync::Arc<dyn ToolProvider>>);
+
+impl CombinedTools {
+    pub fn new(providers: Vec<std::sync::Arc<dyn ToolProvider>>) -> Self {
+        Self(providers)
+    }
+}
+
+#[async_trait]
+impl ToolProvider for CombinedTools {
+    async fn available_tools(&self) -> Vec<ToolSpec> {
+        let mut all = Vec::new();
+        for p in &self.0 {
+            all.extend(p.available_tools().await);
+        }
+        all
+    }
+
+    async fn call_tool(&self, spec: &ToolSpec, args: serde_json::Value) -> AppResult<ToolOutput> {
+        for p in &self.0 {
+            if p.available_tools().await.iter().any(|t| t.server_id == spec.server_id && t.llm_name == spec.llm_name) {
+                return p.call_tool(spec, args).await;
+            }
+        }
+        Err(crate::errors::AppError::Mcp(format!("tool {} unavailable", spec.llm_name)))
+    }
+}
+
 /// No-op provider (tests, or when MCP is unavailable).
 pub struct NoTools;
 

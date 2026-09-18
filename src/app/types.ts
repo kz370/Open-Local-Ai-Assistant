@@ -82,6 +82,11 @@ export interface Settings {
     insertMethod: "type" | "paste";
     addTrailingSpace: boolean;
   };
+  search: {
+    enabled: boolean;
+    maxResults: number;
+    searxngUrl: string;
+  };
   lastConversationId: string | null;
   version: number;
 }
@@ -189,6 +194,7 @@ export type VoiceEvent =
 
 export type TtsEvent =
   | { type: "speaking"; tag: string }
+  | { type: "sentence"; tag: string; text: string; durationMs: number }
   | { type: "paused" }
   | { type: "resumed" }
   | { type: "idle" }

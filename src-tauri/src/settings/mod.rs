@@ -227,6 +227,25 @@ impl Default for TtsSettings {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", default)]
+pub struct SearchSettings {
+    /// Built-in DuckDuckGo web search offered to the model as a tool.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// Results per search (1-10).
+    pub max_results: u32,
+    /// Optional SearXNG instance ("https://searx.example.org"). When set it is
+    /// asked first: it answers JSON and never shows a captcha.
+    pub searxng_url: String,
+}
+
+impl Default for SearchSettings {
+    fn default() -> Self {
+        Self { enabled: true, max_results: 5, searxng_url: String::new() }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
 pub struct DictationSettings {
     pub enabled: bool,
     pub shortcut: String,
@@ -263,6 +282,7 @@ pub struct Settings {
     pub stt: SttSettings,
     pub tts: TtsSettings,
     pub dictation: DictationSettings,
+    pub search: SearchSettings,
     pub last_conversation_id: Option<String>,
     /// Schema version of the stored settings, used for one-time migrations.
     pub version: u32,

@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from "react";
 import ReactDOM from "react-dom/client";
-import { useChat } from "./app/chatStore";
 import { ipc } from "./app/ipc";
 import { useSettings } from "./app/settingsStore";
 import { useVoice } from "./app/voiceStore";
@@ -50,13 +49,12 @@ function Root() {
     const cleanups: (() => void)[] = [];
     const track = (un: () => void) => (cancelled ? un() : cleanups.push(un));
     (async () => {
-      const s = await useSettings.getState().load();
+      await useSettings.getState().load();
       track(await useSettings.getState().subscribe());
       if (route === "chat") {
         track(await useVoice.getState().subscribe());
-        if (s.lastConversationId) {
-          await useChat.getState().loadConversation(s.lastConversationId).catch(() => undefined);
-        }
+        // A fresh start always begins a new conversation; the previous one stays
+        // in History instead of reopening itself.
       }
       setReady(true);
       if (route === "chat") void ipc.appReady();

@@ -69,7 +69,11 @@ fn init_state(app: &AppHandle) -> Result<AppState, Box<dyn std::error::Error>> {
         Arc::new(move || tts_probe.is_speaking()),
     ));
 
-    let chat = Arc::new(ChatEngine::new(db.clone(), settings.clone(), lmstudio.clone(), resolver.clone(), mcp.clone(), tts.clone()));
+    // Web search works out of the box (no API key, no extra runtime) and sits
+    // next to whatever MCP servers the user has added.
+    let web_search = Arc::new(services::search::WebSearch::new(settings.clone()));
+    let tools = Arc::new(services::chat::tools::CombinedTools::new(vec![mcp.clone(), web_search]));
+    let chat = Arc::new(ChatEngine::new(db.clone(), settings.clone(), lmstudio.clone(), resolver.clone(), tools, tts.clone()));
 
     Ok(AppState {
         paths,

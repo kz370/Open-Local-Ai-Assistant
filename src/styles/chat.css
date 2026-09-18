@@ -1172,6 +1172,53 @@ html.launcher-window #root {
   max-width: 340px;
   user-select: text;
 }
+/* Spoken sentence, scrolling with the voice and highlighting the word being
+   said right now. */
+.ticker {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  max-width: 340px;
+  display: flex;
+  align-items: center;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 12%, #000 88%, transparent);
+  mask-image: linear-gradient(to right, transparent, #000 12%, #000 88%, transparent);
+}
+.ticker::-webkit-scrollbar {
+  display: none;
+}
+.ticker-line {
+  margin: 0;
+  padding: 0 50%;
+  white-space: nowrap;
+  font-size: var(--text-md);
+  line-height: 1.6;
+  user-select: text;
+}
+.ticker-word {
+  color: var(--text-faint);
+  transition:
+    color 140ms var(--ease),
+    opacity 140ms var(--ease);
+}
+.ticker-word + .ticker-word {
+  margin-inline-start: 0.34em;
+}
+.ticker-word.done {
+  color: var(--text-muted);
+}
+.ticker-word.on {
+  color: var(--accent);
+  font-weight: 650;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ticker-word {
+    transition: none;
+  }
+}
 .call-you {
   font-size: var(--text-xs);
   color: var(--text-muted);

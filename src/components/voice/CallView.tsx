@@ -8,6 +8,7 @@ import { useVoice } from "../../app/voiceStore";
 import { BrandMark } from "../common/BrandMark";
 import { textDir } from "../common/controls";
 import { LevelMeter } from "./LevelMeter";
+import { SpeechTicker } from "./SpeechTicker";
 
 function elapsed(startedAt: number): string {
   const s = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
@@ -52,9 +53,13 @@ export function CallView() {
         {label}
       </div>
       <LevelMeter levels={voice.levels} max={44} label={t("voice.level")} />
-      <div className="call-caption" dir={caption ? textDir(caption) : "auto"}>
-        {caption || t("call.saySomething")}
-      </div>
+      {voice.spoken && state === "speaking" ? (
+        <SpeechTicker sentence={voice.spoken} paused={voice.paused} />
+      ) : (
+        <div className="call-caption" dir={caption ? textDir(caption) : "auto"}>
+          {caption || t("call.saySomething")}
+        </div>
+      )}
       {voiceNotice && (
         <div className="notice warn" style={{ maxWidth: 340 }} role="alert">
           <span style={{ flex: 1 }}>{voiceNotice}</span>
