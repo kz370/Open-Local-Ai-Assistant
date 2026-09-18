@@ -67,6 +67,7 @@ pub async fn save_settings(app: AppHandle, state: State<'_, AppState>, settings:
     if let Some(win) = window::main_window(&app) {
         if g_before.always_on_top != g.always_on_top {
             let _ = win.set_always_on_top(g.always_on_top);
+            window::keep_off_taskbar(&win);
         }
         if g_before.window_position != g.window_position && g.window_position != "custom" {
             window::apply_position(&win, &g.window_position, &g.window);

@@ -63,7 +63,7 @@
     "handsFree": "Hands-free conversation",
     "speakResponses": "Speak responses",
     "voiceUnavailable": "No local voice is installed for {{language}}. The answer is shown as text.",
-    "attach": "Attachments are not supported yet",
+    "attach": "Attach files",
     "online": "Online",
     "offline": "LM Studio offline",
     "modelAuto": "Auto",
@@ -82,6 +82,13 @@
     "pause": "Pause",
     "resume": "Resume",
     "stopSpeaking": "Stop speaking"
+  },
+  "attach": {
+    "listLabel": "Attachments",
+    "remove": "Remove {{name}}",
+    "dropHere": "Drop files to attach them",
+    "textChars": "{{chars}} characters of text",
+    "textTruncated": "{{chars}} characters of text (shortened)"
   },
   "tools": {
     "searching": "Searching the web…",
@@ -222,6 +229,8 @@
       "streaming": "Stream responses",
       "showReasoning": "Show model reasoning",
       "timeout": "Request timeout (seconds)",
+    "pasteAsFile": "Paste as file above",
+    "pasteAsFileHint": "Pasted text longer than this many characters is attached as a text file instead of filling the message box. Leave empty to turn this off.",
       "reasons": {
         "already_loaded": "already loaded",
         "fits_gpu": "fits in GPU memory",
@@ -539,6 +548,10 @@
     "saySomething": "Say something to start",
     "end": "End conversation",
     "interrupt": "Stop speaking",
+    "interrupted": "Interrupted — go ahead",
+    "mute": "Mute microphone",
+    "unmute": "Unmute microphone",
+    "muted": "Microphone muted",
     "usingMic": "Microphone: {{device}}",
     "changeMic": "No sound? Choose another microphone"
   }

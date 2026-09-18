@@ -1179,7 +1179,9 @@ html.launcher-window #root {
 .ticker {
   position: relative;
   flex: 1;
-  min-height: 0;
+  /* Room for one line at the size the spoken word grows to, so the karaoke
+     stays readable without the user dragging the window taller. */
+  min-height: 3.4em;
   width: 100%;
   max-width: 340px;
   display: flex;
@@ -1198,13 +1200,18 @@ html.launcher-window #root {
   line-height: 1.6;
   user-select: text;
   will-change: transform;
-  transition: transform 260ms var(--ease);
+  /* The line is positioned every frame from script, so no transition here: one
+     would fight the interpolation and bring back the stutter. */
 }
-/* The spoken word only changes colour: a weight or size change would re-lay out
-   the whole line and make the slide stutter. */
+/* The spoken word grows and thickens, but only through `transform` and a text
+   shadow. Changing font-size or font-weight would re-lay out the whole line and
+   invalidate the measured word positions mid-slide. */
 .ticker-word {
+  display: inline-block;
   color: var(--text-faint);
-  transition: color 140ms var(--ease);
+  transform: scale(1);
+  transform-origin: center bottom;
+  transition: color 240ms var(--ease), transform 240ms var(--ease), text-shadow 240ms var(--ease);
 }
 .ticker-word + .ticker-word {
   margin-inline-start: 0.34em;
@@ -1214,9 +1221,10 @@ html.launcher-window #root {
 }
 .ticker-word.on {
   color: var(--accent);
+  transform: scale(1.22);
+  text-shadow: 0 0 0.6px currentColor, 0 0 0.6px currentColor;
 }
 @media (prefers-reduced-motion: reduce) {
-  .ticker-line,
   .ticker-word {
     transition: none;
   }
@@ -1267,6 +1275,11 @@ html.launcher-window #root {
   opacity: 0.5;
   cursor: default;
 }
+.call-btn.muted {
+  background: var(--accent-soft);
+  border-color: transparent;
+  color: var(--accent-soft-text);
+}
 .call-btn.end {
   width: 58px;
   height: 58px;
@@ -1276,4 +1289,117 @@ html.launcher-window #root {
 }
 .model-item.busy {
   opacity: 0.6;
+}
+
+/* ---------- Attachments ---------- */
+.attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 4px;
+  padding: 0 2px;
+  list-style: none;
+}
+.msg.user .attachments {
+  justify-content: flex-end;
+  margin-bottom: 6px;
+}
+.msg.user .attachments:dir(rtl) {
+  justify-content: flex-start;
+}
+.attachment {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 230px;
+  padding: 5px 8px;
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  background: var(--card-hover);
+  color: var(--text-muted);
+}
+.attachment-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--composer-bg);
+  color: var(--accent);
+}
+.attachment-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.attachment-thumb-empty {
+  width: 100%;
+  height: 100%;
+  background: var(--hairline);
+}
+.attachment-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.25;
+}
+.attachment-name {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.attachment-detail {
+  font-size: 10px;
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.attachment-remove {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+  transition: background var(--dur-fast), color var(--dur-fast);
+}
+.attachment-remove:hover {
+  background: var(--hairline);
+  color: var(--text);
+}
+
+/* Drop target for files dragged onto the window. */
+.drop-veil {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--bg) 72%, transparent);
+  backdrop-filter: blur(2px);
+  pointer-events: none;
+}
+.drop-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 20px;
+  border-radius: 16px;
+  border: 2px dashed var(--accent);
+  background: var(--composer-bg);
+  color: var(--text);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  box-shadow: var(--composer-shadow);
 }

@@ -130,6 +130,14 @@ pub fn apply_position(window: &WebviewWindow, preset: &str, custom: &WindowGeome
     }
 }
 
+/// The chat window lives in the tray and must never own a taskbar button, but
+/// Windows silently restores that button whenever the window style is rebuilt:
+/// restoring it from minimized, toggling always-on-top, or showing it again
+/// right after a hide. Re-assert the flag after any of those.
+pub fn keep_off_taskbar(win: &WebviewWindow) {
+    let _ = win.set_skip_taskbar(true);
+}
+
 /// Restores chat window size/always-on-top from settings and places the bubble.
 pub fn restore(app: &AppHandle) {
     let state = app.state::<AppState>();
@@ -143,6 +151,7 @@ pub fn restore(app: &AppHandle) {
             let _ = win.set_size(PhysicalSize::new(s.window.width, s.window.height));
         }
         let _ = win.set_always_on_top(s.always_on_top);
+        keep_off_taskbar(&win);
         apply_position(&win, &s.window_position, &s.window);
     }
     let _ = create_bubble(app);
@@ -283,6 +292,7 @@ pub fn show_main(app: &AppHandle, focus_input: bool) {
     }
     if win.is_minimized().unwrap_or(false) {
         let _ = win.unminimize();
+        keep_off_taskbar(&win);
     }
     let animated = bubble_rect.is_some() && was_hidden;
     // Bubble center in main logical px so shell zooms from bubble spot.
@@ -321,6 +331,7 @@ pub fn show_main(app: &AppHandle, focus_input: bool) {
     hide_bubble(app);
     let _ = win.show();
     let _ = win.set_focus();
+    keep_off_taskbar(&win);
     if focus_input {
         let _ = app.emit_to(MAIN, "app://focus-input", ());
     }

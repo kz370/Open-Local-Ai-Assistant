@@ -100,6 +100,10 @@ pub struct AiSettings {
     pub show_reasoning: bool,
     /// User-defined short display names, keyed by LM Studio model id.
     pub model_aliases: std::collections::BTreeMap<String, String>,
+    /// Pasted text longer than this many characters is attached as a text file
+    /// instead of filling the composer. 0 turns the behaviour off.
+    #[serde(default = "default_paste_as_file_chars")]
+    pub paste_as_file_chars: u32,
 }
 
 impl Default for AiSettings {
@@ -117,6 +121,7 @@ impl Default for AiSettings {
             request_timeout_secs: 300,
             show_reasoning: false,
             model_aliases: Default::default(),
+            paste_as_file_chars: default_paste_as_file_chars(),
         }
     }
 }
@@ -136,6 +141,12 @@ impl Default for LanguageSettings {
 
 fn default_true() -> bool {
     true
+}
+
+/// Roughly a page and a half of text: long enough that pasting a snippet still
+/// lands in the composer, short enough that a pasted document becomes a file.
+fn default_paste_as_file_chars() -> u32 {
+    2000
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -351,6 +362,9 @@ impl Settings {
             self.ai.model_mode = "auto".into();
         }
         self.ai.request_timeout_secs = self.ai.request_timeout_secs.clamp(10, 3600);
+        if self.ai.paste_as_file_chars != 0 {
+            self.ai.paste_as_file_chars = self.ai.paste_as_file_chars.clamp(200, 200_000);
+        }
         self.ai.model_aliases = std::mem::take(&mut self.ai.model_aliases)
             .into_iter()
             .map(|(k, v)| (k, v.trim().chars().take(40).collect::<String>()))

@@ -214,6 +214,19 @@ export function AiSection() {
         <Row label={t("settings.ai.maxTokens")} hint={t("settings.ai.maxTokensHint")} htmlFor="in-max">
           <input id="in-max" className="input" type="number" min={16} step={64} style={{ maxWidth: 160 }} defaultValue={s.ai.maxTokens ?? ""} onBlur={(e) => set((d) => void (d.ai.maxTokens = numberOrNull(e.target.value)))} />
         </Row>
+        <Row label={t("settings.ai.pasteAsFile")} hint={t("settings.ai.pasteAsFileHint")} htmlFor="in-paste">
+          <input
+            id="in-paste"
+            className="input"
+            type="number"
+            min={200}
+            max={200000}
+            step={500}
+            style={{ maxWidth: 160 }}
+            defaultValue={s.ai.pasteAsFileChars || ""}
+            onBlur={(e) => set((d) => void (d.ai.pasteAsFileChars = numberOrNull(e.target.value) ?? 0))}
+          />
+        </Row>
         <Row label={t("settings.ai.timeout")} htmlFor="in-timeout">
           <input id="in-timeout" className="input" type="number" min={10} max={3600} style={{ maxWidth: 160 }} defaultValue={s.ai.requestTimeoutSecs} onBlur={(e) => set((d) => void (d.ai.requestTimeoutSecs = Number(e.target.value) || 300))} />
         </Row>

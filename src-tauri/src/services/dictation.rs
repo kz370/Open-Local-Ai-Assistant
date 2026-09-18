@@ -157,7 +157,7 @@ mod tests {
         }
         async fn chat(&self, req: ChatRequest, _: CancellationToken, cb: &mut (dyn FnMut(StreamChunk) + Send)) -> AppResult<ChatCompletion> {
             assert_eq!(req.temperature, 0.1);
-            assert!(req.messages[0].content.as_ref().unwrap().contains("Do not translate"));
+            assert!(req.messages[0].content_text().contains("Do not translate"));
             cb(StreamChunk::Content(self.0.into()));
             Ok(ChatCompletion::default())
         }

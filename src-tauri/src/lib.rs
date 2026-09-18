@@ -73,7 +73,15 @@ fn init_state(app: &AppHandle) -> Result<AppState, Box<dyn std::error::Error>> {
     // next to whatever MCP servers the user has added.
     let web_search = Arc::new(services::search::WebSearch::new(settings.clone()));
     let tools = Arc::new(services::chat::tools::CombinedTools::new(vec![mcp.clone(), web_search]));
-    let chat = Arc::new(ChatEngine::new(db.clone(), settings.clone(), lmstudio.clone(), resolver.clone(), tools, tts.clone()));
+    // Attachment files outlive a single run; anything no message points at any
+    // more is left over from a composer that was never sent, so drop it now.
+    let attachments = Arc::new(services::attachments::AttachmentStore::new(paths.data_dir.join("attachments")));
+    match db.attachment_ids() {
+        Ok(keep) => attachments.gc(&keep),
+        Err(e) => tracing::warn!(error = %e, "skipping attachment cleanup"),
+    }
+
+    let chat = Arc::new(ChatEngine::new(db.clone(), settings.clone(), lmstudio.clone(), resolver.clone(), tools, tts.clone(), attachments.clone()));
 
     Ok(AppState {
         paths,
@@ -82,6 +90,7 @@ fn init_state(app: &AppHandle) -> Result<AppState, Box<dyn std::error::Error>> {
         lmstudio,
         resolver,
         chat,
+        attachments,
         mcp,
         models,
         stt,
@@ -288,6 +297,12 @@ pub fn run() {
             commands::voice::gpu_install,
             commands::voice::gpu_cancel,
             commands::voice::gpu_remove,
+            commands::attachments::attach_files,
+            commands::attachments::attach_bytes,
+            commands::attachments::attach_text,
+            commands::attachments::attach_remove,
+            commands::attachments::attachment_data_url,
+            commands::attachments::attachment_text,
             commands::chat::chat_send,
             commands::chat::chat_stop,
             commands::chat::chat_confirm_tool,
@@ -312,6 +327,8 @@ pub fn run() {
             commands::voice::voice_stop,
             commands::voice::dictation_cancel,
             commands::voice::voice_status,
+            commands::voice::voice_set_muted,
+            commands::voice::voice_muted,
             commands::voice::tts_voices,
             commands::voice::tts_speak,
             commands::voice::tts_test,

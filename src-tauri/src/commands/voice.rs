@@ -51,6 +51,19 @@ pub fn voice_status(state: State<'_, AppState>) -> Option<ListenMode> {
     state.voice.active_mode()
 }
 
+/// Mutes or unmutes the microphone without ending the session, so a hands-free
+/// call can be held without the assistant hearing the room.
+#[tauri::command]
+pub fn voice_set_muted(state: State<'_, AppState>, muted: bool) -> bool {
+    state.voice.set_muted(muted);
+    state.voice.is_muted()
+}
+
+#[tauri::command]
+pub fn voice_muted(state: State<'_, AppState>) -> bool {
+    state.voice.is_muted()
+}
+
 #[tauri::command]
 pub fn tts_voices(state: State<'_, AppState>) -> Vec<VoiceInfo> {
     state.tts.voices()

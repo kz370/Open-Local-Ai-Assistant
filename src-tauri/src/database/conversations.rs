@@ -35,6 +35,10 @@ pub struct Message {
     pub tool_calls: Option<serde_json::Value>,
     #[serde(default)]
     pub tool_call_id: Option<String>,
+    /// Files and images the user attached to this message, as stored by
+    /// [`crate::services::attachments`].
+    #[serde(default)]
+    pub attachments: Option<serde_json::Value>,
     pub created_at: String,
 }
 
@@ -80,12 +84,13 @@ fn msg_from_row(r: &Row) -> rusqlite::Result<Message> {
         tool_activity: json_col(r.get(7)?),
         tool_calls: json_col(r.get(8)?),
         tool_call_id: r.get(9)?,
-        created_at: r.get(10)?,
+        attachments: json_col(r.get(10)?),
+        created_at: r.get(11)?,
     })
 }
 
 const CONV_COLS: &str = "id, title, created_at, updated_at, model, language";
-const MSG_COLS: &str = "id, conversation_id, role, content, language, reasoning, sources_json, tool_activity_json, tool_calls_json, tool_call_id, created_at";
+const MSG_COLS: &str = "id, conversation_id, role, content, language, reasoning, sources_json, tool_activity_json, tool_calls_json, tool_call_id, attachments_json, created_at";
 
 impl Db {
     pub fn create_conversation(&self, title: &str, model: Option<&str>) -> AppResult<Conversation> {
@@ -163,7 +168,7 @@ impl Db {
     pub fn insert_message(&self, m: &Message) -> AppResult<()> {
         let to_s = |v: &Option<serde_json::Value>| v.as_ref().map(|v| v.to_string());
         self.conn().execute(
-            &format!("INSERT INTO messages ({MSG_COLS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)"),
+            &format!("INSERT INTO messages ({MSG_COLS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)"),
             params![
                 m.id,
                 m.conversation_id,
@@ -175,6 +180,7 @@ impl Db {
                 to_s(&m.tool_activity),
                 to_s(&m.tool_calls),
                 m.tool_call_id,
+                to_s(&m.attachments),
                 m.created_at
             ],
         )?;
@@ -196,6 +202,20 @@ impl Db {
             params![conversation_id, message_id],
         )?;
         Ok(())
+    }
+
+    /// Every attachment id referenced by a stored message. Used at start-up to
+    /// delete attachment files that no conversation points at any more.
+    pub fn attachment_ids(&self) -> AppResult<std::collections::HashSet<String>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare("SELECT attachments_json FROM messages WHERE attachments_json IS NOT NULL")?;
+        let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
+        let mut ids = std::collections::HashSet::new();
+        for json in rows.flatten() {
+            let Ok(values) = serde_json::from_str::<Vec<serde_json::Value>>(&json) else { continue };
+            ids.extend(values.iter().filter_map(|v| v["id"].as_str().map(str::to_string)));
+        }
+        Ok(ids)
     }
 
     /// Full-text search over message content plus title substring match.
@@ -251,6 +271,7 @@ mod tests {
             tool_activity: None,
             tool_calls: None,
             tool_call_id: None,
+            attachments: None,
             created_at: now(),
         }
     }

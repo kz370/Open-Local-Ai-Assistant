@@ -41,6 +41,7 @@ const SETTINGS: Settings = {
     requestTimeoutSecs: 300,
     showReasoning: false,
     modelAliases: { "qwen/qwen3.5-9b": "Qwen 9B" },
+    pasteAsFileChars: 2000,
   },
   language: { responseLanguage: "auto" },
   stt: { model: "auto", language: "auto", microphone: null, micOnly: true, isolateSystemAudio: false, hardware: "auto", autoSubmit: true, handsFree: false, pushToTalk: true, vadThreshold: 0.5, silenceMs: 800, extraModelDirs: [], callView: true, autoStopSilenceSecs: 8, handsFreeTimeoutSecs: 300 },

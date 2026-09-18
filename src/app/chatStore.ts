@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { ipc, newId, toAppError } from "./ipc";
-import type { ActivityRecord, AppErrorPayload, ChatEvent, Message, Source, ToolCategory } from "./types";
+import type { ActivityRecord, AppErrorPayload, Attachment, ChatEvent, Message, Source, ToolCategory } from "./types";
 
 export type ToolStatus = "running" | "awaiting" | "done" | "failed" | "denied";
 
@@ -20,6 +20,7 @@ export interface UiMessage {
   id: string;
   role: "user" | "assistant";
   content: string;
+  attachments: Attachment[];
   language: string | null;
   reasoning: string;
   sources: Source[];
@@ -35,11 +36,19 @@ interface ChatState {
   messages: UiMessage[];
   turnId: string | null;
   draft: string;
+  /** Files staged in the composer, sent with the next message. */
+  attachments: Attachment[];
+  /** Files the backend refused, shown once above the composer. */
+  attachmentErrors: string[];
   confirmation: UiToolActivity | null;
   /** Set when the last turn failed because LM Studio is unreachable. */
   connectionError: AppErrorPayload | null;
   voiceNotice: string | null;
   setDraft: (d: string) => void;
+  addAttachments: (added: Attachment[], failures?: string[]) => void;
+  removeAttachment: (id: string) => void;
+  clearAttachments: () => void;
+  dismissAttachmentErrors: () => void;
   send: (text: string, opts?: { spokenLanguage?: string | null; voice?: boolean }) => Promise<void>;
   retryLast: () => Promise<void>;
   stop: () => void;
@@ -68,6 +77,7 @@ export function messageToUi(m: Message): UiMessage {
     id: m.id,
     role: m.role === "user" ? "user" : "assistant",
     content: m.content,
+    attachments: m.attachments ?? [],
     language: m.language,
     reasoning: m.reasoning ?? "",
     sources: m.sources ?? [],
@@ -90,6 +100,8 @@ export const useChat = create<ChatState>((set, get) => {
     messages: [],
     turnId: null,
     draft: "",
+    attachments: [],
+    attachmentErrors: [],
     confirmation: null,
     connectionError: null,
     voiceNotice: null,
@@ -97,27 +109,53 @@ export const useChat = create<ChatState>((set, get) => {
     setDraft: (draft) => set({ draft }),
     setVoiceNotice: (voiceNotice) => set({ voiceNotice }),
 
+    addAttachments: (added, failures = []) =>
+      set((s) => ({ attachments: [...s.attachments, ...added], attachmentErrors: failures })),
+
+    removeAttachment: (id) => {
+      void ipc.attachRemove(id).catch(() => undefined);
+      set((s) => ({ attachments: s.attachments.filter((a) => a.id !== id) }));
+    },
+
+    clearAttachments: () => {
+      // Drops the staged copies on disk as well.
+      get().attachments.forEach((a) => void ipc.attachRemove(a.id).catch(() => undefined));
+      set({ attachments: [], attachmentErrors: [] });
+    },
+
+    dismissAttachmentErrors: () => set({ attachmentErrors: [] }),
+
     send: async (text, opts) => {
       const trimmed = text.trim();
-      if (!trimmed) return;
+      const attachments = get().attachments;
+      if (!trimmed && attachments.length === 0) return;
       if (get().turnId) get().stop();
       const turnId = newId();
       const now = new Date().toISOString();
       set((s) => ({
         turnId,
         draft: "",
+        attachments: [],
+        attachmentErrors: [],
         confirmation: null,
         connectionError: null,
         voiceNotice: null,
         messages: [
           ...s.messages.filter((m) => m.id !== PENDING_ID),
-          { id: `local-${turnId}`, role: "user", content: trimmed, language: opts?.spokenLanguage ?? null, reasoning: "", sources: [], tools: [], streaming: false, createdAt: now },
-          { id: PENDING_ID, role: "assistant", content: "", language: null, reasoning: "", sources: [], tools: [], streaming: true, createdAt: now },
+          { id: `local-${turnId}`, role: "user", content: trimmed, attachments, language: opts?.spokenLanguage ?? null, reasoning: "", sources: [], tools: [], streaming: false, createdAt: now },
+          { id: PENDING_ID, role: "assistant", content: "", attachments: [], language: null, reasoning: "", sources: [], tools: [], streaming: true, createdAt: now },
         ],
       }));
       try {
         await ipc.chatSend(
-          { turnId, conversationId: get().conversationId, text: trimmed, spokenLanguage: opts?.spokenLanguage ?? null, voice: !!opts?.voice },
+          {
+            turnId,
+            conversationId: get().conversationId,
+            text: trimmed,
+            spokenLanguage: opts?.spokenLanguage ?? null,
+            voice: !!opts?.voice,
+            attachmentIds: attachments.map((a) => a.id),
+          },
           (ev) => get().handleEvent(ev),
         );
       } catch (e) {
@@ -130,6 +168,8 @@ export const useChat = create<ChatState>((set, get) => {
       if (!lastUser) return;
       // Remove the failed exchange from view; the backend keeps the stored user message.
       set((s) => ({ messages: s.messages.filter((m) => m.id !== lastUser.id && !(m.role === "assistant" && m.error)) }));
+      // The attachments of that turn were already consumed by the backend, so a
+      // retry resends the text only.
       await get().send(lastUser.content, { spokenLanguage: lastUser.language });
     },
 
@@ -141,6 +181,7 @@ export const useChat = create<ChatState>((set, get) => {
 
     newConversation: () => {
       get().stop();
+      get().clearAttachments();
       set({ conversationId: null, messages: [], turnId: null, confirmation: null, connectionError: null, draft: "" });
       void ipc.convSetLast(null);
     },

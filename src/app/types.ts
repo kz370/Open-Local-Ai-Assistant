@@ -44,6 +44,8 @@ export interface Settings {
     requestTimeoutSecs: number;
     showReasoning: boolean;
     modelAliases: Record<string, string>;
+    /** Pasted text longer than this becomes a text attachment. 0 disables it. */
+    pasteAsFileChars: number;
   };
   language: { responseLanguage: LangSetting };
   stt: {
@@ -136,6 +138,26 @@ export interface Conversation {
   language: string | null;
 }
 
+export type AttachmentKind = "image" | "text" | "binary";
+
+export interface Attachment {
+  id: string;
+  name: string;
+  mime: string;
+  kind: AttachmentKind;
+  sizeBytes: number;
+  textChars: number;
+  truncated: boolean;
+  note: string | null;
+  createdAt: string;
+}
+
+export interface AttachResult {
+  attachments: Attachment[];
+  /** One message per file that could not be attached. */
+  failures: string[];
+}
+
 export interface Source {
   url: string;
   title?: string | null;
@@ -165,6 +187,7 @@ export interface Message {
   reasoning?: string | null;
   sources?: Source[] | null;
   toolActivity?: ActivityRecord[] | null;
+  attachments?: Attachment[] | null;
   createdAt: string;
 }
 

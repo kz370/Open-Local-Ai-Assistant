@@ -17,6 +17,8 @@ interface VoiceState {
   /** performance.now() of the pause, used to keep the spoken word in step. */
   pausedAt: number | null;
   handsFree: boolean;
+  /// True while the user has muted the microphone from the call screen.
+  muted: boolean;
   /// Microphone the running session opened.
   device: string | null;
   /// Live text while the user is still speaking.
@@ -29,6 +31,9 @@ interface VoiceState {
   startPushToTalk: () => Promise<void>;
   stopPushToTalk: (submit: boolean) => Promise<void>;
   toggleHandsFree: () => Promise<void>;
+  toggleMuted: () => Promise<void>;
+  /** Stops the answer being spoken (and generated) so the user can take over. */
+  interrupt: () => void;
   clearError: () => void;
   subscribe: () => Promise<() => void>;
 }
@@ -55,6 +60,7 @@ export const useVoice = create<VoiceState>((set, get) => ({
   paused: false,
   pausedAt: null,
   handsFree: false,
+  muted: false,
   device: null,
   partial: "",
   spoken: null,
@@ -81,16 +87,33 @@ export const useVoice = create<VoiceState>((set, get) => ({
   toggleHandsFree: async () => {
     if (get().handsFree) {
       await ipc.voiceStop(true);
-      set({ handsFree: false, mode: null, phase: "idle", level: 0 });
+      set({ handsFree: false, muted: false, mode: null, phase: "idle", level: 0 });
       return;
     }
     set({ error: null });
     try {
       await ipc.voiceStart("handsFree");
-      set({ handsFree: true, mode: "handsFree", phase: "listening" });
+      set({ handsFree: true, muted: false, mode: "handsFree", phase: "listening" });
     } catch (e) {
       set({ error: toAppError(e), handsFree: false });
     }
+  },
+
+  toggleMuted: async () => {
+    const next = !get().muted;
+    set({ muted: next }); // optimistic: the button must react at once
+    try {
+      set({ muted: await ipc.voiceSetMuted(next) });
+    } catch (e) {
+      set({ muted: !next, error: toAppError(e) });
+    }
+  },
+
+  interrupt: () => {
+    void ipc.ttsStop();
+    const chat = useChat.getState();
+    if (chat.turnId) chat.stop();
+    set({ speaking: false, speakingTag: null, paused: false, pausedAt: null, spoken: null });
   },
 
   subscribe: async () => {

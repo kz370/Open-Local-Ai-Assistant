@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { History, Minus, Settings2, SquarePen, X } from "lucide-react";
+import { History, Minus, Settings2, SquarePen, Upload, X } from "lucide-react";
+import { attachPaths } from "../../app/attach";
 import { useChat } from "../../app/chatStore";
 import { ipc, on } from "../../app/ipc";
 import { useSettings } from "../../app/settingsStore";
@@ -37,6 +39,7 @@ export function ChatApp() {
   const lastOpenRef = useRef(0);
   // voiceStore ignores dictation events, so track it here for Esc-cancel.
   const [dictating, setDictating] = useState(false);
+  const [dropping, setDropping] = useState(false);
   const composerRef = useRef<ComposerHandle>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
@@ -133,6 +136,22 @@ export function ChatApp() {
       subs.forEach((p) => void p.then((un) => un()));
     };
   }, [newConversation]);
+
+  useEffect(() => {
+    // Files dropped anywhere on the window are attached to the next message.
+    const sub = getCurrentWebview().onDragDropEvent((e) => {
+      if (e.payload.type === "over") {
+        setDropping(true);
+      } else if (e.payload.type === "drop") {
+        setDropping(false);
+        void attachPaths(e.payload.paths);
+        composerRef.current?.focus();
+      } else {
+        setDropping(false);
+      }
+    });
+    return () => void sub.then((un) => un());
+  }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -312,6 +331,14 @@ export function ChatApp() {
 
       <Composer ref={composerRef} autoModel={autoModel} onVoiceSetup={() => void ipc.openSettings("speech")} />
       </div>
+      {dropping && (
+        <div className="drop-veil" role="status">
+          <div className="drop-card">
+            <Upload size={22} aria-hidden />
+            <span>{t("attach.dropHere")}</span>
+          </div>
+        </div>
+      )}
       <div className="morph-veil" aria-hidden />
       <ToolConfirmDialog />
       {showHistory && <HistoryPanel onClose={() => setShowHistory(false)} />}

@@ -291,13 +291,14 @@ async fn hands_free_conversation_speaks_the_answer() {
     // The assistant answers that transcript as a voice turn.
     let ai = Arc::new(LmStudioService::new(&settings.get().ai.server_url, 300));
     let resolver = Arc::new(ModelResolver::with_hardware(ai.clone(), hw.clone()));
-    let engine = ChatEngine::new(db, settings, ai, resolver, Arc::new(NoTools), tts.clone());
+    let attachments = Arc::new(local_ai_assistant_lib::services::attachments::AttachmentStore::new(std::env::temp_dir().join("local-assistant-test-attachments")));
+    let engine = ChatEngine::new(db, settings, ai, resolver, Arc::new(NoTools), tts.clone(), attachments);
     let events: Arc<Mutex<Vec<ChatEvent>>> = Arc::new(Mutex::new(Vec::new()));
     let sink = events.clone();
     let emit: Emit = Arc::new(move |ev| sink.lock().unwrap().push(ev));
     engine
         .send(
-            SendInput { turn_id: "call-1".into(), conversation_id: None, text: spoken[0].clone(), spoken_language: Some("en".into()), voice: true },
+            SendInput { turn_id: "call-1".into(), conversation_id: None, text: spoken[0].clone(), spoken_language: Some("en".into()), voice: true, attachment_ids: vec![] },
             emit,
         )
         .await

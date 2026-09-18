@@ -34,7 +34,19 @@ const BUNDLE_FORMAT: &str = "local-assistant-conversations";
 fn visible(messages: &[Message]) -> impl Iterator<Item = &Message> {
     messages
         .iter()
-        .filter(|m| (m.role == "user" || m.role == "assistant") && !m.content.trim().is_empty())
+        .filter(|m| (m.role == "user" || m.role == "assistant") && (!m.content.trim().is_empty() || m.attachments.is_some()))
+}
+
+/// "file.pdf, shot.png" for a message's attachments, if it has any. The files
+/// themselves stay on this computer and are not part of an export.
+fn attachment_names(m: &Message) -> Option<String> {
+    let Some(serde_json::Value::Array(items)) = &m.attachments else { return None };
+    let names: Vec<&str> = items.iter().filter_map(|a| a["name"].as_str()).collect();
+    if names.is_empty() {
+        None
+    } else {
+        Some(names.join(", "))
+    }
 }
 
 impl Db {
@@ -60,6 +72,9 @@ impl Db {
                     for m in visible(&e.messages) {
                         let who = if m.role == "user" { "You" } else { "Assistant" };
                         s.push_str(&format!("**{who}** — {}\n\n{}\n\n", m.created_at, m.content));
+                        if let Some(names) = attachment_names(m) {
+                            s.push_str(&format!("Attachments: {names}\n\n"));
+                        }
                         if let Some(serde_json::Value::Array(srcs)) = &m.sources {
                             if !srcs.is_empty() {
                                 s.push_str("Sources:\n");
@@ -83,6 +98,9 @@ impl Db {
                     for m in visible(&e.messages) {
                         let who = if m.role == "user" { "You" } else { "Assistant" };
                         s.push_str(&format!("[{}] {who}:\n{}\n\n", m.created_at, m.content));
+                        if let Some(names) = attachment_names(m) {
+                            s.push_str(&format!("Attachments: {names}\n\n"));
+                        }
                     }
                     s
                 })
@@ -119,6 +137,8 @@ impl Db {
                 if !matches!(m.role.as_str(), "user" | "assistant" | "assistant_tool_calls" | "tool") {
                     continue;
                 }
+                // `attachments_json` is deliberately not imported: the files it
+                // points at live outside the bundle, so the references would dangle.
                 let to_s = |v: &Option<serde_json::Value>| v.as_ref().map(|v| v.to_string());
                 tx.execute(
                     "INSERT INTO messages (id, conversation_id, role, content, language, reasoning, sources_json, tool_activity_json, tool_calls_json, tool_call_id, created_at)
@@ -158,6 +178,7 @@ mod tests {
                 },
                 tool_activity: None,
                 tool_calls: None,
+                attachments: None,
                 tool_call_id: None,
                 created_at: now(),
             })
