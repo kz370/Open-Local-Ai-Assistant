@@ -201,6 +201,23 @@ export type TtsEvent =
   | { type: "voiceUnavailable"; language: string }
   | { type: "error"; detail: string };
 
+export interface GpuStatus {
+  supported: boolean;
+  gpuName: string | null;
+  installed: boolean;
+  sizeBytes: number;
+  downloadBytes: number;
+  active: boolean;
+  restartRequired: boolean;
+}
+
+export interface GpuProgress {
+  state: "downloading" | "extracting" | "done" | "error" | "cancelled";
+  downloadedBytes: number;
+  totalBytes: number;
+  error: string | null;
+}
+
 export interface AudioDevice {
   id: string;
   name: string;

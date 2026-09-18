@@ -201,6 +201,12 @@ async fn run_dictation(app: AppHandle, raw: String) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Before Tauri (and its single-instance guard) starts: when the GPU pack is
+    // installed and switched on, this relaunches the app with the pack's
+    // libraries ahead of the bundled CPU ones.
+    if services::gpu::activate_early() {
+        return;
+    }
     tauri::Builder::default()
         // Only one instance runs: a second launch focuses the existing assistant.
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
@@ -277,6 +283,11 @@ pub fn run() {
             commands::app::quit_app,
             commands::app::privacy_status,
             commands::app::app_ready,
+            commands::voice::gpu_status,
+            commands::voice::gpu_set_enabled,
+            commands::voice::gpu_install,
+            commands::voice::gpu_cancel,
+            commands::voice::gpu_remove,
             commands::chat::chat_send,
             commands::chat::chat_stop,
             commands::chat::chat_confirm_tool,

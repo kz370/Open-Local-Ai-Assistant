@@ -10,6 +10,7 @@ import type {
   CatalogEntry,
   ChatEvent,
   ConnectionStatus,
+  GpuStatus,
   Conversation,
   ImportCandidate,
   IncompatibleModel,
@@ -107,6 +108,13 @@ export const ipc = {
   modelsDownload: (ids: string[]) => invoke<void>("models_download", { ids }),
   modelsCancel: (id: string) => invoke<void>("models_cancel", { id }),
   modelsDelete: (id: string) => invoke<void>("models_delete", { id }),
+
+  // GPU pack (CUDA libraries for the local speech models)
+  gpuStatus: () => invoke<GpuStatus>("gpu_status"),
+  gpuSetEnabled: (enabled: boolean) => invoke<void>("gpu_set_enabled", { enabled }),
+  gpuInstall: () => invoke<void>("gpu_install"),
+  gpuCancel: () => invoke<void>("gpu_cancel"),
+  gpuRemove: () => invoke<void>("gpu_remove"),
 
   // MCP
   mcpList: () => invoke<ServerStatus[]>("mcp_list"),

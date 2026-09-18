@@ -248,7 +248,7 @@ pub fn create(files: &SttModelFiles, opts: &EngineOptions) -> AppResult<Recogniz
         };
         config.model_config.tokens = tokens;
         config.model_config.num_threads = opts.threads;
-        config.model_config.provider = Some("cpu".into());
+        config.model_config.provider = Some(crate::services::gpu::provider().into());
         config.decoding_method = Some("greedy_search".into());
         config.enable_endpoint = true;
         config.rule1_min_trailing_silence = 2.4;
@@ -262,7 +262,7 @@ pub fn create(files: &SttModelFiles, opts: &EngineOptions) -> AppResult<Recogniz
     let mut config = sherpa_onnx::OfflineRecognizerConfig::default();
     config.model_config.tokens = tokens;
     config.model_config.num_threads = opts.threads;
-    config.model_config.provider = Some("cpu".into());
+    config.model_config.provider = Some(crate::services::gpu::provider().into());
     config.decoding_method = Some("greedy_search".into());
     match files.family {
         SttFamily::Whisper => {

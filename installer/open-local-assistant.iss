@@ -26,6 +26,12 @@ WizardStyle=modern
 
 [Files]
 Source: "{#SourceExe}"; DestDir: "{app}"; DestName: "Open Local Assistant.exe"; Flags: ignoreversion
+;   The speech models run on sherpa-onnx / ONNX Runtime, which are linked
+;   dynamically so an optional CUDA pack can replace them at launch.
+Source: "{#LibDir}\sherpa-onnx-c-api.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#LibDir}\sherpa-onnx-cxx-api.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#LibDir}\onnxruntime.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#LibDir}\onnxruntime_providers_shared.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\src-tauri\icons\icon.ico"; DestDir: "{app}"; DestName: "icon.ico"; Flags: ignoreversion
 
 [Icons]

@@ -5,6 +5,7 @@ import { ipc, on, toAppError } from "../../../app/ipc";
 import { formatBytes, t } from "../../../app/strings";
 import type { AppErrorPayload, AppInfo, AudioDevice, IncompatibleModel, InstalledModel, LangCode, LangSetting, VoiceEvent, VoiceInfo } from "../../../app/types";
 import { ErrorNotice, Segmented, Switch } from "../../../components/common/controls";
+import { GpuCard } from "../../../components/settings/GpuCard";
 import { Card, Row, SectionHeader } from "../../../components/settings/layout";
 import { ModelManager } from "../../../components/settings/ModelManager";
 import { LevelMeter } from "../../../components/voice/LevelMeter";
@@ -310,6 +311,7 @@ export function VoiceSection() {
   return (
     <>
       <SectionHeader title={t("settings.sections.voice")} />
+      <GpuCard />
       <Card>
         <Row label={t("settings.voice.provider")}>
           <span className="badge ok">{t("settings.speech.local")}</span>

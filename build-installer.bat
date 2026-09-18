@@ -90,6 +90,10 @@ if not exist "%EXE%" (
 
 if not exist "%DIST%" mkdir "%DIST%"
 copy /y "%EXE%" "%DIST%\%APPNAME%.exe" >nul
+rem The portable exe needs the speech libraries beside it.
+for %%d in (sherpa-onnx-c-api.dll sherpa-onnx-cxx-api.dll onnxruntime.dll onnxruntime_providers_shared.dll) do (
+  copy /y "%ROOT%src-tauri\target\release\%%d" "%DIST%\%%d" >nul
+)
 echo       portable exe: "%DIST%\%APPNAME%.exe"
 
 
@@ -111,7 +115,7 @@ if not defined ISCC (
 
 
 echo [4/4] Creating installer...
-"%ISCC%" /Q "/DAppVersion=%VERSION%" "/DSourceExe=%EXE%" "/DOutputDir=%DIST%" "%ROOT%installer\open-local-assistant.iss"
+"%ISCC%" /Q "/DAppVersion=%VERSION%" "/DSourceExe=%EXE%" "/DLibDir=%ROOT%src-tauri\target\release" "/DOutputDir=%DIST%" "%ROOT%installer\open-local-assistant.iss"
 if errorlevel 1 (
   echo [x] Inno Setup failed.
   goto :fail
@@ -130,6 +134,7 @@ set "PS1=%TEMP%\openlocalassistant-install.ps1"
 >> "%PS1%" echo New-Item -ItemType Directory -Force -Path $dir ^| Out-Null
 >> "%PS1%" echo Get-Process -Name '%BINNAME%','%APPNAME%' -ErrorAction SilentlyContinue ^| Stop-Process -Force
 >> "%PS1%" echo Copy-Item -Force '%EXE%' (Join-Path $dir '%APPNAME%.exe')
+>> "%PS1%" echo Get-ChildItem '%ROOT%src-tauri\target\release\*.dll' ^| Where-Object { $_.Name -match 'sherpa-onnx|onnxruntime' } ^| ForEach-Object { Copy-Item -Force $_.FullName $dir }
 >> "%PS1%" echo Copy-Item -Force '%ROOT%src-tauri\icons\icon.ico' (Join-Path $dir 'icon.ico')
 >> "%PS1%" echo $shell = New-Object -ComObject WScript.Shell
 >> "%PS1%" echo $lnk = $shell.CreateShortcut((Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs\%APPNAME%.lnk'))

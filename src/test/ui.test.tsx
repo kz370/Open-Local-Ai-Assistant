@@ -1,9 +1,10 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { useChat, type UiMessage } from "../app/chatStore";
 import { MessageBubble } from "../components/chat/MessageBubble";
 import { Composer } from "../components/chat/Composer";
+import { SpeechTicker } from "../components/voice/SpeechTicker";
 import { textDir } from "../components/common/controls";
 import { acceleratorFromEvent, prettyAccelerator } from "../components/settings/ShortcutInput";
 
@@ -18,6 +19,27 @@ describe("text direction", () => {
     expect(textDir("PHP ما هو")).toBe("ltr"); // first strong character decides
     expect(textDir("PHP ما هو", "ar")).toBe("rtl"); // detected language wins
     expect(textDir("123")).toBe("auto");
+  });
+});
+
+describe("SpeechTicker", () => {
+  it("highlights the word being spoken and moves on as playback advances", async () => {
+    const sentence = { tag: "t1", text: "one two three four", durationMs: 1000, startedAt: performance.now() };
+    const { rerender } = render(<SpeechTicker sentence={sentence} paused={false} />);
+    const words = () => Array.from(document.querySelectorAll(".ticker-word"));
+    expect(words().map((w) => w.textContent)).toEqual(["one", "two", "three", "four"]);
+    await waitFor(() => expect(document.querySelector(".ticker-word.on")?.textContent).toBe("one"));
+
+    // Pretend playback is three quarters through: the third word is spoken.
+    rerender(<SpeechTicker sentence={{ ...sentence, startedAt: performance.now() - 700 }} paused={false} />);
+    await waitFor(() => expect(document.querySelector(".ticker-word.on")?.textContent).toBe("three"));
+  });
+
+  it("stops moving while speech is paused", async () => {
+    const sentence = { tag: "t1", text: "alpha beta gamma", durationMs: 600, startedAt: performance.now() - 590 };
+    render(<SpeechTicker sentence={sentence} paused={true} />);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(document.querySelector(".ticker-word.on")?.textContent).toBe("alpha");
   });
 });
 
