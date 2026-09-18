@@ -178,6 +178,7 @@
       "voice": "Text-to-Speech",
       "language": "Language",
       "dictation": "Dictation",
+      "captions": "Live Captions",
       "mcp": "MCP & Tools",
       "privacy": "Privacy",
       "appearance": "Appearance",
@@ -229,8 +230,8 @@
       "streaming": "Stream responses",
       "showReasoning": "Show model reasoning",
       "timeout": "Request timeout (seconds)",
-    "pasteAsFile": "Paste as file above",
-    "pasteAsFileHint": "Pasted text longer than this many characters is attached as a text file instead of filling the message box. Leave empty to turn this off.",
+      "pasteAsFile": "Paste as file above",
+      "pasteAsFileHint": "Pasted text longer than this many characters is attached as a text file instead of filling the message box. Leave empty to turn this off.",
       "reasons": {
         "already_loaded": "already loaded",
         "fits_gpu": "fits in GPU memory",
@@ -458,7 +459,8 @@
       "record": "Click and press keys…",
       "reset": "Reset",
       "hint": "Press a key combination with at least one modifier (Ctrl, Alt, Shift).",
-      "errors": "Some shortcuts could not be registered:"
+      "errors": "Some shortcuts could not be registered:",
+      "captions": "Live captions on / off"
     },
     "diagnostics": {
       "scan": "Run scan",
@@ -486,6 +488,46 @@
       "selfTest": "Self-test",
       "runSelfTest": "Run self-test",
       "selfTestHint": "Calls every backend command this window uses and reports which ones answer."
+    },
+    "captions": {
+      "intro": "Subtitles for anything your PC plays — videos, calls, streams — in any language. Sound is captured from the speakers and recognized locally; the microphone is not used.",
+      "requiresStt": "Live captions need a local speech recognition model and the voice activity detection model.",
+      "control": "Captions",
+      "start": "Start captions",
+      "stop": "Stop captions",
+      "running": "On",
+      "stopped": "Off",
+      "shortcut": "Shortcut",
+      "shortcutHint": "Also available from the tray menu.",
+      "language": "Spoken language",
+      "languageHint": "Automatic detects the language of every sentence. Choosing it improves accuracy.",
+      "languageAuto": "Automatic (any language)",
+      "translate": "Translate to English",
+      "translateHint": "Whisper models only (not large-v3 turbo). Shows English captions for any spoken language.",
+      "model": "Speech model",
+      "modelAuto": "Same as speech recognition",
+      "modelHint": "Whisper models understand about 100 languages. Most streaming models are English only.",
+      "source": "Audio source",
+      "sourceDefault": "System default output",
+      "style": "Caption style",
+      "fontSize": "Text size",
+      "fontWeight": "Weight",
+      "weights": {
+        "300": "Light",
+        "400": "Regular",
+        "500": "Medium",
+        "600": "Semibold",
+        "700": "Bold",
+        "900": "Black"
+      },
+      "italic": "Italic",
+      "textColor": "Text color",
+      "backgroundColor": "Background color",
+      "backgroundOpacity": "Background opacity",
+      "maxLines": "Lines on screen",
+      "resetStyle": "Reset style",
+      "preview": "Preview",
+      "previewText": "This is how your live captions will look."
     }
   },
   "setup": {
@@ -554,5 +596,15 @@
     "muted": "Microphone muted",
     "usingMic": "Microphone: {{device}}",
     "changeMic": "No sound? Choose another microphone"
+  },
+  "captions": {
+    "waiting": "Waiting for audio…",
+    "starting": "Loading the speech model…",
+    "off": "Captions are off",
+    "error": "Live captions stopped",
+    "settings": "Caption settings",
+    "close": "Turn off captions",
+    "move": "Drag to move",
+    "resize": "Drag to resize"
   }
 }

@@ -1,14 +1,26 @@
 use super::window;
 use crate::state::AppState;
-use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+use std::sync::OnceLock;
+use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter, Manager, Wry};
+
+/// The "Live Captions" checkbox, kept in step with the caption session.
+static CAPTIONS_ITEM: OnceLock<CheckMenuItem<Wry>> = OnceLock::new();
+
+pub fn set_captions_checked(on: bool) {
+    if let Some(item) = CAPTIONS_ITEM.get() {
+        let _ = item.set_checked(on);
+    }
+}
 
 pub fn create(app: &AppHandle) -> tauri::Result<()> {
     let title = MenuItem::with_id(app, "title", "Local Assistant", false, None::<&str>)?;
     let open = MenuItem::with_id(app, "open", "Open", true, None::<&str>)?;
     let new_conv = MenuItem::with_id(app, "new", "New Conversation", true, None::<&str>)?;
     let voice = MenuItem::with_id(app, "voice", "Voice Mode", true, None::<&str>)?;
+    let captions = CheckMenuItem::with_id(app, "captions", "Live Captions", true, false, None::<&str>)?;
+    let _ = CAPTIONS_ITEM.set(captions.clone());
     let settings = MenuItem::with_id(app, "settings", "Settings", true, None::<&str>)?;
     let diagnostics = MenuItem::with_id(app, "diagnostics", "Diagnostics", true, None::<&str>)?;
     let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
@@ -19,6 +31,7 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
             &open,
             &new_conv,
             &voice,
+            &captions,
             &PredefinedMenuItem::separator(app)?,
             &settings,
             &PredefinedMenuItem::separator(app)?,
@@ -42,6 +55,8 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
                 window::show_main(app, false);
                 let _ = app.emit_to(window::MAIN, "app://toggle-hands-free", ());
             }
+            // The checkbox flips itself on click; the caption session re-syncs it.
+            "captions" => window::toggle_captions(app),
             "settings" => {
                 let _ = window::open_settings(app, None);
             }
@@ -68,7 +83,8 @@ pub fn quit(app: &AppHandle) {
     state.chat.stop_all();
     state.voice.stop(true);
     state.tts.stop_all();
-    for label in [window::MAIN, window::BUBBLE, window::OVERLAY, window::SETTINGS] {
+    state.captions.stop();
+    for label in [window::MAIN, window::BUBBLE, window::OVERLAY, window::CAPTIONS, window::SETTINGS] {
         if let Some(w) = app.get_webview_window(label) {
             let _ = w.hide();
         }

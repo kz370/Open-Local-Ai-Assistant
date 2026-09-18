@@ -47,6 +47,21 @@ pub fn dictation_cancel(app: AppHandle) {
 }
 
 #[tauri::command]
+pub fn captions_start(app: AppHandle) -> CmdResult<()> {
+    crate::desktop::window::start_captions(&app)
+}
+
+#[tauri::command]
+pub fn captions_stop(app: AppHandle) {
+    crate::desktop::window::stop_captions(&app);
+}
+
+#[tauri::command]
+pub fn captions_status(state: State<'_, AppState>) -> bool {
+    state.captions.is_active()
+}
+
+#[tauri::command]
 pub fn voice_status(state: State<'_, AppState>) -> Option<ListenMode> {
     state.voice.active_mode()
 }

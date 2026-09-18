@@ -1,6 +1,7 @@
 pub mod ai;
 pub mod attachments;
 pub mod audio;
+pub mod captions;
 pub mod chat;
 pub mod dictation;
 pub mod gpu;

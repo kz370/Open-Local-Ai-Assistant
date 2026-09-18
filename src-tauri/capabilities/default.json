@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Permissions for the assistant windows",
-  "windows": ["main", "settings", "overlay", "bubble"],
+  "windows": ["main", "settings", "overlay", "bubble", "captions"],
   "permissions": [
     "core:default",
     "core:window:allow-start-dragging",
