@@ -148,7 +148,7 @@ export function ShortcutsSection() {
   useEffect(() => {
     const id = setTimeout(() => void ipc.shortcutErrors().then(setErrors), 300);
     return () => clearTimeout(id);
-  }, [s.general.globalShortcut, s.general.pushToTalkShortcut, s.dictation.shortcut, s.dictation.enabled, s.stt.pushToTalk, s.captions.shortcut]);
+  }, [s.general.globalShortcut, s.general.pushToTalkShortcut, s.dictation.shortcut, s.dictation.enabled, s.stt.pushToTalk]);
   return (
     <>
       <SectionHeader title={t("settings.sections.shortcuts")} intro={t("settings.shortcuts.hint")} />
@@ -175,9 +175,6 @@ export function ShortcutsSection() {
         <Row label={t("settings.shortcuts.dictation")}>
           <ShortcutInput label={t("settings.shortcuts.dictation")} value={s.dictation.shortcut} defaultValue="CommandOrControl+Alt+Space" onChange={(v) => set((d) => void (d.dictation.shortcut = v))} />
           <Switch label={t("settings.dictation.enable")} checked={s.dictation.enabled} onChange={(v) => set((d) => void (d.dictation.enabled = v))} />
-        </Row>
-        <Row label={t("settings.shortcuts.captions")}>
-          <ShortcutInput label={t("settings.shortcuts.captions")} value={s.captions.shortcut} defaultValue="CommandOrControl+Alt+C" onChange={(v) => set((d) => void (d.captions.shortcut = v))} />
         </Row>
       </Card>
     </>

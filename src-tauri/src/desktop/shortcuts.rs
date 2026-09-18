@@ -1,4 +1,4 @@
-//! Global keyboard shortcuts: open/focus, push-to-talk, dictation and live captions.
+//! Global keyboard shortcuts: open/focus, push-to-talk and dictation.
 
 use super::window;
 use crate::services::stt::session::ListenMode;
@@ -14,7 +14,6 @@ enum Action {
     Toggle,
     PushToTalk,
     Dictation,
-    Captions,
 }
 
 fn configured(app: &AppHandle) -> Vec<(Action, String)> {
@@ -26,7 +25,6 @@ fn configured(app: &AppHandle) -> Vec<(Action, String)> {
     if s.dictation.enabled {
         v.push((Action::Dictation, s.dictation.shortcut.clone()));
     }
-    v.push((Action::Captions, s.captions.shortcut.clone()));
     v.into_iter().filter(|(_, k)| !k.trim().is_empty()).collect()
 }
 
@@ -123,11 +121,6 @@ fn dispatch_shortcut_action(app: &AppHandle, action: Action, pressed: bool) {
                 }
             } else if active && ((hold && !pressed) || (!hold && pressed)) {
                 state.voice.stop(false);
-            }
-        }
-        Action::Captions => {
-            if pressed {
-                window::toggle_captions(app);
             }
         }
     }

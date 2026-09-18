@@ -27,26 +27,16 @@ pub struct Capture {
 
 impl Capture {
     pub fn start(device_id: Option<&str>, mic_only: bool) -> AppResult<(Capture, Receiver<CaptureEvent>)> {
-        Self::open(devices::input_device(device_id, mic_only)?, false)
-    }
-
-    /// Captures what an output device is playing (WASAPI loopback), e.g. for
-    /// live captions of a video or call. `None` = the system default output.
-    pub fn start_loopback(device_id: Option<&str>) -> AppResult<(Capture, Receiver<CaptureEvent>)> {
-        Self::open(devices::output_device(device_id)?, true)
-    }
-
-    fn open(device: cpal::Device, loopback: bool) -> AppResult<(Capture, Receiver<CaptureEvent>)> {
-        let what = if loopback { "system audio" } else { "microphone" };
+        let device = devices::input_device(device_id, mic_only)?;
         let device_name = device.description().map(|d| d.name().to_string()).unwrap_or_else(|_| device.to_string());
         let (tx, rx) = mpsc::channel();
         let stop = Arc::new(AtomicBool::new(false));
         let (ready_tx, ready_rx) = mpsc::channel::<Result<(), String>>();
         let stop2 = stop.clone();
         let thread = std::thread::Builder::new()
-            .name(if loopback { "loopback-capture" } else { "mic-capture" }.into())
+            .name("mic-capture".into())
             .spawn(move || {
-                match build_stream(&device, tx.clone(), loopback) {
+                match build_stream(&device, tx.clone()) {
                     Ok(stream) => {
                         if let Err(e) = stream.play() {
                             let _ = ready_tx.send(Err(e.to_string()));
@@ -66,8 +56,8 @@ impl Capture {
             .map_err(|e| AppError::Audio(e.to_string()))?;
         match ready_rx.recv_timeout(Duration::from_secs(5)) {
             Ok(Ok(())) => Ok((Capture { stop, thread: Some(thread), device_name }, rx)),
-            Ok(Err(e)) => Err(AppError::Audio(format!("could not open {what}: {e}"))),
-            Err(_) => Err(AppError::Audio(format!("{what} did not start in time"))),
+            Ok(Err(e)) => Err(AppError::Audio(format!("could not open microphone: {e}"))),
+            Err(_) => Err(AppError::Audio("microphone did not start in time".into())),
         }
     }
 
@@ -192,17 +182,15 @@ where
         .map_err(|e| e.to_string())
 }
 
-fn build_stream(device: &cpal::Device, tx: Sender<CaptureEvent>, loopback: bool) -> Result<cpal::Stream, String> {
-    // Loopback records in the output device's own format.
-    let supported = if loopback { device.default_output_config() } else { device.default_input_config() }.map_err(|e| e.to_string())?;
+fn build_stream(device: &cpal::Device, tx: Sender<CaptureEvent>) -> Result<cpal::Stream, String> {
+    let supported = device.default_input_config().map_err(|e| e.to_string())?;
     let config = supported.config();
     tracing::info!(
         device = %device.description().map(|d| d.name().to_string()).unwrap_or_else(|_| device.to_string()),
         sample_rate = config.sample_rate,
         channels = config.channels,
         format = ?supported.sample_format(),
-        loopback,
-        "audio capture opened"
+        "microphone opened"
     );
     match supported.sample_format() {
         SampleFormat::F32 => build::<f32>(device, config, tx),

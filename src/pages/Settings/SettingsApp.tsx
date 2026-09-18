@@ -1,10 +1,9 @@
 import { useEffect, useState, type ComponentType } from "react";
-import { Activity, AudioLines, Bot, Captions, Keyboard, Languages, Mic, Palette, PenLine, Plug, Settings2, Shield, Volume2 } from "lucide-react";
+import { Activity, AudioLines, Bot, Keyboard, Languages, Mic, Palette, PenLine, Plug, Settings2, Shield, Volume2 } from "lucide-react";
 import { on } from "../../app/ipc";
 import { t } from "../../app/strings";
 import { AiSection } from "./sections/Ai";
 import { AppearanceSection, GeneralSection, LanguageSection, ShortcutsSection } from "./sections/Basic";
-import { CaptionsSection } from "./sections/Captions";
 import { DictationSection } from "./sections/Dictation";
 import { McpSection } from "./sections/Mcp";
 import { DiagnosticsSection, PrivacySection } from "./sections/System";
@@ -17,7 +16,6 @@ const SECTIONS: { id: string; icon: ComponentType<{ size?: number }>; view: Comp
   { id: "voice", icon: Volume2, view: VoiceSection },
   { id: "language", icon: Languages, view: LanguageSection },
   { id: "dictation", icon: PenLine, view: DictationSection },
-  { id: "captions", icon: Captions, view: CaptionsSection },
   { id: "mcp", icon: Plug, view: McpSection },
   { id: "privacy", icon: Shield, view: PrivacySection },
   { id: "appearance", icon: Palette, view: AppearanceSection },

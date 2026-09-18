@@ -13,7 +13,6 @@ pub mod state;
 use database::Db;
 use desktop::{icon, shortcuts, tray, window};
 use services::ai::lmstudio::LmStudioService;
-use services::captions::{CaptionEvent, LiveCaptions};
 use services::chat::{ChatEngine, ModelResolver};
 use services::dictation;
 use services::mcp::McpManager;
@@ -70,15 +69,6 @@ fn init_state(app: &AppHandle) -> Result<AppState, Box<dyn std::error::Error>> {
         Arc::new(move || tts_probe.is_speaking()),
     ));
 
-    // Captions get a recognizer of their own so they can run during a chat
-    // or dictation without either one waiting for the other.
-    let handle = app.clone();
-    let captions = Arc::new(LiveCaptions::new(
-        Arc::new(SttService::new(models.clone(), hardware.clone())),
-        settings.clone(),
-        Arc::new(move |ev: CaptionEvent| on_caption_event(&handle, ev)),
-    ));
-
     // Web search works out of the box (no API key, no extra runtime) and sits
     // next to whatever MCP servers the user has added.
     let web_search = Arc::new(services::search::WebSearch::new(settings.clone()));
@@ -106,7 +96,6 @@ fn init_state(app: &AppHandle) -> Result<AppState, Box<dyn std::error::Error>> {
         stt,
         tts,
         voice,
-        captions,
         hardware,
         downloads: Mutex::new(Default::default()),
         dictation_busy: AtomicBool::new(false),
@@ -145,27 +134,6 @@ fn on_voice_event(app: &AppHandle, ev: VoiceEvent) {
         return;
     }
     let _ = app.emit("voice://event", ev);
-}
-
-/// Caption text goes to the caption window only; state changes also reach
-/// settings (start/stop button) and the tray checkbox.
-fn on_caption_event(app: &AppHandle, ev: CaptionEvent) {
-    match &ev {
-        CaptionEvent::Partial { .. } | CaptionEvent::Line { .. } => {
-            let _ = app.emit_to(window::CAPTIONS, "captions://event", ev);
-        }
-        CaptionEvent::State { state, .. } => {
-            // An ended session leaves the checkbox on while its bar still shows
-            // (e.g. an error); stop_captions clears it.
-            if state != "idle" {
-                tray::set_captions_checked(true);
-            }
-            let _ = app.emit("captions://event", ev);
-        }
-        CaptionEvent::Error { .. } => {
-            let _ = app.emit("captions://event", ev);
-        }
-    }
 }
 
 fn hide_overlay_later(app: &AppHandle) {
@@ -275,7 +243,6 @@ pub fn run() {
             shortcuts::register_all(&handle);
             window::restore(&handle);
             let _ = window::create_overlay(&handle);
-            let _ = window::create_captions(&handle);
             // Pre-create settings hidden: on-demand creation flakes on some
             // machines while startup-created webviews always work.
             let _ = window::ensure_settings(&handle);
@@ -359,9 +326,6 @@ pub fn run() {
             commands::voice::voice_start,
             commands::voice::voice_stop,
             commands::voice::dictation_cancel,
-            commands::voice::captions_start,
-            commands::voice::captions_stop,
-            commands::voice::captions_status,
             commands::voice::voice_status,
             commands::voice::voice_set_muted,
             commands::voice::voice_muted,

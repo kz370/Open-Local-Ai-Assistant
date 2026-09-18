@@ -89,32 +89,22 @@ impl SttService {
         *self.loaded.lock().unwrap_or_else(|p| p.into_inner()) = None;
     }
 
-    /// Recognizer options for `settings`. The language may be any Whisper
-    /// language code; "auto" (or empty) lets the model detect it.
-    pub fn options(&self, settings: &SttSettings) -> EngineOptions {
+    fn options(&self, settings: &SttSettings) -> EngineOptions {
         EngineOptions {
             threads: self.hw.inference_threads(),
-            language: match settings.language.as_str() {
-                "auto" | "" => String::new(),
-                code => code.to_string(),
-            },
+            language: Lang::from_code(&settings.language).map(|l| l.code().to_string()).unwrap_or_default(),
             endpoint_silence: settings.silence_ms as f32 / 1000.0,
-            task: "transcribe".into(),
         }
     }
 
     /// Runs `f` with the loaded recognizer, loading it first if needed.
     /// The recognizer stays loaded for the next call.
     pub fn with_recognizer<R>(&self, settings: &SttSettings, f: impl FnOnce(&Recognizer, &InstalledModel) -> R) -> AppResult<R> {
-        self.with_recognizer_opts(settings, self.options(settings), f)
-    }
-
-    /// Like [`Self::with_recognizer`], with caller-chosen recognizer options.
-    pub fn with_recognizer_opts<R>(&self, settings: &SttSettings, opts: EngineOptions, f: impl FnOnce(&Recognizer, &InstalledModel) -> R) -> AppResult<R> {
         let model = self
             .resolve_model(settings)
             .ok_or_else(|| AppError::Stt("no local speech recognition model is installed".into()))?;
-        let key = format!("{}|{}|{}|{}", model.path.display(), opts.language, opts.endpoint_silence, opts.task);
+        let opts = self.options(settings);
+        let key = format!("{}|{}|{}", model.path.display(), opts.language, opts.endpoint_silence);
         let mut guard = self.loaded.lock().unwrap_or_else(|p| p.into_inner());
         if guard.as_ref().map(|l| l.key != key).unwrap_or(true) {
             *guard = None; // free the previous model before loading another
