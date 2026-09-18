@@ -45,7 +45,9 @@ hex = "0.4.3"
 async-trait = "0.1.92"
 bytes = "1.12.1"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "fmt", "json"] }
-sherpa-onnx = "1.13.8"
+# Shared linking so the ONNX Runtime DLLs sit next to the exe and an optional
+# CUDA pack can take their place at launch (see services::gpu).
+sherpa-onnx = { version = "1.13.8", default-features = false, features = ["shared"] }
 cpal = "0.18.2"
 rmcp = { version = "3.4.0", features = ["client", "transport-child-process", "transport-streamable-http-client-reqwest"] }
 reqwest = { version = "0.13.5", default-features = false, features = ["json", "stream", "native-tls", "http2"] }

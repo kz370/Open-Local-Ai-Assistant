@@ -5,7 +5,7 @@ import { useSettings } from "../../../app/settingsStore";
 import { t } from "../../../app/strings";
 import type { AppErrorPayload, ImportCandidate, McpServerConfig, Permission, ServerStatus } from "../../../app/types";
 import { Dialog, ErrorNotice, Switch } from "../../../components/common/controls";
-import { Card, SectionHeader } from "../../../components/settings/layout";
+import { Card, Row, SectionHeader } from "../../../components/settings/layout";
 
 const EMPTY: McpServerConfig = {
   id: "",
@@ -210,6 +210,8 @@ export function McpSection() {
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState<AppErrorPayload | null>(null);
   const developer = useSettings((s) => s.settings?.general.developerMode);
+  const search = useSettings((s) => s.settings?.search);
+  const setSettings = useSettings((s) => s.update);
 
   const refresh = () => ipc.mcpList().then(setServers, (e) => setError(toAppError(e)));
   useEffect(() => {
@@ -235,6 +237,40 @@ export function McpSection() {
           <ErrorNotice error={error} actions={<button className="btn btn-sm" onClick={() => setError(null)}>{t("app.close")}</button>} />
         </div>
       )}
+      <Card title={t("settings.mcp.builtinSearch")}>
+        <Row label={t("settings.mcp.builtinSearch")} hint={t("settings.mcp.builtinSearchHint")} htmlFor="sw-builtin-search">
+          <Switch
+            id="sw-builtin-search"
+            label={t("settings.mcp.builtinSearch")}
+            checked={search?.enabled ?? true}
+            onChange={(v) => setSettings((x) => void (x.search.enabled = v))}
+          />
+        </Row>
+        <Row label={t("settings.mcp.searxng")} hint={t("settings.mcp.searxngHint")} htmlFor="in-searxng">
+          <input
+            id="in-searxng"
+            className="input"
+            placeholder="https://searx.example.org"
+            value={search?.searxngUrl ?? ""}
+            onChange={(e) => setSettings((x) => void (x.search.searxngUrl = e.target.value.trim()))}
+          />
+        </Row>
+        <Row label={t("settings.mcp.builtinSearchResults")} htmlFor="sel-search-results">
+          <select
+            id="sel-search-results"
+            className="select"
+            value={String(search?.maxResults ?? 5)}
+            disabled={!(search?.enabled ?? true)}
+            onChange={(e) => setSettings((x) => void (x.search.maxResults = Number(e.target.value)))}
+          >
+            {[3, 5, 8, 10].map((n) => (
+              <option key={n} value={n}>
+                {n}
+              </option>
+            ))}
+          </select>
+        </Row>
+      </Card>
       <Card
         title={t("settings.mcp.servers")}
         actions={

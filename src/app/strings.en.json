@@ -341,6 +341,11 @@
     },
     "mcp": {
       "intro": "MCP servers give the local model extra abilities such as web search. Servers are never installed or enabled automatically.",
+      "builtinSearch": "Built-in web search",
+      "builtinSearchHint": "Lets the assistant search the web through DuckDuckGo. No account, no API key, nothing to install.",
+      "builtinSearchResults": "Results per search",
+      "searxng": "SearXNG instance (optional)",
+      "searxngHint": "Your own or a trusted SearXNG address. When set it is used first; DuckDuckGo stays as the fallback.",
       "servers": "Configured MCP servers",
       "add": "Add MCP server",
       "addWebSearch": "Add web search",

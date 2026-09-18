@@ -14,11 +14,16 @@ interface VoiceState {
   /// Tag of the audio currently playing (message id for "read aloud").
   speakingTag: string | null;
   paused: boolean;
+  /** performance.now() of the pause, used to keep the spoken word in step. */
+  pausedAt: number | null;
   handsFree: boolean;
   /// Microphone the running session opened.
   device: string | null;
   /// Live text while the user is still speaking.
   partial: string;
+  /// The sentence the assistant is speaking right now, with the timing the UI
+  /// needs to follow it word by word.
+  spoken: SpokenSentence | null;
   lastTranscript: string | null;
   error: AppErrorPayload | null;
   startPushToTalk: () => Promise<void>;
@@ -26,6 +31,15 @@ interface VoiceState {
   toggleHandsFree: () => Promise<void>;
   clearError: () => void;
   subscribe: () => Promise<() => void>;
+}
+
+/** A sentence being played, and where its playback started on the UI clock. */
+export interface SpokenSentence {
+  tag: string;
+  text: string;
+  durationMs: number;
+  /** performance.now() when playback started, shifted forward while paused. */
+  startedAt: number;
 }
 
 const BARS = 24;
@@ -39,9 +53,11 @@ export const useVoice = create<VoiceState>((set, get) => ({
   speaking: false,
   speakingTag: null,
   paused: false,
+  pausedAt: null,
   handsFree: false,
   device: null,
   partial: "",
+  spoken: null,
   lastTranscript: null,
   error: null,
 
@@ -125,9 +141,17 @@ export const useVoice = create<VoiceState>((set, get) => ({
     });
       await on<TtsEvent>("tts://event", (ev) => {
       if (ev.type === "speaking") set({ speaking: true, speakingTag: ev.tag, paused: false });
-      if (ev.type === "paused") set({ paused: true });
-      if (ev.type === "resumed") set({ paused: false });
-      if (ev.type === "idle") set({ speaking: false, speakingTag: null, paused: false });
+      if (ev.type === "sentence")
+        set({ speaking: true, speakingTag: ev.tag, spoken: { tag: ev.tag, text: ev.text, durationMs: ev.durationMs, startedAt: performance.now() } });
+      if (ev.type === "paused") set({ paused: true, pausedAt: performance.now() });
+      if (ev.type === "resumed")
+        set((s) => ({
+          paused: false,
+          pausedAt: null,
+          // Skip the pause, so the highlighted word stays on the spoken one.
+          spoken: s.spoken && s.pausedAt !== null ? { ...s.spoken, startedAt: s.spoken.startedAt + (performance.now() - s.pausedAt) } : s.spoken,
+        }));
+      if (ev.type === "idle") set({ speaking: false, speakingTag: null, paused: false, pausedAt: null, spoken: null });
       if (ev.type === "voiceUnavailable") useChat.getState().setVoiceNotice(t("chat.voiceUnavailable", { language: languageName(ev.language) }));
     });
       await on<AppErrorPayload>("voice://error", (e) => set({ error: e }));

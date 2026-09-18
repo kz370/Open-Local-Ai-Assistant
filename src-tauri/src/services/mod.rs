@@ -6,5 +6,6 @@ pub mod hardware;
 pub mod language;
 pub mod mcp;
 pub mod models;
+pub mod search;
 pub mod stt;
 pub mod tts;
