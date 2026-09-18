@@ -16,6 +16,7 @@ use std::time::{Duration, Instant};
 pub struct LmStudioService {
     client: reqwest::Client,
     base_url: RwLock<String>,
+    api_key: RwLock<Option<String>>,
     timeout: RwLock<Duration>,
 }
 
@@ -30,12 +31,21 @@ impl LmStudioService {
         Self {
             client,
             base_url: RwLock::new(normalize_base(base_url)),
+            api_key: RwLock::new(None),
             timeout: RwLock::new(Duration::from_secs(timeout_secs)),
         }
     }
 
     pub fn set_base_url(&self, url: &str) {
         *self.base_url.write().unwrap_or_else(|p| p.into_inner()) = normalize_base(url);
+    }
+
+    pub fn set_api_key(&self, key: Option<String>) {
+        *self.api_key.write().unwrap_or_else(|p| p.into_inner()) = key.filter(|k| !k.trim().is_empty());
+    }
+
+    pub fn api_key(&self) -> Option<String> {
+        self.api_key.read().unwrap_or_else(|p| p.into_inner()).clone()
     }
 
     pub fn set_timeout(&self, secs: u64) {
@@ -50,6 +60,14 @@ impl LmStudioService {
         *self.timeout.read().unwrap_or_else(|p| p.into_inner())
     }
 
+    /// Applies the bearer token, when set, to an outgoing request.
+    fn authed(&self, b: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+        match self.api_key() {
+            Some(k) => b.bearer_auth(k),
+            None => b,
+        }
+    }
+
     /// Server root without the OpenAI `/v1` suffix, for native endpoints.
     fn root(&self) -> String {
         let base = self.base_url();
@@ -58,8 +76,7 @@ impl LmStudioService {
 
     async fn get_json(&self, url: &str) -> AppResult<Value> {
         let resp = self
-            .client
-            .get(url)
+            .authed(self.client.get(url))
             .timeout(Duration::from_secs(8))
             .send()
             .await
@@ -206,8 +223,7 @@ impl AiService for LmStudioService {
             body["context_length"] = json!(ctx);
         }
         let resp = self
-            .client
-            .post(format!("{}/api/v1/models/load", self.root()))
+            .authed(self.client.post(format!("{}/api/v1/models/load", self.root())))
             .json(&body)
             .timeout(Duration::from_secs(600))
             .send()
@@ -242,8 +258,7 @@ impl AiService for LmStudioService {
         }
 
         let send = self
-            .client
-            .post(format!("{}/chat/completions", self.base_url()))
+            .authed(self.client.post(format!("{}/chat/completions", self.base_url())))
             .json(&body)
             .timeout(self.timeout())
             .send();

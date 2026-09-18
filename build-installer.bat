@@ -1,4 +1,5 @@
-@echo offsetlocal EnableExtensions
+@echo off
+setlocal EnableExtensions
 rem ---------------------------------------------------------------------------
 rem  Open Local Assistant - build the release .exe and an installer for
 rem  C:\Program Files

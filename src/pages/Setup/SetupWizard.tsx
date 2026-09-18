@@ -37,8 +37,19 @@ export function SetupWizard({ onDone }: { onDone: () => void }) {
   const totalProgress = missing.length ? missing.reduce((a, m) => a + (progress[m.id]?.state === "done" ? m.downloadBytes : progress[m.id]?.downloadedBytes ?? 0), 0) / Math.max(1, missingSize) : 0;
 
   useEffect(() => {
-    if (allDone) setStep("ready");
-  }, [allDone]);
+    if (allDone && step === "voice") setStep("ready");
+  }, [allDone, step]);
+
+  // Seamless first run: start fetching the recommended models as soon as we
+  // know what's missing, while the user is still on the earlier steps, so
+  // the voice step usually finds them already downloading (or done).
+  useEffect(() => {
+    if (!downloading && missing.length > 0) {
+      setDownloading(true);
+      void ipc.modelsDownload(missing.map((m) => m.id));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [missing.length > 0]);
 
   const finish = async () => {
     await ipc.completeFirstRun();
@@ -147,18 +158,17 @@ export function SetupWizard({ onDone }: { onDone: () => void }) {
             </p>
           </div>
           <div className="setup-actions">
-            <button className="btn" onClick={() => setStep("ready")} disabled={downloading && !allDone}>
-              {t("setup.voiceSkip")}
-            </button>
             <button
-              className="btn btn-primary"
-              disabled={downloading}
+              className="btn"
               onClick={() => {
-                setDownloading(true);
-                void ipc.modelsDownload(missing.map((m) => m.id));
+                if (downloading) missing.forEach((m) => void ipc.modelsCancel(m.id));
+                setStep("ready");
               }}
             >
-              {t("setup.voiceDownload", { size: formatBytes(missingSize) })}
+              {t("setup.voiceSkip")}
+            </button>
+            <button className="btn btn-primary" disabled>
+              {downloading ? t("setup.voiceDownloading", { size: formatBytes(missingSize) }) : t("setup.voiceDownload", { size: formatBytes(missingSize) })}
             </button>
           </div>
         </>

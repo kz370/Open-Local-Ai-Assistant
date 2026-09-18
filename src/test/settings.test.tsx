@@ -30,6 +30,7 @@ const SETTINGS: Settings = {
   },
   ai: {
     serverUrl: "http://localhost:1234/v1",
+    apiKey: null,
     modelMode: "auto",
     model: null,
     temperature: 0.7,

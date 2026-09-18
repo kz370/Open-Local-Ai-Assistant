@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { RefreshCw } from "lucide-react";
+import { Eye, EyeOff, RefreshCw } from "lucide-react";
 import { ipc, toAppError } from "../../../app/ipc";
 import { formatBytes, modelLabel, t } from "../../../app/strings";
 import type { AppErrorPayload, ConnectionStatus, ModelInfo, ModelSelection } from "../../../app/types";
@@ -36,18 +36,21 @@ export function useLmModels() {
 export function AiSection() {
   const [s, set] = useS();
   const [url, setUrl] = useState(s.ai.serverUrl);
+  const [apiKey, setApiKey] = useState(s.ai.apiKey ?? "");
+  const [showKey, setShowKey] = useState(false);
   const [status, setStatus] = useState<ConnectionStatus | null>(null);
   const [testError, setTestError] = useState<AppErrorPayload | null>(null);
   const [testing, setTesting] = useState(false);
   const { models, auto, error, loading, refresh } = useLmModels();
 
   useEffect(() => setUrl(s.ai.serverUrl), [s.ai.serverUrl]);
+  useEffect(() => setApiKey(s.ai.apiKey ?? ""), [s.ai.apiKey]);
 
   const test = async () => {
     setTesting(true);
     setTestError(null);
     try {
-      setStatus(await ipc.lmstudioTest(url));
+      setStatus(await ipc.lmstudioTest(url, apiKey || undefined));
     } catch (e) {
       setStatus(null);
       setTestError(toAppError(e));
@@ -59,7 +62,7 @@ export function AiSection() {
   useEffect(() => {
     void test();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [s.ai.serverUrl]);
+  }, [s.ai.serverUrl, s.ai.apiKey]);
 
   const chatModels = models.filter((m) => m.kind !== "embedding");
   const numberOrNull = (v: string) => (v.trim() === "" ? null : Math.max(1, Math.round(Number(v)) || 0) || null);
@@ -78,6 +81,23 @@ export function AiSection() {
             onBlur={() => url !== s.ai.serverUrl && set((d) => void (d.ai.serverUrl = url))}
             onKeyDown={(e) => e.key === "Enter" && set((d) => void (d.ai.serverUrl = url))}
           />
+        </Row>
+        <Row label={t("settings.ai.apiKey")} hint={t("settings.ai.apiKeyHint")} htmlFor="lm-key">
+          <input
+            id="lm-key"
+            className="input mono"
+            type={showKey ? "text" : "password"}
+            autoComplete="off"
+            spellCheck={false}
+            placeholder={t("settings.ai.apiKeyPlaceholder")}
+            value={apiKey}
+            onChange={(e) => setApiKey(e.target.value)}
+            onBlur={() => (apiKey.trim() || null) !== s.ai.apiKey && set((d) => void (d.ai.apiKey = apiKey.trim() || null))}
+            onKeyDown={(e) => e.key === "Enter" && set((d) => void (d.ai.apiKey = apiKey.trim() || null))}
+          />
+          <button type="button" className="icon-btn" aria-label={showKey ? t("settings.ai.hideKey") : t("settings.ai.showKey")} onClick={() => setShowKey((v) => !v)}>
+            {showKey ? <EyeOff size={14} /> : <Eye size={14} />}
+          </button>
         </Row>
         <Row label={t("settings.ai.status")}>
           {testing ? (

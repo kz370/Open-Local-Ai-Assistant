@@ -399,8 +399,8 @@ html.overlay #root {
   height: calc(100% - 16px);
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 12px 16px;
+  gap: 4px;
+  padding: 12px 14px;
   border-radius: 18px;
   background: var(--popover);
   border: 1px solid var(--hairline);
@@ -413,7 +413,7 @@ html.overlay #root {
 .overlay-head {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   font-size: var(--text-sm);
   font-weight: 600;
   flex: none;
@@ -425,19 +425,31 @@ html.overlay #root {
 .overlay-label {
   white-space: nowrap;
 }
-.overlay-head .meter {
-  height: 18px;
-  flex: 1;
+.overlay-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  min-width: 0;
+}
+.overlay-status .meter {
+  height: 14px;
+  flex: none;
+  width: 72px;
   justify-content: flex-start;
 }
-.overlay-head .meter span {
+.overlay-status .meter span {
   width: 3px;
 }
 .overlay-hint {
+  flex: 1;
+  min-width: 0;
   font-size: var(--text-xs);
   font-weight: 400;
   color: var(--text-faint);
-  white-space: wrap;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .overlay-text {
   flex: 1;

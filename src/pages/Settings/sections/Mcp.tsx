@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Download, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { Download, Pencil, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
 import { ipc, on, toAppError } from "../../../app/ipc";
 import { useSettings } from "../../../app/settingsStore";
 import { t } from "../../../app/strings";
@@ -20,6 +20,15 @@ const EMPTY: McpServerConfig = {
   enabled: false,
   source: "user",
   createdAt: "",
+};
+
+/** One-click preset: DuckDuckGo search + page fetch, no API key (like LM Studio's web-tools). */
+const WEB_SEARCH_PRESET: McpServerConfig = {
+  ...EMPTY,
+  name: "Web Search",
+  description: "Search the web and fetch page content via DuckDuckGo. No API key needed.",
+  command: "npx",
+  args: ["-y", "mcp-duckduckgo"],
 };
 
 function stateBadge(s: ServerStatus) {
@@ -230,6 +239,9 @@ export function McpSection() {
         title={t("settings.mcp.servers")}
         actions={
           <>
+            <button className="btn btn-sm" onClick={() => setEditing(WEB_SEARCH_PRESET)}>
+              <Search size={13} /> {t("settings.mcp.addWebSearch")}
+            </button>
             <button className="btn btn-sm" onClick={() => setImporting(true)}>
               <Download size={13} /> {t("settings.mcp.import")}
             </button>

@@ -23,7 +23,7 @@ pub struct WindowGeometry {
 
 impl Default for WindowGeometry {
     fn default() -> Self {
-        Self { x: 0, y: 0, width: 420, height: 640 }
+        Self { x: 0, y: 0, width: 480, height: 640 }
     }
 }
 
@@ -84,6 +84,10 @@ impl Default for GeneralSettings {
 #[serde(rename_all = "camelCase", default)]
 pub struct AiSettings {
     pub server_url: String,
+    /// Bearer token sent as `Authorization: Bearer <key>`. LM Studio itself
+    /// ignores it, but other OpenAI-compatible servers behind this same URL
+    /// field (OpenRouter, a hosted vLLM, etc.) may require one.
+    pub api_key: Option<String>,
     /// "auto" | "manual"
     pub model_mode: String,
     pub model: Option<String>,
@@ -102,6 +106,7 @@ impl Default for AiSettings {
     fn default() -> Self {
         Self {
             server_url: DEFAULT_LMSTUDIO_URL.into(),
+            api_key: None,
             model_mode: "auto".into(),
             model: None,
             temperature: 0.7,
@@ -315,6 +320,7 @@ impl Settings {
         if self.ai.server_url.is_empty() {
             self.ai.server_url = DEFAULT_LMSTUDIO_URL.into();
         }
+        self.ai.api_key = self.ai.api_key.take().map(|k| k.trim().to_string()).filter(|k| !k.is_empty());
         if !matches!(self.ai.model_mode.as_str(), "auto" | "manual") {
             self.ai.model_mode = "auto".into();
         }
