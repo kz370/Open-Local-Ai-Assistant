@@ -176,6 +176,7 @@
       "ai": "AI / LM Studio",
       "speech": "Speech Recognition",
       "voice": "Text-to-Speech",
+      "memory": "Models in Memory",
       "language": "Language",
       "dictation": "Dictation",
       "mcp": "MCP & Tools",
@@ -187,6 +188,8 @@
     "general": {
       "startWithOs": "Start with Windows",
       "startMinimized": "Start minimized to tray",
+      "preloadModels": "Load models when the app starts",
+      "preloadModelsHint": "Speech recognition, voices, SILMA and the LM Studio chat model load in the background, so the first answer is instant. Uses memory while idle.",
       "alwaysOnTop": "Always on top",
       "windowPosition": "Window position",
       "positions": {
@@ -489,7 +492,7 @@
     },
     "silma": {
       "title": "Natural Arabic voice (SILMA)",
-      "intro": "SILMA speaks Arabic far more naturally than the built-in voices and adds the missing vowel marks (tashkeel) by itself. It runs on PyTorch, so it is a one-time setup; after that the app starts and stops it automatically and it becomes the Arabic voice.",
+      "intro": "SILMA speaks Arabic far more naturally than the built-in voices and adds the missing vowel marks (tashkeel) by itself. It can also speak English (choose “SILMA (English)” as the English voice); it does not speak German. It runs on PyTorch, so it is a one-time setup; after that the app starts and stops it automatically.",
       "state": "Status",
       "notInstalled": "Not installed",
       "idle": "Installed · starts when Arabic is spoken",
@@ -511,6 +514,28 @@
         "packages": "Installing PyTorch and SILMA…",
         "weights": "Downloading the SILMA model…",
         "prepare": "Preparing the voice…"
+      }
+    },
+    "memory": {
+      "intro": "Which models are loaded right now. Loaded models answer instantly but use RAM or GPU memory while idle.",
+      "models": "Models",
+      "stt": "Speech recognition",
+      "voice": "{{language}} voice",
+      "silma": "SILMA (Arabic/English voice)",
+      "chat": "Chat model (LM Studio)",
+      "otherLlm": "Also loaded in LM Studio",
+      "none": "Not installed",
+      "load": "Load",
+      "unload": "Unload",
+      "loadAll": "Load all",
+      "refresh": "Refresh",
+      "checking": "Checking…",
+      "states": {
+        "loaded": "Loaded",
+        "loading": "Loading…",
+        "idle": "Not loaded",
+        "missing": "Not installed",
+        "failed": "Unavailable"
       }
     }
   },

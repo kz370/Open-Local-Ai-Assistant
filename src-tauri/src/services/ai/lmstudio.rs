@@ -108,6 +108,36 @@ impl LmStudioService {
     }
 }
 
+impl LmStudioService {
+    /// Unloads every loaded instance of `model_id` in LM Studio.
+    pub async fn unload_model(&self, model_id: &str) -> AppResult<()> {
+        let v = self.get_json(&format!("{}/api/v1/models", self.root())).await?;
+        let instances: Vec<String> = v["models"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|m| m["key"].as_str() == Some(model_id))
+            .flat_map(|m| m["loaded_instances"].as_array().cloned().unwrap_or_default())
+            .filter_map(|i| i["id"].as_str().map(str::to_string))
+            .collect();
+        for id in instances {
+            let resp = self
+                .authed(self.client.post(format!("{}/api/v1/models/unload", self.root())))
+                .json(&json!({ "instance_id": id }))
+                .timeout(Duration::from_secs(60))
+                .send()
+                .await
+                .map_err(from_lmstudio_http)?;
+            if !resp.status().is_success() {
+                let status = resp.status();
+                let text = resp.text().await.unwrap_or_default();
+                return Err(AppError::LmStudio(format!("unload failed ({status}): {}", truncate(&text, 300))));
+            }
+        }
+        Ok(())
+    }
+}
+
 fn normalize_base(url: &str) -> String {
     let mut u = url.trim().trim_end_matches('/').to_string();
     if u.is_empty() {

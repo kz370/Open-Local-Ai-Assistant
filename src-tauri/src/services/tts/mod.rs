@@ -171,18 +171,44 @@ impl TtsService {
     pub fn voices(&self) -> Vec<VoiceInfo> {
         let mut voices = list_voices(&self.store.installed());
         if self.silma.get().is_some_and(|s| s.is_installed()) {
-            voices.push(voices::silma_voice());
+            voices.extend(voices::silma_voices());
         }
         voices
     }
 
-    /// True when Arabic speech will use SILMA (so it is worth warming up).
-    pub fn arabic_uses_silma(&self) -> bool {
-        self.voice_for(Lang::Ar).is_some_and(|v| v.engine == Engine::Silma)
+    /// True when any language speaks through SILMA (so it is worth warming up).
+    pub fn uses_silma(&self) -> bool {
+        [Lang::En, Lang::Ar, Lang::De].into_iter().any(|l| self.voice_for(l).is_some_and(|v| v.engine == Engine::Silma))
     }
+
+
 
     pub fn is_available(&self, lang: Lang) -> bool {
         self.voice_for(lang).is_some()
+    }
+
+    /// The voice that will speak `lang`.
+    pub fn selected_voice(&self, lang: Lang) -> Option<VoiceInfo> {
+        self.voice_for(lang)
+    }
+
+    /// Ids of the ONNX voice models in memory.
+    pub fn loaded_models(&self) -> Vec<String> {
+        self.engines.lock().unwrap_or_else(|p| p.into_inner()).keys().cloned().collect()
+    }
+
+    /// Frees a voice model (a sentence being spoken keeps its own handle).
+    pub fn unload_model(&self, model_id: &str) {
+        self.engines.lock().unwrap_or_else(|p| p.into_inner()).remove(model_id);
+    }
+
+    /// Loads the ONNX voice for `lang` now (SILMA is started separately).
+    pub fn preload_lang(&self, lang: Lang, threads: i32) -> AppResult<()> {
+        let voice = self.voice_for(lang).ok_or_else(|| AppError::Tts(format!("no local voice installed for {}", lang.english_name())))?;
+        if voice.engine == Engine::Silma {
+            return Ok(());
+        }
+        self.engine(&voice.model_id, threads).map(|_| ())
     }
 
     fn voice_for(&self, lang: Lang) -> Option<VoiceInfo> {
@@ -379,10 +405,6 @@ impl SpeechSink for TtsService {
             state.spoken.push((sentence, lang));
         }
         *self.last_turn.lock().unwrap_or_else(|p| p.into_inner()) = Some(state.spoken);
-    }
-
-    fn adds_arabic_tashkeel(&self) -> bool {
-        self.arabic_uses_silma()
     }
 
     fn cancel(&self, turn_id: &str) {

@@ -40,6 +40,9 @@ pub struct GeneralSettings {
     pub font_scale: f32,
     pub start_with_os: bool,
     pub start_minimized: bool,
+    /// Load the speech, voice and chat models in the background at startup,
+    /// so the first use does not wait for them (costs RAM/VRAM while idle).
+    pub preload_models: bool,
     pub always_on_top: bool,
     /// "bottom-right" | "bottom-left" | "center" | "custom"
     pub window_position: String,
@@ -65,6 +68,7 @@ impl Default for GeneralSettings {
             font_scale: 1.0,
             start_with_os: false,
             start_minimized: false,
+            preload_models: true,
             always_on_top: true,
             window_position: "bottom-right".into(),
             window: WindowGeometry::default(),

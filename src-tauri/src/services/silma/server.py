@@ -108,6 +108,7 @@ def arabic_number(n):
     return " و".join(parts)
 
 
+_TASHKEEL = __import__("re").compile("[\u064B-\u0652\u0670]")
 _DIGITS = str.maketrans("٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹", "01234567890123456789")
 
 
@@ -190,6 +191,9 @@ class Engine:
     def say(self, text, speed):
         import numpy as np
 
+        # Tashkeel from the chat model is often wrong and SILMA would read it
+        # as written; drop it so SILMA's own tashkeel model (CATT) adds it.
+        text = _TASHKEEL.sub("", text)
         text = spell_numbers(" ".join(text.split()))
         wav, rate, _ = self.ui.infer_process(
             self.ref_audio,

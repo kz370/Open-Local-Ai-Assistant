@@ -19,6 +19,7 @@ export interface Settings {
     fontScale: number;
     startWithOs: boolean;
     startMinimized: boolean;
+    preloadModels: boolean;
     alwaysOnTop: boolean;
     windowPosition: "bottom-right" | "bottom-left" | "center" | "custom";
     window: WindowGeometry;
@@ -232,6 +233,17 @@ export interface GpuStatus {
   downloadBytes: number;
   active: boolean;
   restartRequired: boolean;
+}
+
+export interface MemoryItem {
+  /** "stt" | "voice:en" | "voice:ar" | "voice:de" | "silma" | "llm:<model id>" */
+  key: string;
+  kind: "stt" | "voice" | "silma" | "llm";
+  /** "stt" | language code | "silma" | "chat" | "other" */
+  role: string;
+  model: string;
+  state: "loaded" | "loading" | "idle" | "missing" | "failed";
+  detail: string | null;
 }
 
 export interface SilmaStatus {

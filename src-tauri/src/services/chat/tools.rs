@@ -118,11 +118,6 @@ pub trait SpeechSink: Send + Sync {
     fn push_text(&self, turn_id: &str, text: &str);
     fn finish(&self, turn_id: &str);
     fn cancel(&self, turn_id: &str);
-    /// True when the Arabic voice adds tashkeel itself (SILMA), so the model
-    /// should not be asked to write it.
-    fn adds_arabic_tashkeel(&self) -> bool {
-        false
-    }
 }
 
 pub struct NoSpeech;

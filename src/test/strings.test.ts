@@ -38,7 +38,7 @@ describe("strings", () => {
       expect(hasString(`settings.ai.reasons.${r}`)).toBe(true);
     }
     for (const c of ["search", "fetch", "read", "write", "execute", "other"]) expect(hasString(`settings.mcp.category.${c}`)).toBe(true);
-    for (const s of ["general", "ai", "speech", "voice", "language", "dictation", "mcp", "privacy", "appearance", "shortcuts", "diagnostics"]) {
+    for (const s of ["general", "ai", "speech", "voice", "memory", "language", "dictation", "mcp", "privacy", "appearance", "shortcuts", "diagnostics"]) {
       expect(hasString(`settings.sections.${s}`)).toBe(true);
     }
     for (const code of ["lmstudio_unavailable", "stt_unavailable", "tts_unavailable", "mcp", "audio", "timeout", "cancelled"]) expect(hasString(`errors.${code}`)).toBe(true);

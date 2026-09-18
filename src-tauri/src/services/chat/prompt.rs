@@ -12,8 +12,6 @@ pub struct PromptContext<'a> {
     pub tools: &'a [(String, String)],
     pub has_web_tool: bool,
     pub voice_mode: bool,
-    /// The Arabic voice diacritizes and spells numbers on its own (SILMA).
-    pub speech_adds_tashkeel: bool,
     pub assistant_name: &'a str,
     pub custom_prompt: &'a str,
 }
@@ -51,29 +49,17 @@ pub fn build_system_prompt(ctx: &PromptContext) -> String {
              - Apply إعراب correctly: subject مرفوع, object منصوب, word after a حرف جر مجرور, and the أسماء الخمسة, \
                المثنى and جمع المذكر السالم inflected properly.\n\
              - Respect agreement in gender, number and definiteness between the noun and its adjective, and between \
-               the verb and its subject (verb stays singular before a following plural subject: كتب الطلابُ).\n\
-             - Use correct كان وأخواتها / إنّ وأخواتها case marking, correct إضافة (the مضاف takes no تنوين and no ال), \
+               the verb and its subject (verb stays singular before a following plural subject: كتب الطلاب).\n\
+             - Use correct كان وأخواتها / إن وأخواتها case marking, correct إضافة (the مضاف takes no تنوين and no ال), \
                and correct تمييز after numbers.\n\
              - Spell همزة القطع/الوصل, ة vs ه, ى vs ي and ا/آ/أ/إ correctly.\n\
              - No dialect (عامية), no Franco-Arabic, no unneeded foreign words, no English word order calqued into Arabic.\n\
              - Build each sentence as a complete, well-formed جملة اسمية or فعلية; prefer short clear sentences over \
-               long ones you cannot keep grammatical.\n",
+               long ones you cannot keep grammatical.\n\
+             - Write plain Arabic without diacritics (no تشكيل / حركات), unless the user's custom instructions below \
+               explicitly ask for them.\n",
         );
     }
-    if is_arabic && ctx.voice_mode && !ctx.speech_adds_tashkeel {
-        p.push_str(
-            "Fully diacritize (تشكيل) every Arabic word: mark short vowels (فتحة، ضمة، كسرة), سكون, شدة and تنوين \
-             throughout, not just where ambiguous. The text is read aloud by a speech engine that mispronounces \
-             undiacritized Arabic, so never omit the tashkeel.\n\
-             - The تشكيل must match the إعراب: put the real case ending on the last letter of every word \
-               (الطالبُ الجديدُ يقرأُ كتابًا مفيدًا في المكتبةِ). Wrong endings are read aloud and sound wrong.\n\
-             - Diacritize the internal letters too, so verb form and voice are unambiguous (كَتَبَ vs كُتِبَ, دَرَّسَ vs دَرَسَ).\n\
-             - Write numbers, dates and times as Arabic words, not digits (اثنانِ وعشرونَ, not 22), so the speech \
-               engine pronounces them in Arabic.\n\
-             - Keep foreign technical names in Latin script unchanged and undiacritized.\n",
-        );
-    }
-
     p.push_str("\n## Style\n");
     if ctx.voice_mode {
         p.push_str(
@@ -146,7 +132,6 @@ mod tests {
             tools,
             has_web_tool: web,
             voice_mode: false,
-            speech_adds_tashkeel: false,
             assistant_name: "Local Assistant",
             custom_prompt: "Be brief.",
         }
@@ -159,13 +144,14 @@ mod tests {
     }
 
     #[test]
-    fn arabic_voice_gets_tashkeel_instruction() {
+    fn arabic_is_written_without_tashkeel() {
         let voice_ar = PromptContext { voice_mode: true, ..ctx(&[], None, Some(Lang::Ar), false) };
-        assert!(build_system_prompt(&voice_ar).contains("تشكيل"));
-        let text_ar = ctx(&[], None, Some(Lang::Ar), false);
-        assert!(!build_system_prompt(&text_ar).contains("تشكيل"), "text chat should not be told to diacritize");
-        let voice_en = PromptContext { voice_mode: true, ..ctx(&[], None, Some(Lang::En), false) };
-        assert!(!build_system_prompt(&voice_en).contains("تشكيل"));
+        let prompt = build_system_prompt(&voice_ar);
+        assert!(prompt.contains("without diacritics"));
+        assert!(!prompt.contains("Fully diacritize"));
+        // No diacritic (U+064B..U+0652) anywhere in the instructions.
+        assert!(!prompt.chars().any(|c| ('\u{064B}'..='\u{0652}').contains(&c)), "the prompt itself must not model tashkeel");
+        assert!(!build_system_prompt(&ctx(&[], None, Some(Lang::En), false)).contains("without diacritics"));
     }
 
     #[test]
@@ -174,10 +160,6 @@ mod tests {
         let voice_ar = PromptContext { voice_mode: true, ..ctx(&[], None, Some(Lang::Ar), false) };
         assert!(build_system_prompt(&voice_ar).contains("إعراب"));
         let forced_ar = PromptContext { voice_mode: true, ..ctx(&[], Some(Lang::Ar), Some(Lang::En), false) };
-        // SILMA adds the tashkeel itself; small models get it wrong.
-        let silma = PromptContext { voice_mode: true, speech_adds_tashkeel: true, ..ctx(&[], Some(Lang::Ar), None, false) };
-        assert!(!build_system_prompt(&silma).contains("تشكيل"));
-        assert!(build_system_prompt(&silma).contains("إعراب"));
         assert!(build_system_prompt(&forced_ar).contains("فصحى"));
         assert!(!build_system_prompt(&ctx(&[], None, Some(Lang::De), false)).contains("فصحى"));
     }

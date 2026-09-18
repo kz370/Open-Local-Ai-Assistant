@@ -16,6 +16,7 @@ const SETTINGS: Settings = {
     fontScale: 1,
     startWithOs: false,
     startMinimized: false,
+    preloadModels: true,
     alwaysOnTop: true,
     windowPosition: "bottom-right",
     window: { x: 0, y: 0, width: 420, height: 640 },
