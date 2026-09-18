@@ -69,13 +69,6 @@ fn init_state(app: &AppHandle) -> Result<AppState, Box<dyn std::error::Error>> {
         }),
     ));
     tts.set_silma(silma.clone());
-    // Load the natural Arabic voice in the background so the first Arabic
-    // answer does not wait for it.
-    if silma.is_installed() && tts.arabic_uses_silma() {
-        if let Err(e) = silma.start() {
-            tracing::warn!(error = %e, "SILMA could not start");
-        }
-    }
 
     let handle = app.clone();
     let tts_probe = tts.clone();
@@ -116,6 +109,7 @@ fn init_state(app: &AppHandle) -> Result<AppState, Box<dyn std::error::Error>> {
         silma,
         hardware,
         downloads: Mutex::new(Default::default()),
+        model_loading: Mutex::new(Default::default()),
         dictation_busy: AtomicBool::new(false),
         dictation_cancel: AtomicBool::new(false),
         shortcut_errors: Mutex::new(Vec::new()),
@@ -152,6 +146,14 @@ fn on_voice_event(app: &AppHandle, ev: VoiceEvent) {
         return;
     }
     let _ = app.emit("voice://event", ev);
+}
+
+/// Warms every model up at startup when the user asked for it.
+pub(crate) fn preload_models(app: &AppHandle) {
+    if app.state::<AppState>().settings.get().general.preload_models {
+        tracing::info!("preloading models");
+        commands::memory::load_all(app);
+    }
 }
 
 fn hide_overlay_later(app: &AppHandle) {
@@ -285,6 +287,7 @@ pub fn run() {
                 _ => {}
             }
 
+            preload_models(&handle);
             tauri::async_runtime::spawn(async move { mcp.connect_enabled().await });
             Ok(())
         })
@@ -319,6 +322,9 @@ pub fn run() {
             commands::voice::silma_install,
             commands::voice::silma_cancel,
             commands::voice::silma_test,
+            commands::memory::memory_status,
+            commands::memory::memory_load,
+            commands::memory::memory_unload,
             commands::voice::silma_remove,
             commands::attachments::attach_files,
             commands::attachments::attach_bytes,

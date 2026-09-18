@@ -44,6 +44,8 @@ pub struct AppState {
     pub silma: Arc<Silma>,
     pub hardware: HardwareInfo,
     pub downloads: Mutex<HashMap<String, CancellationToken>>,
+    /// Models being loaded right now (keys of commands::memory::MemoryItem).
+    pub model_loading: Mutex<std::collections::HashSet<String>>,
     pub dictation_busy: AtomicBool,
     /// Set by Esc/X cancel; consumed by run_dictation before any insert.
     pub dictation_cancel: AtomicBool,

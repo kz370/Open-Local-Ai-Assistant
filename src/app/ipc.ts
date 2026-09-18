@@ -20,6 +20,7 @@ import type {
   InstalledModel,
   ListenMode,
   McpServerConfig,
+  MemoryItem,
   Message,
   ModelInfo,
   ModelSelection,
@@ -134,6 +135,11 @@ export const ipc = {
   silmaInstall: () => invoke<void>("silma_install"),
   silmaCancel: () => invoke<void>("silma_cancel"),
   silmaTest: () => invoke<void>("silma_test"),
+
+  // models in memory
+  memoryStatus: () => invoke<MemoryItem[]>("memory_status"),
+  memoryLoad: (key: string) => invoke<void>("memory_load", { key }),
+  memoryUnload: (key: string) => invoke<void>("memory_unload", { key }),
   silmaRemove: () => invoke<void>("silma_remove"),
 
   // MCP

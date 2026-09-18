@@ -38,6 +38,9 @@ pub struct SttService {
     store: Arc<ModelStore>,
     hw: HardwareInfo,
     loaded: Mutex<Option<Loaded>>,
+    /// Id of the model in `loaded`; readable while a listening session holds
+    /// the recognizer's lock.
+    loaded_id: Mutex<Option<String>>,
 }
 
 /// Minimum audio length worth transcribing (models hallucinate on near-silence).
@@ -45,7 +48,7 @@ pub const MIN_AUDIO_MS: u64 = 350;
 
 impl SttService {
     pub fn new(store: Arc<ModelStore>, hw: HardwareInfo) -> Self {
-        Self { store, hw, loaded: Mutex::new(None) }
+        Self { store, hw, loaded: Mutex::new(None), loaded_id: Mutex::new(None) }
     }
 
     /// Chooses the configured model, or the best installed one automatically.
@@ -84,9 +87,15 @@ impl SttService {
         self.resolve_model(settings).map(|m| m.streaming).unwrap_or(false)
     }
 
+    /// Id of the speech model in memory, if any.
+    pub fn loaded_model(&self) -> Option<String> {
+        self.loaded_id.lock().unwrap_or_else(|p| p.into_inner()).clone()
+    }
+
     /// Drops the loaded recognizer (e.g. after the model setting changed).
     pub fn unload(&self) {
         *self.loaded.lock().unwrap_or_else(|p| p.into_inner()) = None;
+        *self.loaded_id.lock().unwrap_or_else(|p| p.into_inner()) = None;
     }
 
     fn options(&self, settings: &SttSettings) -> EngineOptions {
@@ -108,11 +117,13 @@ impl SttService {
         let mut guard = self.loaded.lock().unwrap_or_else(|p| p.into_inner());
         if guard.as_ref().map(|l| l.key != key).unwrap_or(true) {
             *guard = None; // free the previous model before loading another
+            *self.loaded_id.lock().unwrap_or_else(|p| p.into_inner()) = None;
             let files = engine::detect(&model.path).ok_or_else(|| AppError::Stt(format!("{} is not a recognizable speech model folder", model.path.display())))?;
             let started = Instant::now();
             let recognizer = engine::create(&files, &opts)?;
             tracing::info!(model = %model.id, family = files.family.label(), ms = started.elapsed().as_millis() as u64, "speech model loaded");
             *guard = Some(Loaded { key, recognizer });
+            *self.loaded_id.lock().unwrap_or_else(|p| p.into_inner()) = Some(model.id.clone());
         }
         let loaded = guard.as_ref().expect("recognizer loaded");
         Ok(f(&loaded.recognizer, &model))

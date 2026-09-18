@@ -4,6 +4,7 @@ pub mod app;
 pub mod attachments;
 pub mod chat;
 pub mod mcp;
+pub mod memory;
 pub mod voice;
 
 use crate::errors::AppError;
