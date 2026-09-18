@@ -27,3 +27,7 @@ dist-ssr
 src-tauri/target-test
 release/Open Local Assistant.exe
 release/Open-Local-Assistant-0.1.0-setup.exe
+release/onnxruntime.dll
+release/sherpa-onnx-cxx-api.dll
+release/sherpa-onnx-c-api.dll
+release/onnxruntime_providers_shared.dll

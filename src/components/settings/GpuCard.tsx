@@ -3,7 +3,7 @@ import { Cpu, Download, Trash2, Zap } from "lucide-react";
 import { ipc, on, toAppError } from "../../app/ipc";
 import { formatBytes, t } from "../../app/strings";
 import type { AppErrorPayload, GpuProgress, GpuStatus } from "../../app/types";
-import { ErrorNotice, Switch } from "../common/controls";
+import { Dialog, ErrorNotice, Switch } from "../common/controls";
 import { Card, Row } from "./layout";
 
 /**
@@ -15,6 +15,7 @@ export function GpuCard() {
   const [status, setStatus] = useState<GpuStatus | null>(null);
   const [progress, setProgress] = useState<GpuProgress | null>(null);
   const [error, setError] = useState<AppErrorPayload | null>(null);
+  const [confirmRemove, setConfirmRemove] = useState(false);
 
   const refresh = () => ipc.gpuStatus().then(setStatus, (e) => setError(toAppError(e)));
   useEffect(() => {
@@ -39,6 +40,7 @@ export function GpuCard() {
 
   const remove = async () => {
     setError(null);
+    setConfirmRemove(false);
     try {
       await ipc.gpuRemove();
       setProgress(null);
@@ -62,7 +64,7 @@ export function GpuCard() {
       title={t("settings.gpu.title")}
       actions={
         status?.installed ? (
-          <button className="btn btn-sm" onClick={() => void remove()} disabled={busy}>
+          <button className="btn btn-sm" onClick={() => setConfirmRemove(true)} disabled={busy}>
             <Trash2 size={13} /> {t("settings.gpu.remove")}
           </button>
         ) : busy ? (
@@ -114,6 +116,24 @@ export function GpuCard() {
       )}
       {progress?.state === "error" && progress.error && <p className="row-hint">{progress.error}</p>}
       {error && <ErrorNotice error={error} actions={<button className="btn btn-sm" onClick={() => setError(null)}>{t("app.close")}</button>} />}
+      {confirmRemove && (
+        <Dialog
+          title={t("settings.gpu.remove")}
+          onClose={() => setConfirmRemove(false)}
+          actions={
+            <>
+              <button className="btn" onClick={() => setConfirmRemove(false)}>
+                {t("app.cancel")}
+              </button>
+              <button className="btn btn-primary" onClick={() => void remove()}>
+                {t("settings.gpu.remove")}
+              </button>
+            </>
+          }
+        >
+          <p>{t("settings.gpu.removeConfirm", { size: formatBytes(status?.sizeBytes ?? 0) })}</p>
+        </Dialog>
+      )}
     </Card>
   );
 }

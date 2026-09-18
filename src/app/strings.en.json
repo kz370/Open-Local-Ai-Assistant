@@ -348,6 +348,7 @@
       "install": "Download GPU pack ({{size}})",
       "installed": "GPU pack installed ({{size}} on disk).",
       "remove": "Remove GPU pack",
+      "removeConfirm": "Delete the GPU pack ({{size}})? Speech stays on the CPU, and the pack has to be downloaded again to use the GPU.",
       "enable": "Use the GPU",
       "enableHint": "Applies the next time the app starts.",
       "restart": "Restart the app to run the speech models on the GPU.",
