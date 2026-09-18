@@ -29,7 +29,28 @@ fn main() {
     let started = std::time::Instant::now();
     let tts = sherpa_onnx::OfflineTts::create(&config).expect("engine could not be created");
     println!("engine ready in {} ms", started.elapsed().as_millis());
-    let started = std::time::Instant::now();
+    // Three runs: the first one pays for kernel warm-up, the later ones show
+    // the speed the app would actually see.
+    for run in 1..=3 {
+        let started = std::time::Instant::now();
+        let audio = tts
+            .generate_with_config::<fn(&[f32], f32) -> bool>(
+                "The quick brown fox jumps over the lazy dog, again and again.",
+                &sherpa_onnx::GenerationConfig::default(),
+                None,
+            )
+            .expect("synthesis failed");
+        println!(
+            "run {run}: {} samples at {} Hz in {} ms",
+            audio.samples().len(),
+            audio.sample_rate(),
+            started.elapsed().as_millis()
+        );
+    }
+
+    // Speech recognition on the same audio, which is the heavier of the two
+    // models and the one most likely to gain from the GPU.
+    let Some(stt_dir) = std::env::var_os("LA_STT_DIR").map(std::path::PathBuf::from) else { return };
     let audio = tts
         .generate_with_config::<fn(&[f32], f32) -> bool>(
             "The quick brown fox jumps over the lazy dog, again and again.",
@@ -37,5 +58,36 @@ fn main() {
             None,
         )
         .expect("synthesis failed");
-    println!("synthesized {} samples at {} Hz in {} ms", audio.samples().len(), audio.sample_rate(), started.elapsed().as_millis());
+    let find = |needle: &str| {
+        std::fs::read_dir(&stt_dir)
+            .expect("stt dir")
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .find(|p| p.file_name().and_then(|n| n.to_str()).map(|n| n.contains(needle)).unwrap_or(false))
+            .map(|p| p.to_string_lossy().to_string())
+    };
+    let mut cfg = sherpa_onnx::OfflineRecognizerConfig::default();
+    cfg.model_config.tokens = find("tokens");
+    cfg.model_config.num_threads = 4;
+    cfg.model_config.provider = Some(provider.clone());
+    cfg.model_config.whisper = sherpa_onnx::OfflineWhisperModelConfig {
+        encoder: find("encoder"),
+        decoder: find("decoder"),
+        language: Some("en".into()),
+        task: Some("transcribe".into()),
+        tail_paddings: -1,
+        ..Default::default()
+    };
+    cfg.decoding_method = Some("greedy_search".into());
+    let started = std::time::Instant::now();
+    let rec = sherpa_onnx::OfflineRecognizer::create(&cfg).expect("recognizer could not be created");
+    println!("recognizer ready in {} ms", started.elapsed().as_millis());
+    for run in 1..=3 {
+        let started = std::time::Instant::now();
+        let stream = rec.create_stream();
+        stream.accept_waveform(audio.sample_rate(), audio.samples());
+        rec.decode(&stream);
+        let text = stream.get_result().map(|r| r.text.to_string()).unwrap_or_default();
+        println!("stt run {run}: {} ms -> {text}", started.elapsed().as_millis());
+    }
 }

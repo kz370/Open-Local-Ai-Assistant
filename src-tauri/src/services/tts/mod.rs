@@ -243,6 +243,8 @@ impl TtsService {
     }
 
     fn synthesize_and_queue(&self, job: &Job, threads: i32) -> AppResult<()> {
+        // Reaching synthesis means the speech libraries loaded and ran.
+        crate::services::gpu::mark_healthy();
         let Some(_voice) = self.voice_for(job.lang) else {
             let key = (job.tag.clone(), job.lang);
             if self.warned.lock().unwrap_or_else(|p| p.into_inner()).insert(key) {
