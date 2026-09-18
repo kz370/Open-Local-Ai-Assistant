@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { SpokenSentence } from "../../app/voiceStore";
 import { textDir } from "../common/controls";
 
@@ -26,45 +26,71 @@ function split(text: string): Word[] {
 }
 
 /**
- * Shows what the assistant is saying as a single line that scrolls along with
+ * Shows what the assistant is saying as a single line that slides along with
  * the voice, highlighting the word being spoken.
+ *
+ * Everything here is built to keep the animation cheap: the frame loop only
+ * touches React when the spoken word actually changes (a few times a second,
+ * not sixty), the line is moved with a composited transform instead of
+ * scrolling, and word positions are measured once per sentence rather than on
+ * every step.
  */
 export function SpeechTicker({ sentence, paused }: { sentence: SpokenSentence; paused: boolean }) {
   const words = useMemo(() => split(sentence.text), [sentence.text]);
   const [index, setIndex] = useState(0);
-  const trackRef = useRef<HTMLDivElement>(null);
-  const activeRef = useRef<HTMLSpanElement>(null);
+  const frameRef = useRef(0);
+  const shownRef = useRef(0);
+  const viewRef = useRef<HTMLDivElement>(null);
+  const lineRef = useRef<HTMLParagraphElement>(null);
+  /** Distance the line has to move to centre each word, measured once. */
+  const shiftsRef = useRef<number[]>([]);
 
-  useEffect(() => setIndex(0), [sentence.text, sentence.startedAt]);
+  useEffect(() => {
+    shownRef.current = 0;
+    setIndex(0);
+  }, [sentence.text, sentence.startedAt]);
+
+  // Measure once per sentence: reading layout while the line moves would force
+  // the browser to recompute it on every frame.
+  useLayoutEffect(() => {
+    const view = viewRef.current;
+    const line = lineRef.current;
+    if (!view || !line) return;
+    const spans = Array.from(line.children) as HTMLElement[];
+    const middle = view.clientWidth / 2;
+    shiftsRef.current = spans.map((s) => middle - (s.offsetLeft + s.offsetWidth / 2));
+    line.style.transform = `translate3d(${shiftsRef.current[0] ?? 0}px, 0, 0)`;
+  }, [words]);
+
+  useLayoutEffect(() => {
+    const line = lineRef.current;
+    const shift = shiftsRef.current[index];
+    if (!line || shift === undefined) return;
+    line.style.transform = `translate3d(${shift}px, 0, 0)`;
+  }, [index]);
 
   useEffect(() => {
     if (paused || words.length === 0) return;
-    let frame = 0;
     const step = () => {
       const progress = (performance.now() - sentence.startedAt) / Math.max(1, sentence.durationMs);
       const at = words.findIndex((w) => w.until > progress);
-      setIndex(at === -1 ? words.length - 1 : at);
-      frame = requestAnimationFrame(step);
+      const next = at === -1 ? words.length - 1 : at;
+      // Re-render only when the spoken word changes.
+      if (next !== shownRef.current) {
+        shownRef.current = next;
+        setIndex(next);
+      }
+      frameRef.current = requestAnimationFrame(step);
     };
-    frame = requestAnimationFrame(step);
-    return () => cancelAnimationFrame(frame);
+    frameRef.current = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(frameRef.current);
   }, [paused, words, sentence.startedAt, sentence.durationMs]);
 
-  // Keep the spoken word in the middle of the line, like a news ticker.
-  useEffect(() => {
-    const track = trackRef.current;
-    const active = activeRef.current;
-    if (!track || !active) return;
-    const left = active.offsetLeft - track.clientWidth / 2 + active.offsetWidth / 2;
-    if (typeof track.scrollTo === "function") track.scrollTo({ left, behavior: "smooth" });
-    else track.scrollLeft = left;
-  }, [index]);
-
   return (
-    <div className="ticker" ref={trackRef} dir={textDir(sentence.text)} aria-live="off">
-      <p className="ticker-line">
+    <div className="ticker" ref={viewRef} dir={textDir(sentence.text)} aria-live="off">
+      <p className="ticker-line" ref={lineRef}>
         {words.map((w, i) => (
-          <span key={`${i}-${w.text}`} ref={i === index ? activeRef : undefined} className={`ticker-word${i === index ? " on" : i < index ? " done" : ""}`}>
+          <span key={`${i}-${w.text}`} className={`ticker-word${i === index ? " on" : i < index ? " done" : ""}`}>
             {w.text}
           </span>
         ))}
