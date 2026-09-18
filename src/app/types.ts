@@ -234,6 +234,24 @@ export interface GpuStatus {
   restartRequired: boolean;
 }
 
+export interface SilmaStatus {
+  installed: boolean;
+  state: "off" | "starting" | "ready" | "failed";
+  device: string | null;
+  error: string | null;
+  sizeBytes: number;
+  downloadBytes: number;
+  gpu: boolean;
+}
+
+export interface SilmaProgress {
+  stage: "runtime" | "packages" | "weights" | "prepare" | "done" | "error" | "cancelled";
+  downloadedBytes: number;
+  totalBytes: number;
+  detail: string | null;
+  error: string | null;
+}
+
 export interface GpuProgress {
   state: "downloading" | "extracting" | "done" | "error" | "cancelled";
   downloadedBytes: number;

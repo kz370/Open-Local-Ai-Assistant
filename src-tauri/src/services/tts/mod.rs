@@ -14,13 +14,14 @@ use crate::services::hardware::HardwareInfo;
 use crate::services::language::{detect, Lang};
 use crate::services::models::catalog::Engine;
 use crate::services::models::{find_file, ModelStore};
+use crate::services::silma::Silma;
 use crate::settings::SettingsStore;
 use sentence_buffer::SentenceBuffer;
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, Sender};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use voices::{list_voices, select_voice, VoiceInfo};
 
 #[derive(Debug, Clone, Serialize)]
@@ -74,6 +75,8 @@ pub struct TtsService {
     engines: Arc<Mutex<HashMap<String, Arc<sherpa_onnx::OfflineTts>>>>,
     emit: Arc<dyn Fn(TtsEvent) + Send + Sync>,
     warned: Mutex<HashSet<(String, Lang)>>,
+    /// Natural Arabic voice, when the user installed it.
+    silma: OnceLock<Arc<Silma>>,
 }
 
 impl TtsService {
@@ -95,6 +98,7 @@ impl TtsService {
             engines: Arc::new(Mutex::new(HashMap::new())),
             emit,
             warned: Mutex::new(HashSet::new()),
+            silma: OnceLock::new(),
         });
         svc.clone().watch_playback();
         let weak = Arc::downgrade(&svc);
@@ -160,8 +164,21 @@ impl TtsService {
             .expect("spawn tts progress thread");
     }
 
+    pub fn set_silma(&self, silma: Arc<Silma>) {
+        let _ = self.silma.set(silma);
+    }
+
     pub fn voices(&self) -> Vec<VoiceInfo> {
-        list_voices(&self.store.installed())
+        let mut voices = list_voices(&self.store.installed());
+        if self.silma.get().is_some_and(|s| s.is_installed()) {
+            voices.push(voices::silma_voice());
+        }
+        voices
+    }
+
+    /// True when Arabic speech will use SILMA (so it is worth warming up).
+    pub fn arabic_uses_silma(&self) -> bool {
+        self.voice_for(Lang::Ar).is_some_and(|v| v.engine == Engine::Silma)
     }
 
     pub fn is_available(&self, lang: Lang) -> bool {
@@ -233,8 +250,12 @@ impl TtsService {
     /// Synthesizes text to 16-bit-range float PCM (for tests / warm-up).
     pub fn synthesize(&self, text: &str, lang: Lang, threads: i32) -> AppResult<(Vec<f32>, u32)> {
         let voice = self.voice_for(lang).ok_or_else(|| AppError::Tts(format!("no local voice installed for {}", lang.english_name())))?;
-        let engine = self.engine(&voice.model_id, threads)?;
         let speed = self.settings.get().tts.speed;
+        if voice.engine == Engine::Silma {
+            let silma = self.silma.get().ok_or_else(|| AppError::Tts("SILMA is not available".into()))?;
+            return silma.synthesize(text, speed);
+        }
+        let engine = self.engine(&voice.model_id, threads)?;
         let gen = sherpa_onnx::GenerationConfig { speed, sid: voice.speaker_id, ..Default::default() };
         let audio = engine
             .generate_with_config::<fn(&[f32], f32) -> bool>(text, &gen, None)
@@ -358,6 +379,10 @@ impl SpeechSink for TtsService {
             state.spoken.push((sentence, lang));
         }
         *self.last_turn.lock().unwrap_or_else(|p| p.into_inner()) = Some(state.spoken);
+    }
+
+    fn adds_arabic_tashkeel(&self) -> bool {
+        self.arabic_uses_silma()
     }
 
     fn cancel(&self, turn_id: &str) {

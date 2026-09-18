@@ -68,6 +68,7 @@ pub fn quit(app: &AppHandle) {
     state.chat.stop_all();
     state.voice.stop(true);
     state.tts.stop_all();
+    state.silma.stop();
     for label in [window::MAIN, window::BUBBLE, window::OVERLAY, window::SETTINGS] {
         if let Some(w) = app.get_webview_window(label) {
             let _ = w.hide();

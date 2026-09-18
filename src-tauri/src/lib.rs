@@ -61,6 +61,23 @@ fn init_state(app: &AppHandle) -> Result<AppState, Box<dyn std::error::Error>> {
     let stt = Arc::new(SttService::new(models.clone(), hardware.clone()));
 
     let handle = app.clone();
+    let silma = Arc::new(services::silma::Silma::new(
+        paths.data_dir.clone(),
+        hardware.has_nvidia(),
+        Arc::new(move |status| {
+            let _ = handle.emit("silma://status", status);
+        }),
+    ));
+    tts.set_silma(silma.clone());
+    // Load the natural Arabic voice in the background so the first Arabic
+    // answer does not wait for it.
+    if silma.is_installed() && tts.arabic_uses_silma() {
+        if let Err(e) = silma.start() {
+            tracing::warn!(error = %e, "SILMA could not start");
+        }
+    }
+
+    let handle = app.clone();
     let tts_probe = tts.clone();
     let voice = Arc::new(VoiceSessions::new(
         stt.clone(),
@@ -96,6 +113,7 @@ fn init_state(app: &AppHandle) -> Result<AppState, Box<dyn std::error::Error>> {
         stt,
         tts,
         voice,
+        silma,
         hardware,
         downloads: Mutex::new(Default::default()),
         dictation_busy: AtomicBool::new(false),
@@ -297,6 +315,11 @@ pub fn run() {
             commands::voice::gpu_install,
             commands::voice::gpu_cancel,
             commands::voice::gpu_remove,
+            commands::voice::silma_status,
+            commands::voice::silma_install,
+            commands::voice::silma_cancel,
+            commands::voice::silma_test,
+            commands::voice::silma_remove,
             commands::attachments::attach_files,
             commands::attachments::attach_bytes,
             commands::attachments::attach_text,

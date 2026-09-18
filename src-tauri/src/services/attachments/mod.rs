@@ -8,7 +8,7 @@
 //!
 //! Everything stays on this computer; nothing is uploaded anywhere.
 
-mod base64;
+pub mod base64;
 mod office;
 
 pub use base64::{decode as base64_decode, encode as base64_encode};

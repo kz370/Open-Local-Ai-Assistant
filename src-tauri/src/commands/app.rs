@@ -44,6 +44,12 @@ pub async fn save_settings(app: AppHandle, state: State<'_, AppState>, settings:
     {
         state.stt.unload();
     }
+    // Picking SILMA for Arabic loads it now rather than on the first sentence.
+    if before.tts.voice_ar != saved.tts.voice_ar && state.silma.is_installed() && state.tts.arabic_uses_silma() {
+        if let Err(e) = state.silma.start() {
+            tracing::warn!(error = %e, "SILMA could not start");
+        }
+    }
     if before.tts.output_device != saved.tts.output_device || before.tts.volume != saved.tts.volume {
         state.tts.apply_settings();
     }

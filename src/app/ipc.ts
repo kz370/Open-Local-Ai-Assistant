@@ -13,6 +13,7 @@ import type {
   ChatEvent,
   ConnectionStatus,
   GpuStatus,
+  SilmaStatus,
   Conversation,
   ImportCandidate,
   IncompatibleModel,
@@ -127,6 +128,13 @@ export const ipc = {
   gpuInstall: () => invoke<void>("gpu_install"),
   gpuCancel: () => invoke<void>("gpu_cancel"),
   gpuRemove: () => invoke<void>("gpu_remove"),
+
+  // SILMA natural Arabic voice (PyTorch helper managed by the app)
+  silmaStatus: () => invoke<SilmaStatus>("silma_status"),
+  silmaInstall: () => invoke<void>("silma_install"),
+  silmaCancel: () => invoke<void>("silma_cancel"),
+  silmaTest: () => invoke<void>("silma_test"),
+  silmaRemove: () => invoke<void>("silma_remove"),
 
   // MCP
   mcpList: () => invoke<ServerStatus[]>("mcp_list"),
