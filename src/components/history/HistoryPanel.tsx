@@ -170,6 +170,12 @@ export function HistoryPanel({ onClose }: { onClose: () => void }) {
                   const id = deleting.id;
                   setDeleting(null);
                   await ipc.convDelete(id);
+                  // The last one is gone: start fresh instead of showing an empty list.
+                  if ((await ipc.convList(1)).length === 0) {
+                    newConversation();
+                    onClose();
+                    return;
+                  }
                   if (id === activeId) newConversation();
                   await refresh();
                 }}

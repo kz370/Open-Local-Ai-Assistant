@@ -29,6 +29,23 @@ describe("history panel", () => {
     await waitFor(() => expect(screen.getByText("No conversations yet.")).toBeInTheDocument());
   });
 
+  it("starts a new chat after the last conversation is deleted", async () => {
+    let left = [CONVS[0]];
+    vi.mocked(invoke).mockImplementation(async (cmd: string) => {
+      if (cmd === "conv_search") return left;
+      if (cmd === "conv_delete") left = [];
+      if (cmd === "conv_list") return left.map((h) => h.conversation);
+      return undefined;
+    });
+    const onClose = vi.fn();
+    render(<HistoryPanel onClose={onClose} />);
+    await waitFor(() => expect(screen.getByText("PHP versions")).toBeInTheDocument());
+    screen.getByLabelText("Delete: PHP versions").click();
+    (await screen.findAllByRole("button", { name: "Delete" })).at(-1)!.click();
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(vi.mocked(invoke)).toHaveBeenCalledWith("conv_set_last", { id: null });
+  });
+
   it("surfaces a failing search instead of looking empty", async () => {
     vi.mocked(invoke).mockImplementation(async () => {
       throw { code: "database", detail: "locked" };
