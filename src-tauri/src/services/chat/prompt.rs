@@ -12,6 +12,8 @@ pub struct PromptContext<'a> {
     pub tools: &'a [(String, String)],
     pub has_web_tool: bool,
     pub voice_mode: bool,
+    /// The Arabic voice diacritizes and spells numbers on its own (SILMA).
+    pub speech_adds_tashkeel: bool,
     pub assistant_name: &'a str,
     pub custom_prompt: &'a str,
 }
@@ -58,7 +60,7 @@ pub fn build_system_prompt(ctx: &PromptContext) -> String {
                long ones you cannot keep grammatical.\n",
         );
     }
-    if is_arabic && ctx.voice_mode {
+    if is_arabic && ctx.voice_mode && !ctx.speech_adds_tashkeel {
         p.push_str(
             "Fully diacritize (تشكيل) every Arabic word: mark short vowels (فتحة، ضمة، كسرة), سكون, شدة and تنوين \
              throughout, not just where ambiguous. The text is read aloud by a speech engine that mispronounces \
@@ -144,6 +146,7 @@ mod tests {
             tools,
             has_web_tool: web,
             voice_mode: false,
+            speech_adds_tashkeel: false,
             assistant_name: "Local Assistant",
             custom_prompt: "Be brief.",
         }
@@ -171,6 +174,10 @@ mod tests {
         let voice_ar = PromptContext { voice_mode: true, ..ctx(&[], None, Some(Lang::Ar), false) };
         assert!(build_system_prompt(&voice_ar).contains("إعراب"));
         let forced_ar = PromptContext { voice_mode: true, ..ctx(&[], Some(Lang::Ar), Some(Lang::En), false) };
+        // SILMA adds the tashkeel itself; small models get it wrong.
+        let silma = PromptContext { voice_mode: true, speech_adds_tashkeel: true, ..ctx(&[], Some(Lang::Ar), None, false) };
+        assert!(!build_system_prompt(&silma).contains("تشكيل"));
+        assert!(build_system_prompt(&silma).contains("إعراب"));
         assert!(build_system_prompt(&forced_ar).contains("فصحى"));
         assert!(!build_system_prompt(&ctx(&[], None, Some(Lang::De), false)).contains("فصحى"));
     }

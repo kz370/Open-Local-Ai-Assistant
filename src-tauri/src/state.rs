@@ -8,6 +8,7 @@ use crate::services::chat::{ChatEngine, ModelResolver};
 use crate::services::hardware::HardwareInfo;
 use crate::services::mcp::McpManager;
 use crate::services::models::ModelStore;
+use crate::services::silma::Silma;
 use crate::services::stt::session::VoiceSessions;
 use crate::services::stt::SttService;
 use crate::services::tts::TtsService;
@@ -40,6 +41,7 @@ pub struct AppState {
     pub stt: Arc<SttService>,
     pub tts: Arc<TtsService>,
     pub voice: Arc<VoiceSessions>,
+    pub silma: Arc<Silma>,
     pub hardware: HardwareInfo,
     pub downloads: Mutex<HashMap<String, CancellationToken>>,
     pub dictation_busy: AtomicBool,

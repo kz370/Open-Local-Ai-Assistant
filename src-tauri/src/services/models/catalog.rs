@@ -22,6 +22,8 @@ pub enum Engine {
     Kokoro,
     Piper,
     Kitten,
+    /// SILMA TTS, run by the Python helper in services::silma.
+    Silma,
 }
 
 #[derive(Debug, Clone, Serialize)]

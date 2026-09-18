@@ -6,6 +6,7 @@ A small, fast, local-first desktop AI assistant. It lives in a floating window (
 - **Windows:** a small floating bubble sits on your desktop. Click it (or press `Ctrl+Space`) to open the chat. `−` puts the chat back into the bubble, `X` closes it to the tray, and the app quits only from the tray menu. Only one instance runs at a time.
 - **Speech recognition:** any sherpa-onnx compatible local model — Whisper, NeMo/Parakeet/Nemotron transducers (including streaming ones that show text live), NeMo CTC, SenseVoice, Moonshine and Paraformer — via [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx).
 - **Text-to-speech:** local neural voices. Kitten nano (31 MB) is the small, natural-sounding English default; Kokoro and the German/Arabic Piper voices are one click away, and you can prefer male or female voices.
+- **Natural Arabic voice (SILMA):** optional one-click setup in Settings → Text-to-Speech. SILMA TTS v1 runs on PyTorch in a private Python environment inside the app data folder (about 6 GB download, 5.6 GB on disk with the NVIDIA build) and adds tashkeel by itself. The app starts and stops it automatically; nothing else has to be installed or run.
 - **Tools:** generic MCP (Model Context Protocol) client with explicit per-tool permissions. Web search comes from an MCP server you choose.
 - **Dictation:** a global hotkey (`Ctrl+Alt+Space`) types what you say into any application. A small window shows the text live while you speak, with optional grammar cleanup by a small LM Studio model you pick.
 - **Privacy:** conversations, settings and logs stay on disk locally. There is no telemetry. Logs contain no conversation content unless you turn that on.
@@ -62,6 +63,7 @@ src-tauri/src/
   services/chat/             orchestrator (history, tool rounds, permissions), prompt, freshness detection
   services/stt/              Whisper transcription, listening sessions (push-to-talk, hands-free VAD, dictation)
   services/tts/              sentence buffer, per-sentence language → voice selection, synthesis queue
+  services/silma/            SILMA setup (uv, PyTorch, weights) and the helper process (server.py) it talks to
   services/audio/            cpal capture (16 kHz mono) and playback queue
   services/language/         English/Arabic/German detection for typed and spoken text
   services/mcp/              MCP manager (stdio + streamable HTTP), permission policy, source extraction

@@ -9,5 +9,6 @@ pub mod language;
 pub mod mcp;
 pub mod models;
 pub mod search;
+pub mod silma;
 pub mod stt;
 pub mod tts;

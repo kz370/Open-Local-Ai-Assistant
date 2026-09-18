@@ -229,8 +229,8 @@
       "streaming": "Stream responses",
       "showReasoning": "Show model reasoning",
       "timeout": "Request timeout (seconds)",
-    "pasteAsFile": "Paste as file above",
-    "pasteAsFileHint": "Pasted text longer than this many characters is attached as a text file instead of filling the message box. Leave empty to turn this off.",
+      "pasteAsFile": "Paste as file above",
+      "pasteAsFileHint": "Pasted text longer than this many characters is attached as a text file instead of filling the message box. Leave empty to turn this off.",
       "reasons": {
         "already_loaded": "already loaded",
         "fits_gpu": "fits in GPU memory",
@@ -486,6 +486,32 @@
       "selfTest": "Self-test",
       "runSelfTest": "Run self-test",
       "selfTestHint": "Calls every backend command this window uses and reports which ones answer."
+    },
+    "silma": {
+      "title": "Natural Arabic voice (SILMA)",
+      "intro": "SILMA speaks Arabic far more naturally than the built-in voices and adds the missing vowel marks (tashkeel) by itself. It runs on PyTorch, so it is a one-time setup; after that the app starts and stops it automatically and it becomes the Arabic voice.",
+      "state": "Status",
+      "notInstalled": "Not installed",
+      "idle": "Installed · starts when Arabic is spoken",
+      "starting": "Loading…",
+      "ready": "Ready · {{device}}",
+      "failed": "Could not start",
+      "install": "Set up SILMA ({{size}})",
+      "installShort": "Download and set up",
+      "installConfirmGpu": "This downloads about {{size}}: a private Python with PyTorch for your NVIDIA GPU, and the SILMA model. It takes a while and nothing else needs to be installed.",
+      "installConfirmCpu": "This downloads about {{size}}: a private Python with PyTorch and the SILMA model. Without an NVIDIA GPU, SILMA runs on the CPU and is noticeably slower.",
+      "installed": "Installed ({{size}} on disk).",
+      "remove": "Remove SILMA",
+      "removeConfirm": "Delete SILMA and its Python environment ({{size}})? Arabic goes back to the built-in voices.",
+      "test": "Test",
+      "setupFailed": "Setup failed — details",
+      "of": "{{done}} of {{total}}",
+      "stages": {
+        "runtime": "Installing Python…",
+        "packages": "Installing PyTorch and SILMA…",
+        "weights": "Downloading the SILMA model…",
+        "prepare": "Preparing the voice…"
+      }
     }
   },
   "setup": {

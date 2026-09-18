@@ -124,6 +124,22 @@ pub fn list_voices(installed: &[InstalledModel]) -> Vec<VoiceInfo> {
     out
 }
 
+pub const SILMA_VOICE_ID: &str = "silma:0";
+
+/// The SILMA voice (see services::silma); ranked above every ONNX Arabic voice.
+pub fn silma_voice() -> VoiceInfo {
+    VoiceInfo {
+        id: SILMA_VOICE_ID.into(),
+        model_id: "silma".into(),
+        name: "SILMA (natural Arabic)".into(),
+        language: "ar".into(),
+        speaker_id: 0,
+        engine: Engine::Silma,
+        quality: 9,
+        gender: String::new(),
+    }
+}
+
 /// `preference` is "auto" or a voice id from settings; `gender` is
 /// "any" | "female" | "male" and only steers the automatic choice.
 pub fn select_voice(voices: &[VoiceInfo], lang: Lang, preference: &str, gender: &str) -> Option<VoiceInfo> {

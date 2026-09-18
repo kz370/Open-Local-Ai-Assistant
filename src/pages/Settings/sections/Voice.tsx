@@ -8,6 +8,7 @@ import { ErrorNotice, Segmented, Switch } from "../../../components/common/contr
 import { GpuCard } from "../../../components/settings/GpuCard";
 import { Card, Row, SectionHeader } from "../../../components/settings/layout";
 import { ModelManager } from "../../../components/settings/ModelManager";
+import { SilmaCard } from "../../../components/settings/SilmaCard";
 import { LevelMeter } from "../../../components/voice/LevelMeter";
 import { useS } from "./Basic";
 
@@ -295,8 +296,8 @@ function useVoices() {
   useEffect(() => {
     const load = () => void ipc.ttsVoices().then(setVoices);
     load();
-    const sub = on("models://changed", load);
-    return () => void sub.then((u) => u());
+    const subs = [on("models://changed", load), on("silma://status", load)];
+    return () => subs.forEach((s) => void s.then((u) => u()));
   }, []);
   return voices;
 }
@@ -312,6 +313,7 @@ export function VoiceSection() {
     <>
       <SectionHeader title={t("settings.sections.voice")} />
       <GpuCard />
+      <SilmaCard />
       <Card>
         <Row label={t("settings.voice.provider")}>
           <span className="badge ok">{t("settings.speech.local")}</span>
