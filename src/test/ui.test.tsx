@@ -2,13 +2,17 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { useChat, type UiMessage } from "../app/chatStore";
+import { useSettings } from "../app/settingsStore";
+import type { Attachment } from "../app/types";
 import { MessageBubble } from "../components/chat/MessageBubble";
 import { Composer } from "../components/chat/Composer";
+import { CallView } from "../components/voice/CallView";
+import { useVoice } from "../app/voiceStore";
 import { SpeechTicker } from "../components/voice/SpeechTicker";
 import { textDir } from "../components/common/controls";
 import { acceleratorFromEvent, prettyAccelerator } from "../components/settings/ShortcutInput";
 
-const base: UiMessage = { id: "m1", role: "assistant", content: "", language: null, reasoning: "", sources: [], tools: [], streaming: false, createdAt: "" };
+const base: UiMessage = { id: "m1", role: "assistant", content: "", attachments: [], language: null, reasoning: "", sources: [], tools: [], streaming: false, createdAt: "" };
 
 describe("text direction", () => {
   it("detects Arabic, English, German and mixed text", () => {
@@ -153,6 +157,10 @@ describe("chat store", () => {
   });
 });
 
+function attachment(): Attachment {
+  return { id: "a1", name: "report.pdf", mime: "application/pdf", kind: "binary", sizeBytes: 2048, textChars: 0, truncated: false, note: null, createdAt: "" };
+}
+
 describe("Composer", () => {
   it("sends on Enter, keeps Shift+Enter for newlines, and supports RTL input", () => {
     const send = vi.fn(async () => {});
@@ -171,6 +179,75 @@ describe("Composer", () => {
     useChat.setState({ draft: "", turnId: "t" });
     render(<Composer onVoiceSetup={() => {}} />);
     expect(screen.getByLabelText("Stop generating")).toBeInTheDocument();
+  });
+
+  it("sends an attachment-only message and can drop a staged file", () => {
+    const send = vi.fn(async () => {});
+    const removeAttachment = vi.fn();
+    useChat.setState({ draft: "", turnId: null, send, attachments: [attachment()], attachmentErrors: [], removeAttachment });
+    render(<Composer onVoiceSetup={() => {}} />);
+    expect(screen.getByText("report.pdf")).toBeInTheDocument();
+
+    const sendButton = screen.getByLabelText("Send");
+    expect(sendButton).toBeEnabled();
+    fireEvent.click(sendButton);
+    expect(send).toHaveBeenCalledWith("");
+
+    fireEvent.click(screen.getByLabelText("Remove report.pdf"));
+    expect(removeAttachment).toHaveBeenCalledWith("a1");
+  });
+
+  it("attaches pasted text that is longer than the configured limit", async () => {
+    const staged = { ...attachment(), id: "a2", name: "pasted-text.txt", kind: "text" as const };
+    vi.mocked(invoke).mockImplementation(async (cmd: string) => (cmd === "attach_text" ? staged : undefined));
+    useSettings.setState({ settings: { ai: { pasteAsFileChars: 10 }, tts: {} } as never });
+    const addAttachments = vi.fn();
+    useChat.setState({ draft: "", turnId: null, attachments: [], attachmentErrors: [], addAttachments });
+    render(<Composer onVoiceSetup={() => {}} />);
+
+    const paste = (text: string) => {
+      const data = { files: [] as File[], getData: () => text } as unknown as DataTransfer;
+      fireEvent.paste(screen.getByLabelText("Type a message…"), { clipboardData: data });
+    };
+    paste("short");
+    expect(invoke).not.toHaveBeenCalledWith("attach_text", expect.anything());
+
+    paste("x".repeat(40));
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith("attach_text", { name: "pasted-text.txt", text: "x".repeat(40) }));
+    await waitFor(() => expect(addAttachments).toHaveBeenCalledWith([staged]));
+    useSettings.setState({ settings: null });
+  });
+});
+
+describe("CallView", () => {
+  beforeEach(() => {
+    useSettings.setState({ settings: { stt: {}, tts: {} } as never });
+    useChat.setState({ messages: [], turnId: null, voiceNotice: null });
+  });
+
+  it("mutes the microphone without ending the call", async () => {
+    vi.mocked(invoke).mockImplementation(async (cmd, args) => (cmd === "voice_set_muted" ? (args as { muted: boolean }).muted : undefined));
+    useVoice.setState({ handsFree: true, muted: false, speaking: false, phase: "listening", levels: [0.5] });
+    render(<CallView />);
+
+    fireEvent.click(screen.getByLabelText("Mute microphone"));
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith("voice_set_muted", { muted: true }));
+    await waitFor(() => expect(screen.getByLabelText("Unmute microphone")).toBeInTheDocument());
+    expect(useVoice.getState().handsFree).toBe(true);
+  });
+
+  it("interrupts the answer only while there is one to interrupt", () => {
+    useVoice.setState({ handsFree: true, muted: false, speaking: false, paused: false, phase: "listening", levels: [0] });
+    const { rerender } = render(<CallView />);
+    expect(screen.getByLabelText("Stop speaking")).toBeDisabled();
+
+    useVoice.setState({ speaking: true });
+    rerender(<CallView />);
+    const interrupt = screen.getByLabelText("Stop speaking");
+    expect(interrupt).toBeEnabled();
+    fireEvent.click(interrupt);
+    expect(invoke).toHaveBeenCalledWith("tts_stop");
+    expect(useVoice.getState().speaking).toBe(false);
   });
 });
 

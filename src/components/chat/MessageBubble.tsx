@@ -7,6 +7,7 @@ import { useVoice } from "../../app/voiceStore";
 import { t } from "../../app/strings";
 import { ErrorNotice, textDir } from "../common/controls";
 import { BrandMark } from "../common/BrandMark";
+import { AttachmentList } from "./Attachments";
 import { Markdown } from "./Markdown";
 import { Sources } from "./Sources";
 import { ToolActivity } from "./ToolActivity";
@@ -35,9 +36,12 @@ export const MessageBubble = memo(function MessageBubble({ message: m, developer
     return (
       <div className="msg user">
         <span className="sr-only">{t("chat.you")}</span>
-        <div className="bubble" dir={dir} lang={lang}>
-          {m.content}
-        </div>
+        {m.attachments.length > 0 && <AttachmentList items={m.attachments} />}
+        {m.content && (
+          <div className="bubble" dir={dir} lang={lang}>
+            {m.content}
+          </div>
+        )}
       </div>
     );
   }

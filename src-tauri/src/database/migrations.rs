@@ -73,6 +73,10 @@ const MIGRATIONS: &[&str] = &[
         PRIMARY KEY (server_id, tool_name)
     );
     "#,
+    // 2: files and images attached to a message
+    r#"
+    ALTER TABLE messages ADD COLUMN attachments_json TEXT;
+    "#,
 ];
 
 pub fn run(conn: &Connection) -> rusqlite::Result<()> {

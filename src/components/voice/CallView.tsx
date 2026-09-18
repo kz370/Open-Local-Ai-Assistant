@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Mic, Pause, PhoneOff, Play } from "lucide-react";
+import { Mic, MicOff, PhoneOff, Play, Square } from "lucide-react";
 import { useChat } from "../../app/chatStore";
 import { ipc } from "../../app/ipc";
 import { useSettings } from "../../app/settingsStore";
@@ -20,7 +20,6 @@ export function CallView() {
   const voice = useVoice();
   const messages = useChat((s) => s.messages);
   const busy = useChat((s) => s.turnId !== null);
-  const stop = useChat((s) => s.stop);
   const [startedAt] = useState(() => Date.now());
   const micName = useVoice((s) => s.device);
   const silent = useVoice((s) => s.levels.every((v) => v < 0.03));
@@ -37,7 +36,9 @@ export function CallView() {
   const lastUser = useMemo(() => [...messages].reverse().find((m) => m.role === "user" && m.content), [messages]);
   const voiceNotice = useChat((s) => s.voiceNotice);
   const state = voice.speaking ? "speaking" : busy ? "thinking" : voice.phase === "transcribing" ? "transcribing" : "listening";
-  const label = t(`call.${state}`);
+  // The assistant can be cut off whenever it is talking or about to talk.
+  const canInterrupt = voice.speaking || voice.paused || busy;
+  const label = voice.muted ? t("call.muted") : t(`call.${state}`);
   const caption = voice.partial || (state === "speaking" || state === "thinking" ? lastAssistant?.content ?? "" : voice.lastTranscript ?? "");
 
   return (
@@ -86,24 +87,28 @@ export function CallView() {
           className="call-btn"
           aria-label={voice.paused ? t("chat.resume") : t("call.interrupt")}
           title={voice.paused ? t("chat.resume") : t("call.interrupt")}
+          disabled={!canInterrupt}
           onClick={() => {
             if (voice.paused) {
               void ipc.ttsSetPaused(false);
-            } else if (voice.speaking) {
-              void ipc.ttsSetPaused(true);
             } else {
-              void ipc.ttsStop();
-              if (busy) stop();
+              voice.interrupt();
             }
           }}
         >
-          {voice.paused ? <Play size={20} /> : <Pause size={20} />}
+          {voice.paused ? <Play size={20} /> : <Square size={17} fill="currentColor" />}
         </button>
         <button className="call-btn end" aria-label={t("call.end")} title={t("call.end")} onClick={() => void voice.toggleHandsFree()}>
           <PhoneOff size={22} />
         </button>
-        <button className="call-btn" aria-label={t("call.listening")} title={t("call.listening")} disabled>
-          <Mic size={20} />
+        <button
+          className={`call-btn${voice.muted ? " muted" : ""}`}
+          aria-label={voice.muted ? t("call.unmute") : t("call.mute")}
+          title={voice.muted ? t("call.unmute") : t("call.mute")}
+          aria-pressed={voice.muted}
+          onClick={() => void voice.toggleMuted()}
+        >
+          {voice.muted ? <MicOff size={20} /> : <Mic size={20} />}
         </button>
       </div>
     </div>

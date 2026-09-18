@@ -1,5 +1,6 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
-import { ArrowUp, AudioLines, Mic, Square, Volume2, VolumeX } from "lucide-react";
+import { ArrowUp, AudioLines, Mic, Paperclip, Square, Volume2, VolumeX } from "lucide-react";
+import { attachFromPaste, pickFiles } from "../../app/attach";
 import { useChat } from "../../app/chatStore";
 import { ipc } from "../../app/ipc";
 import { useSettings } from "../../app/settingsStore";
@@ -7,6 +8,7 @@ import { errorMessage, t } from "../../app/strings";
 import { useVoice } from "../../app/voiceStore";
 import { textDir } from "../common/controls";
 import { LevelMeter } from "../voice/LevelMeter";
+import { AttachmentList } from "./Attachments";
 import { ModelPicker } from "./ModelPicker";
 
 export interface ComposerHandle {
@@ -21,8 +23,13 @@ export const Composer = forwardRef<ComposerHandle, { onVoiceSetup: () => void; a
   const busy = useChat((s) => s.turnId !== null);
   const voiceNotice = useChat((s) => s.voiceNotice);
   const setVoiceNotice = useChat((s) => s.setVoiceNotice);
+  const attachments = useChat((s) => s.attachments);
+  const attachmentErrors = useChat((s) => s.attachmentErrors);
+  const removeAttachment = useChat((s) => s.removeAttachment);
+  const dismissAttachmentErrors = useChat((s) => s.dismissAttachmentErrors);
   const voice = useVoice();
   const speak = useSettings((s) => s.settings?.tts.speakResponses ?? false);
+  const pasteAsFileChars = useSettings((s) => s.settings?.ai.pasteAsFileChars ?? 0);
   const updateSettings = useSettings((s) => s.update);
   const taRef = useRef<HTMLTextAreaElement>(null);
 
@@ -36,8 +43,9 @@ export const Composer = forwardRef<ComposerHandle, { onVoiceSetup: () => void; a
   }, [draft]);
 
   const recording = voice.mode === "pushToTalk" && voice.phase !== "idle";
+  const canSend = (draft.trim().length > 0 || attachments.length > 0) && !recording;
   const submit = () => {
-    if (draft.trim() && !recording) void send(draft);
+    if (canSend) void send(draft);
   };
 
   if (recording) {
@@ -104,6 +112,14 @@ export const Composer = forwardRef<ComposerHandle, { onVoiceSetup: () => void; a
           </span>
         </div>
       )}
+      {attachmentErrors.length > 0 && (
+        <div className="voice-notice" role="alert">
+          <span>{attachmentErrors.join(" · ")}</span>
+          <button className="btn btn-sm btn-ghost" onClick={dismissAttachmentErrors}>
+            {t("app.close")}
+          </button>
+        </div>
+      )}
       {voiceNotice && !micError && (
         <div className="voice-notice" role="status">
           <span>{voiceNotice}</span>
@@ -113,6 +129,7 @@ export const Composer = forwardRef<ComposerHandle, { onVoiceSetup: () => void; a
         </div>
       )}
       <div className="composer">
+        <AttachmentList items={attachments} onRemove={removeAttachment} />
         <label className="sr-only" htmlFor="composer-input">
           {t("chat.placeholder")}
         </label>
@@ -124,6 +141,15 @@ export const Composer = forwardRef<ComposerHandle, { onVoiceSetup: () => void; a
           dir={draft ? textDir(draft) : "auto"}
           placeholder={t("chat.placeholder")}
           onChange={(e) => setDraft(e.target.value)}
+          onPaste={(e) => {
+            // Pasted files, and very long pasted text, become attachments.
+            const data = e.clipboardData;
+            const hasFiles = data.files.length > 0;
+            const longText = pasteAsFileChars > 0 && data.getData("text/plain").length > pasteAsFileChars;
+            if (!hasFiles && !longText) return;
+            e.preventDefault();
+            void attachFromPaste(data, pasteAsFileChars);
+          }}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault();
@@ -137,6 +163,15 @@ export const Composer = forwardRef<ComposerHandle, { onVoiceSetup: () => void; a
         />
         <div className="composer-bar">
           <ModelPicker autoModel={autoModel} />
+          <button
+            type="button"
+            className="chip icon-chip"
+            aria-label={t("chat.attach")}
+            title={t("chat.attach")}
+            onClick={() => void pickFiles().catch(() => undefined)}
+          >
+            <Paperclip size={14} />
+          </button>
           <button
             type="button"
             className={`chip icon-chip${speak ? " on" : ""}`}
@@ -169,7 +204,7 @@ export const Composer = forwardRef<ComposerHandle, { onVoiceSetup: () => void; a
               <Square size={12} fill="currentColor" />
             </button>
           ) : (
-            <button className="round-btn send" aria-label={t("chat.send")} title={t("chat.send")} onClick={submit} disabled={!draft.trim()}>
+            <button className="round-btn send" aria-label={t("chat.send")} title={t("chat.send")} onClick={submit} disabled={!canSend}>
               <ArrowUp size={17} strokeWidth={2.4} />
             </button>
           )}

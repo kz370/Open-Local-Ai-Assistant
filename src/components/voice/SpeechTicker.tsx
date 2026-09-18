@@ -2,9 +2,11 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { SpokenSentence } from "../../app/voiceStore";
 import { textDir } from "../common/controls";
 
-/** A word of the spoken sentence and the share of the sentence it takes. */
+/** A word of the spoken sentence and the slice of the sentence it occupies. */
 interface Word {
   text: string;
+  /** Fraction of the sentence, 0..1, at which this word starts. */
+  from: number;
   /** Fraction of the sentence, 0..1, at which this word ends. */
   until: number;
 }
@@ -20,20 +22,29 @@ function split(text: string): Word[] {
   const total = parts.reduce((sum, w) => sum + weight(w), 0) || 1;
   let acc = 0;
   return parts.map((w) => {
+    const from = acc / total;
     acc += weight(w);
-    return { text: w, until: acc / total };
+    return { text: w, from, until: acc / total };
   });
 }
+
+/** Rests on a word, then glides to the next one instead of snapping. */
+function ease(t: number): number {
+  const x = Math.min(1, Math.max(0, (t - 0.55) / 0.45));
+  return x * x * (3 - 2 * x);
+}
+
+const reducedMotion = () => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 /**
  * Shows what the assistant is saying as a single line that slides along with
  * the voice, highlighting the word being spoken.
  *
- * Everything here is built to keep the animation cheap: the frame loop only
- * touches React when the spoken word actually changes (a few times a second,
- * not sixty), the line is moved with a composited transform instead of
- * scrolling, and word positions are measured once per sentence rather than on
- * every step.
+ * Everything here is built to keep the animation cheap: the line is moved every
+ * frame with a composited transform written straight to the node (never through
+ * React, never through scrollLeft), React re-renders only when the spoken word
+ * actually changes, and word positions are measured once per sentence rather
+ * than on every step.
  */
 export function SpeechTicker({ sentence, paused }: { sentence: SpokenSentence; paused: boolean }) {
   const words = useMemo(() => split(sentence.text), [sentence.text]);
@@ -62,19 +73,24 @@ export function SpeechTicker({ sentence, paused }: { sentence: SpokenSentence; p
     line.style.transform = `translate3d(${shiftsRef.current[0] ?? 0}px, 0, 0)`;
   }, [words]);
 
-  useLayoutEffect(() => {
-    const line = lineRef.current;
-    const shift = shiftsRef.current[index];
-    if (!line || shift === undefined) return;
-    line.style.transform = `translate3d(${shift}px, 0, 0)`;
-  }, [index]);
-
   useEffect(() => {
     if (paused || words.length === 0) return;
+    const smooth = !reducedMotion();
     const step = () => {
-      const progress = (performance.now() - sentence.startedAt) / Math.max(1, sentence.durationMs);
+      const progress = Math.min(1, Math.max(0, (performance.now() - sentence.startedAt) / Math.max(1, sentence.durationMs)));
       const at = words.findIndex((w) => w.until > progress);
       const next = at === -1 ? words.length - 1 : at;
+      const line = lineRef.current;
+      const shifts = shiftsRef.current;
+      if (line && shifts.length > 0) {
+        const here = shifts[next] ?? 0;
+        const after = shifts[next + 1] ?? here;
+        const word = words[next];
+        const within = smooth ? (progress - word.from) / Math.max(1e-6, word.until - word.from) : 0;
+        // Sub-word interpolation: the line creeps toward the next word instead
+        // of jumping when the highlight moves, which is what makes it readable.
+        line.style.transform = `translate3d(${here + (after - here) * ease(within)}px, 0, 0)`;
+      }
       // Re-render only when the spoken word changes.
       if (next !== shownRef.current) {
         shownRef.current = next;

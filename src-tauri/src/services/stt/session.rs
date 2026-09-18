@@ -59,6 +59,9 @@ pub struct VoiceSessions {
     settings: Arc<SettingsStore>,
     emit: VoiceEmit,
     speaking: SpeakingProbe,
+    /// Set while the user has muted the microphone from the call screen. The
+    /// session keeps running, it just ignores everything it hears.
+    muted: Arc<AtomicBool>,
     active: Mutex<Option<Active>>,
     /// The previous session's thread, joined by the next session (never by the UI).
     previous: Mutex<Option<std::thread::JoinHandle<()>>>,
@@ -69,7 +72,15 @@ const VAD_WINDOW: usize = 512;
 
 impl VoiceSessions {
     pub fn new(stt: Arc<SttService>, settings: Arc<SettingsStore>, emit: VoiceEmit, speaking: SpeakingProbe) -> Self {
-        Self { stt, settings, emit, speaking, active: Mutex::new(None), previous: Mutex::new(None) }
+        Self { stt, settings, emit, speaking, muted: Arc::new(AtomicBool::new(false)), active: Mutex::new(None), previous: Mutex::new(None) }
+    }
+
+    pub fn set_muted(&self, muted: bool) {
+        self.muted.store(muted, Ordering::Relaxed);
+    }
+
+    pub fn is_muted(&self) -> bool {
+        self.muted.load(Ordering::Relaxed)
     }
 
     pub fn active_mode(&self) -> Option<ListenMode> {
@@ -117,7 +128,10 @@ impl VoiceSessions {
         let system_audio = loopback.as_ref().map(|l| l.level_handle());
         let stop = Arc::new(AtomicBool::new(false));
         let discard = Arc::new(AtomicBool::new(false));
-        let (stt, emit, speaking) = (self.stt.clone(), self.emit.clone(), self.speaking.clone());
+        // A fresh session always starts listening: a mute belongs to the call
+        // the user muted, not to the next one.
+        self.muted.store(false, Ordering::Relaxed);
+        let (stt, emit, speaking, muted) = (self.stt.clone(), self.emit.clone(), self.speaking.clone(), self.muted.clone());
         let stt_settings = settings.stt.clone();
         let (stop2, discard2) = (stop.clone(), discard.clone());
 
@@ -131,6 +145,7 @@ impl VoiceSessions {
                     mode,
                     emit: emit.clone(),
                     speaking,
+                    muted,
                     settings: stt_settings.clone(),
                     stop: stop2,
                     discard: discard2,
@@ -204,6 +219,7 @@ pub fn run_session_for_test(
         mode,
         emit,
         speaking: Arc::new(|| false),
+        muted: Arc::new(AtomicBool::new(false)),
         settings: settings.clone(),
         stop,
         discard: Arc::new(AtomicBool::new(false)),
@@ -235,6 +251,8 @@ struct SessionCtx {
     mode: ListenMode,
     emit: VoiceEmit,
     speaking: SpeakingProbe,
+    /// Mirrors [`VoiceSessions::set_muted`].
+    muted: Arc<AtomicBool>,
     settings: SttSettings,
     stop: Arc<AtomicBool>,
     discard: Arc<AtomicBool>,
@@ -283,10 +301,18 @@ impl SessionCtx {
     }
 
     /// True while this sample should be ignored instead of transcribed: the
-    /// assistant is speaking (hands-free), or "isolate system audio" is on and
-    /// the speakers are audibly playing something, or either was true within
-    /// the last `AUDIO_TAIL`.
+    /// user muted the microphone, or the assistant is speaking (hands-free), or
+    /// "isolate system audio" is on and the speakers are audibly playing
+    /// something, or either was true within the last `AUDIO_TAIL`.
+    /// True while the user has muted the microphone from the call screen.
+    fn mic_muted(&self) -> bool {
+        self.muted.load(Ordering::Relaxed)
+    }
+
     fn input_muted(&self, hands_free: bool) -> bool {
+        if self.mic_muted() {
+            return true;
+        }
         let assistant = hands_free && (self.speaking)();
         let speakers = self.system_audio.as_ref().is_some_and(|a| f32::from_bits(a.load(Ordering::Relaxed)) > SYSTEM_AUDIO_LEVEL);
         if assistant || speakers {
@@ -322,7 +348,9 @@ impl SessionCtx {
     fn run_level_only(&self, rx: &Receiver<CaptureEvent>) {
         while !self.stopped() {
             match rx.recv_timeout(Duration::from_millis(100)) {
-                Ok(CaptureEvent::Level(v)) => (self.emit)(VoiceEvent::Level { mode: self.mode, value: v }),
+                Ok(CaptureEvent::Level(v)) => {
+                    (self.emit)(VoiceEvent::Level { mode: self.mode, value: if self.mic_muted() { 0.0 } else { v } })
+                }
                 Ok(CaptureEvent::Error(e)) => {
                     (self.emit)(VoiceEvent::Error { mode: self.mode, code: "audio".into(), detail: e });
                     return;
@@ -355,10 +383,13 @@ impl SessionCtx {
         while !self.stopped() && started.elapsed() < MAX_RECORDING && !silence.expired() {
             match rx.recv_timeout(Duration::from_millis(100)) {
                 Ok(CaptureEvent::Level(v)) => {
-                    if v > SPEECH_LEVEL {
+                    // A muted microphone shows no level, and its silence must
+                    // not count toward the idle timeout: the user is still here.
+                    let muted = self.mic_muted();
+                    if muted || v > SPEECH_LEVEL {
                         silence.heard_speech();
                     }
-                    (self.emit)(VoiceEvent::Level { mode: self.mode, value: v });
+                    (self.emit)(VoiceEvent::Level { mode: self.mode, value: if muted { 0.0 } else { v } });
                 }
                 Ok(CaptureEvent::Samples(s)) => {
                     if self.input_muted(hands_free) {
@@ -438,10 +469,13 @@ impl SessionCtx {
         while !self.stopped() && (hands_free || started.elapsed() < MAX_RECORDING) && !silence.expired() {
             match rx.recv_timeout(Duration::from_millis(100)) {
                 Ok(CaptureEvent::Level(v)) => {
-                    if v > SPEECH_LEVEL {
+                    // A muted microphone shows no level, and its silence must
+                    // not count toward the idle timeout: the user is still here.
+                    let muted = self.mic_muted();
+                    if muted || v > SPEECH_LEVEL {
                         silence.heard_speech();
                     }
-                    (self.emit)(VoiceEvent::Level { mode: self.mode, value: v });
+                    (self.emit)(VoiceEvent::Level { mode: self.mode, value: if muted { 0.0 } else { v } });
                 }
                 Ok(CaptureEvent::Samples(s)) => {
                     if self.input_muted(hands_free) {
@@ -545,6 +579,7 @@ mod tests {
             mode: ListenMode::Dictation,
             emit: Arc::new(|_| {}),
             speaking: Arc::new(move || speaking),
+            muted: Arc::new(AtomicBool::new(false)),
             settings: SttSettings::default(),
             stop: Arc::new(AtomicBool::new(false)),
             discard: Arc::new(AtomicBool::new(false)),
@@ -556,6 +591,16 @@ mod tests {
     #[test]
     fn no_gating_without_the_monitor() {
         assert!(!ctx(None, false).input_muted(false));
+    }
+
+    #[test]
+    fn muting_gates_the_microphone_until_it_is_unmuted() {
+        let c = ctx(None, false);
+        c.muted.store(true, Ordering::Relaxed);
+        assert!(c.input_muted(false), "a muted microphone must hear nothing");
+        assert!(c.input_muted(true));
+        c.muted.store(false, Ordering::Relaxed);
+        assert!(!c.input_muted(false), "unmuting must take effect at once");
     }
 
     #[test]

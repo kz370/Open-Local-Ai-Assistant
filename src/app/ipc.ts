@@ -5,6 +5,8 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
   AppErrorPayload,
   AppInfo,
+  AttachResult,
+  Attachment,
   AudioDevice,
   CapabilityReport,
   CatalogEntry,
@@ -67,7 +69,7 @@ export const ipc = {
 
   // chat
   chatSend: (
-    input: { turnId: string; conversationId: string | null; text: string; spokenLanguage: string | null; voice: boolean },
+    input: { turnId: string; conversationId: string | null; text: string; spokenLanguage: string | null; voice: boolean; attachmentIds: string[] },
     onEvent: (e: ChatEvent) => void,
   ) => {
     const channel = new Channel<ChatEvent>();
@@ -76,6 +78,14 @@ export const ipc = {
   },
   chatStop: (turnId: string) => invoke<void>("chat_stop", { turnId }),
   chatConfirmTool: (callId: string, approved: boolean) => invoke<boolean>("chat_confirm_tool", { callId, approved }),
+
+  // attachments
+  attachFiles: (paths: string[]) => invoke<AttachResult>("attach_files", { paths }),
+  attachBytes: (name: string, mime: string | null, data: string) => invoke<Attachment>("attach_bytes", { name, mime, data }),
+  attachText: (name: string, text: string) => invoke<Attachment>("attach_text", { name, text }),
+  attachRemove: (id: string) => invoke<void>("attach_remove", { id }),
+  attachmentDataUrl: (id: string, mime: string) => invoke<string>("attachment_data_url", { id, mime }),
+  attachmentText: (id: string) => invoke<string>("attachment_text", { id }),
 
   // conversations
   convList: (limit = 200) => invoke<Conversation[]>("conv_list", { limit }),
@@ -93,6 +103,8 @@ export const ipc = {
   voiceStop: (discard: boolean) => invoke<ListenMode | null>("voice_stop", { discard }),
   dictationCancel: () => invoke<void>("dictation_cancel"),
   voiceStatus: () => invoke<ListenMode | null>("voice_status"),
+  voiceSetMuted: (muted: boolean) => invoke<boolean>("voice_set_muted", { muted }),
+  voiceMuted: () => invoke<boolean>("voice_muted"),
   ttsVoices: () => invoke<VoiceInfo[]>("tts_voices"),
   ttsSpeak: (text: string, language?: string | null, tag?: string) => invoke<void>("tts_speak", { text, language, tag }),
   ttsSetPaused: (paused: boolean) => invoke<{ speaking: boolean; paused: boolean }>("tts_set_paused", { paused }),

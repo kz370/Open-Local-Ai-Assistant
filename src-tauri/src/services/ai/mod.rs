@@ -48,12 +48,71 @@ pub struct ConnectionStatus {
     pub api: String,
 }
 
+/// One part of a multimodal message, in OpenAI content-part format.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ContentPart {
+    Text { text: String },
+    ImageUrl { image_url: ImageUrl },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ImageUrl {
+    pub url: String,
+}
+
+/// Message body: plain text, or parts when images are attached.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(untagged)]
+pub enum MessageContent {
+    Text(String),
+    Parts(Vec<ContentPart>),
+}
+
+impl MessageContent {
+    /// The readable text of this body; image parts contribute nothing.
+    pub fn as_text(&self) -> String {
+        match self {
+            MessageContent::Text(t) => t.clone(),
+            MessageContent::Parts(parts) => parts
+                .iter()
+                .filter_map(|p| match p {
+                    ContentPart::Text { text } => Some(text.as_str()),
+                    ContentPart::ImageUrl { .. } => None,
+                })
+                .collect::<Vec<_>>()
+                .join("\n"),
+        }
+    }
+
+    /// Serialized size, used when trimming history to the context window.
+    pub fn len(&self) -> usize {
+        match self {
+            MessageContent::Text(t) => t.len(),
+            MessageContent::Parts(parts) => parts
+                .iter()
+                .map(|p| match p {
+                    ContentPart::Text { text } => text.len(),
+                    ContentPart::ImageUrl { image_url } => image_url.url.len(),
+                })
+                .sum(),
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        match self {
+            MessageContent::Text(t) => t.is_empty(),
+            MessageContent::Parts(parts) => parts.is_empty(),
+        }
+    }
+}
+
 /// A message in OpenAI chat format.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ChatMessage {
     pub role: String,
     #[serde(default)]
-    pub content: Option<String>,
+    pub content: Option<MessageContent>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub tool_calls: Option<Vec<ToolCall>>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
@@ -62,7 +121,16 @@ pub struct ChatMessage {
 
 impl ChatMessage {
     pub fn text(role: &str, content: impl Into<String>) -> Self {
-        Self { role: role.into(), content: Some(content.into()), tool_calls: None, tool_call_id: None }
+        Self { role: role.into(), content: Some(MessageContent::Text(content.into())), tool_calls: None, tool_call_id: None }
+    }
+
+    pub fn parts(role: &str, parts: Vec<ContentPart>) -> Self {
+        Self { role: role.into(), content: Some(MessageContent::Parts(parts)), tool_calls: None, tool_call_id: None }
+    }
+
+    /// The message's text, or an empty string when it carries none.
+    pub fn content_text(&self) -> String {
+        self.content.as_ref().map(MessageContent::as_text).unwrap_or_default()
     }
 }
 

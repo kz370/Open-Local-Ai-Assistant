@@ -54,14 +54,17 @@ async fn harness() -> Option<Harness> {
     for tool in ["write_file", "fail"] {
         mcp.set_permission(&cfg.id, tool, local_ai_assistant_lib::services::chat::tools::Permission::Deny).await.unwrap();
     }
-    Some(Harness { engine: ChatEngine::new(db, settings, ai, resolver, mcp, Arc::new(NoSpeech)) })
+    let attachments = Arc::new(local_ai_assistant_lib::services::attachments::AttachmentStore::new(
+        std::env::temp_dir().join("local-assistant-live-attachments"),
+    ));
+    Some(Harness { engine: ChatEngine::new(db, settings, ai, resolver, mcp, Arc::new(NoSpeech), attachments) })
 }
 
 async fn ask(h: &Harness, text: &str) -> Vec<ChatEvent> {
     let events = Arc::new(Mutex::new(Vec::new()));
     let e2 = events.clone();
     let emit: Emit = Arc::new(move |ev| e2.lock().unwrap().push(ev));
-    let input = SendInput { turn_id: uuid::Uuid::new_v4().to_string(), conversation_id: None, text: text.into(), spoken_language: None, voice: false };
+    let input = SendInput { turn_id: uuid::Uuid::new_v4().to_string(), conversation_id: None, text: text.into(), spoken_language: None, voice: false, attachment_ids: vec![] };
     let started = std::time::Instant::now();
     h.engine.send(input, emit).await.expect("turn");
     let ev = events.lock().unwrap().clone();

@@ -2,6 +2,7 @@
 //! user text -> language detection -> history -> LM Studio (streaming) ->
 //! optional MCP tool rounds (with permissions) -> persisted answer -> speech.
 
+use super::attach;
 use super::freshness::needs_fresh_info;
 use super::prompt::{build_system_prompt, freshness_hint, PromptContext};
 use super::resolver::ModelResolver;
@@ -10,7 +11,8 @@ use super::tools::{Permission, Source, SpeechSink, ToolCategory, ToolProvider, T
 use crate::database::conversations::{new_id, now, Message};
 use crate::database::Db;
 use crate::errors::{AppError, AppResult};
-use crate::services::ai::{AiService, ChatMessage, ChatRequest, FunctionDefinition, StreamChunk, ToolCall, ToolDefinition};
+use crate::services::ai::{AiService, ChatMessage, ChatRequest, FunctionDefinition, MessageContent, StreamChunk, ToolCall, ToolDefinition};
+use crate::services::attachments::AttachmentStore;
 use crate::services::language::{detect, Lang};
 use crate::settings::SettingsStore;
 use serde::{Deserialize, Serialize};
@@ -36,6 +38,9 @@ pub struct SendInput {
     pub spoken_language: Option<String>,
     #[serde(default)]
     pub voice: bool,
+    /// Ids of attachments staged by the composer for this turn.
+    #[serde(default)]
+    pub attachment_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -74,6 +79,7 @@ pub struct ChatEngine {
     resolver: Arc<ModelResolver>,
     tools: Arc<dyn ToolProvider>,
     speech: Arc<dyn SpeechSink>,
+    attachments: Arc<AttachmentStore>,
     active: Mutex<HashMap<String, CancellationToken>>,
     confirmations: Mutex<HashMap<String, oneshot::Sender<bool>>>,
 }
@@ -86,6 +92,7 @@ impl ChatEngine {
         resolver: Arc<ModelResolver>,
         tools: Arc<dyn ToolProvider>,
         speech: Arc<dyn SpeechSink>,
+        attachments: Arc<AttachmentStore>,
     ) -> Self {
         Self {
             db,
@@ -94,6 +101,7 @@ impl ChatEngine {
             resolver,
             tools,
             speech,
+            attachments,
             active: Mutex::new(HashMap::new()),
             confirmations: Mutex::new(HashMap::new()),
         }
@@ -126,7 +134,7 @@ impl ChatEngine {
 
     pub async fn send(&self, input: SendInput, emit: Emit) -> AppResult<()> {
         let text = input.text.trim().to_string();
-        if text.is_empty() {
+        if text.is_empty() && input.attachment_ids.is_empty() {
             return Err(AppError::Invalid("message is empty".into()));
         }
         let token = CancellationToken::new();
@@ -140,14 +148,22 @@ impl ChatEngine {
         let turn_id = input.turn_id.clone();
         let settings = self.settings.get();
 
+        // Attachments staged by the composer become part of this user message.
+        let attachments = self.attachments.claim(&input.attachment_ids);
+        let title_source = if text.is_empty() {
+            attachments.first().map(|a| a.name.clone()).unwrap_or_default()
+        } else {
+            text.clone()
+        };
+
         // Conversation
         let (conversation, new_conversation) = match input.conversation_id.as_deref() {
             Some(id) => match self.db.get_conversation(id) {
                 Ok(c) => (c, false),
-                Err(AppError::NotFound(_)) => (self.db.create_conversation(&title_from(&text), None)?, true),
+                Err(AppError::NotFound(_)) => (self.db.create_conversation(&title_from(&title_source), None)?, true),
                 Err(e) => return Err(e),
             },
-            None => (self.db.create_conversation(&title_from(&text), None)?, true),
+            None => (self.db.create_conversation(&title_from(&title_source), None)?, true),
         };
         if new_conversation {
             let _ = self.settings.update(|s| s.last_conversation_id = Some(conversation.id.clone()));
@@ -175,9 +191,18 @@ impl ChatEngine {
             tool_activity: None,
             tool_calls: None,
             tool_call_id: None,
+            attachments: if attachments.is_empty() { None } else { Some(serde_json::to_value(&attachments)?) },
             created_at: now(),
         };
         self.db.insert_message(&user_message)?;
+        if !attachments.is_empty() {
+            tracing::info!(
+                conversation = %conversation.id,
+                files = attachments.len(),
+                bytes = attachments.iter().map(|a| a.size_bytes).sum::<u64>(),
+                "user message attachments"
+            );
+        }
         // Conversation content is only logged when the user explicitly opted in.
         if settings.general.log_conversation_content {
             tracing::info!(conversation = %conversation.id, language = ?detected, content = %text, "user message");
@@ -252,8 +277,9 @@ impl ChatEngine {
             .or(model.info.as_ref().and_then(|i| i.loaded_context_length))
             .unwrap_or(8192);
         let history = self.db.list_messages(&conversation.id)?;
+        let vision = model.info.as_ref().map(|i| i.vision).unwrap_or(false);
         let mut messages = vec![ChatMessage::text("system", system.clone())];
-        messages.extend(build_history(&history, ctx_tokens, system.len()));
+        messages.extend(build_history(&history, ctx_tokens, system.len(), &self.attachments, vision));
 
         let tool_defs: Vec<ToolDefinition> = specs
             .iter()
@@ -357,7 +383,7 @@ impl ChatEngine {
             let calls = completion.tool_calls.clone();
             messages.push(ChatMessage {
                 role: "assistant".into(),
-                content: if round_text.is_empty() { None } else { Some(round_text.clone()) },
+                content: if round_text.is_empty() { None } else { Some(MessageContent::Text(round_text.clone())) },
                 tool_calls: Some(calls.clone()),
                 tool_call_id: None,
             });
@@ -372,6 +398,7 @@ impl ChatEngine {
                 tool_activity: None,
                 tool_calls: Some(serde_json::to_value(&calls)?),
                 tool_call_id: None,
+                attachments: None,
                 created_at: now(),
             })?;
 
@@ -388,7 +415,7 @@ impl ChatEngine {
                 activity.push(record);
                 messages.push(ChatMessage {
                     role: "tool".into(),
-                    content: Some(output_text.clone()),
+                    content: Some(MessageContent::Text(output_text.clone())),
                     tool_calls: None,
                     tool_call_id: Some(call.id.clone()),
                 });
@@ -403,6 +430,7 @@ impl ChatEngine {
                     tool_activity: None,
                     tool_calls: None,
                     tool_call_id: Some(call.id.clone()),
+                    attachments: None,
                     created_at: now(),
                 })?;
             }
@@ -447,6 +475,7 @@ impl ChatEngine {
             tool_activity: if activity.is_empty() { None } else { Some(serde_json::to_value(activity)?) },
             tool_calls: None,
             tool_call_id: None,
+            attachments: None,
             created_at: now(),
         })
     }
@@ -593,14 +622,22 @@ fn normalize_schema(schema: &Value) -> Value {
 
 /// Converts stored messages to LM Studio chat messages, dropping incomplete
 /// tool exchanges and trimming old turns to fit the context window.
-pub fn build_history(history: &[Message], ctx_tokens: u32, system_chars: usize) -> Vec<ChatMessage> {
+///
+/// Attachments are re-rendered from the store on every turn. Only the newest
+/// user message may carry images: replaying every image of a long conversation
+/// would fill the context window several times over.
+pub fn build_history(history: &[Message], ctx_tokens: u32, system_chars: usize, store: &AttachmentStore, vision: bool) -> Vec<ChatMessage> {
+    let last_user = history.iter().rposition(|m| m.role == "user");
     // Pass 1: map rows, keeping tool results only when their call exists.
     let mut out: Vec<ChatMessage> = Vec::new();
     let mut i = 0;
     while i < history.len() {
         let m = &history[i];
         match m.role.as_str() {
-            "user" => out.push(ChatMessage::text("user", m.content.clone())),
+            "user" => {
+                let attachments = attach::from_json(&m.attachments);
+                out.push(attach::user_message(&m.content, &attachments, store, vision && last_user == Some(i)));
+            }
             "assistant" => {
                 if !m.content.trim().is_empty() {
                     out.push(ChatMessage::text("assistant", m.content.clone()));
@@ -619,14 +656,14 @@ pub fn build_history(history: &[Message], ctx_tokens: u32, system_chars: usize) 
                 if complete {
                     out.push(ChatMessage {
                         role: "assistant".into(),
-                        content: if m.content.is_empty() { None } else { Some(m.content.clone()) },
+                        content: if m.content.is_empty() { None } else { Some(MessageContent::Text(m.content.clone())) },
                         tool_calls: Some(calls),
                         tool_call_id: None,
                     });
                     for r in results {
                         out.push(ChatMessage {
                             role: "tool".into(),
-                            content: Some(r.content.clone()),
+                            content: Some(MessageContent::Text(r.content.clone())),
                             tool_calls: None,
                             tool_call_id: r.tool_call_id.clone(),
                         });
@@ -647,7 +684,7 @@ pub fn build_history(history: &[Message], ctx_tokens: u32, system_chars: usize) 
     let mut start = out.len();
     while start > 0 {
         let msg = &out[start - 1];
-        let len = msg.content.as_deref().map(str::len).unwrap_or(0)
+        let len = msg.content.as_ref().map(MessageContent::len).unwrap_or(0)
             + msg.tool_calls.as_ref().map(|c| c.iter().map(|t| t.function.arguments.len() + 40).sum()).unwrap_or(0);
         let is_latest = start == out.len();
         if used + len > budget && !is_latest {
@@ -667,6 +704,7 @@ pub fn build_history(history: &[Message], ctx_tokens: u32, system_chars: usize) 
 mod tests {
     use super::*;
     use crate::services::ai::{ChatCompletion, ConnectionStatus, ModelInfo};
+    use crate::services::attachments::AttachmentStore;
     use crate::services::chat::tools::{NoSpeech, ToolOutput};
     use crate::services::hardware::HardwareInfo;
     use async_trait::async_trait;
@@ -730,13 +768,19 @@ mod tests {
         }
     }
 
-    fn engine(script: Vec<ChatCompletion>, permission: Permission) -> (Arc<ChatEngine>, Arc<FakeAi>, Arc<Db>) {
+    fn store() -> (Arc<AttachmentStore>, tempfile::TempDir) {
+        let dir = tempfile::tempdir().unwrap();
+        (Arc::new(AttachmentStore::new(dir.path().join("attachments"))), dir)
+    }
+
+    fn engine(script: Vec<ChatCompletion>, permission: Permission) -> (Arc<ChatEngine>, Arc<FakeAi>, Arc<Db>, Arc<AttachmentStore>, tempfile::TempDir) {
         let db = Arc::new(Db::open_in_memory().unwrap());
         let settings = Arc::new(SettingsStore::load(db.clone()).unwrap());
         let ai = Arc::new(FakeAi { script: StdMutex::new(script), requests: StdMutex::new(vec![]), fail: None });
         let resolver = Arc::new(ModelResolver::with_hardware(ai.clone(), HardwareInfo::default()));
-        let e = ChatEngine::new(db.clone(), settings, ai.clone(), resolver, Arc::new(FakeTools { permission }), Arc::new(NoSpeech));
-        (Arc::new(e), ai, db)
+        let (files, dir) = store();
+        let e = ChatEngine::new(db.clone(), settings, ai.clone(), resolver, Arc::new(FakeTools { permission }), Arc::new(NoSpeech), files.clone());
+        (Arc::new(e), ai, db, files, dir)
     }
 
     fn collector() -> (Emit, Arc<StdMutex<Vec<ChatEvent>>>) {
@@ -746,7 +790,7 @@ mod tests {
     }
 
     fn input(text: &str) -> SendInput {
-        SendInput { turn_id: "t1".into(), conversation_id: None, text: text.into(), spoken_language: None, voice: false }
+        SendInput { turn_id: "t1".into(), conversation_id: None, text: text.into(), spoken_language: None, voice: false, attachment_ids: vec![] }
     }
 
     fn tool_call(args: &str) -> ToolCall {
@@ -755,14 +799,14 @@ mod tests {
 
     #[tokio::test]
     async fn simple_turn_persists_and_detects_language() {
-        let (e, ai, db) = engine(vec![ChatCompletion { content: "مرحبا! أنا بخير.".into(), ..Default::default() }], Permission::Allow);
+        let (e, ai, db, _files, _dir) = engine(vec![ChatCompletion { content: "مرحبا! أنا بخير.".into(), ..Default::default() }], Permission::Allow);
         let (emit, events) = collector();
         e.send(input("كيف حالك اليوم؟"), emit).await.unwrap();
         let ev = events.lock().unwrap();
         let ChatEvent::Done { message, .. } = ev.last().unwrap() else { panic!("expected done") };
         assert_eq!(message.language.as_deref(), Some("ar"));
         let req = &ai.requests.lock().unwrap()[0];
-        assert!(req.messages[0].content.as_ref().unwrap().contains("respond in Arabic"));
+        assert!(req.messages[0].content_text().contains("respond in Arabic"));
         let convs = db.list_conversations(10, 0).unwrap();
         assert_eq!(db.list_messages(&convs[0].id).unwrap().len(), 2);
     }
@@ -773,7 +817,7 @@ mod tests {
             ChatCompletion { tool_calls: vec![tool_call(r#"{"query":"latest php"}"#)], finish_reason: Some("tool_calls".into()), ..Default::default() },
             ChatCompletion { content: "PHP 8.5 is the latest. [php.net](https://www.php.net/releases/)".into(), ..Default::default() },
         ];
-        let (e, ai, db) = engine(script, Permission::Allow);
+        let (e, ai, db, files, _dir) = engine(script, Permission::Allow);
         let (emit, events) = collector();
         e.send(input("What is the latest PHP version?"), emit).await.unwrap();
         let ev = events.lock().unwrap();
@@ -781,14 +825,37 @@ mod tests {
         let ChatEvent::Done { message, .. } = ev.last().unwrap() else { panic!() };
         assert_eq!(message.sources.as_ref().unwrap()[0]["url"], "https://www.php.net/releases/");
         let reqs = ai.requests.lock().unwrap();
-        assert!(reqs[0].messages[0].content.as_ref().unwrap().contains("use the web search tool"));
+        assert!(reqs[0].messages[0].content_text().contains("use the web search tool"));
         let second = &reqs[1].messages;
         assert_eq!(second[second.len() - 1].role, "tool");
         assert_eq!(second[second.len() - 2].tool_calls.as_ref().unwrap()[0].id, "call1");
         // History replay keeps the complete tool exchange
         let conv = &db.list_conversations(1, 0).unwrap()[0];
-        let hist = build_history(&db.list_messages(&conv.id).unwrap(), 8192, 0);
+        let hist = build_history(&db.list_messages(&conv.id).unwrap(), 8192, 0, &files, false);
         assert_eq!(hist.iter().map(|m| m.role.as_str()).collect::<Vec<_>>(), vec!["user", "assistant", "tool", "assistant"]);
+    }
+
+    #[tokio::test]
+    async fn attachments_reach_the_prompt_and_the_stored_message() {
+        let (e, ai, db, files, _dir) = engine(vec![ChatCompletion { content: "It lists two steps.".into(), ..Default::default() }], Permission::Allow);
+        let attachment = files.ingest_text("plan.md", "step one
+step two").unwrap();
+        let (emit, events) = collector();
+        let mut input = input("what does this say?");
+        input.attachment_ids = vec![attachment.id.clone()];
+        e.send(input, emit).await.unwrap();
+
+        let prompt = ai.requests.lock().unwrap()[0].messages.last().unwrap().content_text();
+        assert!(prompt.contains("plan.md"), "attachment missing from prompt: {prompt}");
+        assert!(prompt.contains("step two"));
+
+        let ChatEvent::Started { user_message, .. } = &events.lock().unwrap()[0] else { panic!("expected started") };
+        assert_eq!(user_message.attachments.as_ref().unwrap()[0]["name"], "plan.md");
+        // Claiming it once means a second turn cannot silently resend the file.
+        assert!(files.claim(&[attachment.id]).is_empty());
+        let conv = &db.list_conversations(1, 0).unwrap()[0];
+        assert_eq!(db.attachment_ids().unwrap().len(), 1);
+        assert_eq!(db.list_messages(&conv.id).unwrap().len(), 2);
     }
 
     #[tokio::test]
@@ -797,7 +864,7 @@ mod tests {
             ChatCompletion { tool_calls: vec![tool_call(r#"{"query":"x"}"#)], ..Default::default() },
             ChatCompletion { content: "Okay, I won't search.".into(), ..Default::default() },
         ];
-        let (e, ai, _db) = engine(script, Permission::Ask);
+        let (e, ai, _db, _files, _dir) = engine(script, Permission::Ask);
         let (emit, events) = collector();
         let e2 = e.clone();
         let events2 = events.clone();
@@ -818,7 +885,7 @@ mod tests {
         assert!(events.lock().unwrap().iter().any(|ev| matches!(ev, ChatEvent::ToolFinished { denied: true, .. })));
         assert!(!events.lock().unwrap().iter().any(|ev| matches!(ev, ChatEvent::ToolStarted { .. })));
         let reqs = ai.requests.lock().unwrap();
-        assert!(reqs[1].messages.last().unwrap().content.as_ref().unwrap().contains("declined"));
+        assert!(reqs[1].messages.last().unwrap().content_text().contains("declined"));
     }
 
     #[tokio::test]
@@ -829,10 +896,10 @@ mod tests {
             ChatCompletion { tool_calls: vec![bad], ..Default::default() },
             ChatCompletion { content: "Sorry.".into(), ..Default::default() },
         ];
-        let (e, ai, _) = engine(script, Permission::Allow);
+        let (e, ai, _db, _files, _dir) = engine(script, Permission::Allow);
         let (emit, _events) = collector();
         e.send(input("hello there"), emit).await.unwrap();
-        assert!(ai.requests.lock().unwrap()[1].messages.last().unwrap().content.as_ref().unwrap().contains("does not exist"));
+        assert!(ai.requests.lock().unwrap()[1].messages.last().unwrap().content_text().contains("does not exist"));
     }
 
     #[tokio::test]
@@ -841,7 +908,8 @@ mod tests {
         let settings = Arc::new(SettingsStore::load(db.clone()).unwrap());
         let ai = Arc::new(FakeAi { script: StdMutex::new(vec![]), requests: StdMutex::new(vec![]), fail: Some(|| AppError::LmStudioUnavailable("refused".into())) });
         let resolver = Arc::new(ModelResolver::with_hardware(ai.clone(), HardwareInfo::default()));
-        let e = ChatEngine::new(db, settings, ai, resolver, Arc::new(super::super::tools::NoTools), Arc::new(NoSpeech));
+        let (files, _dir) = store();
+        let e = ChatEngine::new(db, settings, ai, resolver, Arc::new(super::super::tools::NoTools), Arc::new(NoSpeech), files);
         let (emit, events) = collector();
         assert!(e.send(input("hi"), emit).await.is_err());
         assert!(events.lock().unwrap().iter().any(|ev| matches!(ev, ChatEvent::Error { code, .. } if code == "lmstudio_unavailable")));
@@ -851,7 +919,7 @@ mod tests {
     fn history_trimming_starts_with_user() {
         let mk = |role: &str, content: String| Message {
             id: new_id(), conversation_id: "c".into(), role: role.into(), content, language: None, reasoning: None,
-            sources: None, tool_activity: None, tool_calls: None, tool_call_id: None, created_at: now(),
+            sources: None, tool_activity: None, tool_calls: None, tool_call_id: None, attachments: None, created_at: now(),
         };
         let mut hist = Vec::new();
         for i in 0..50 {
@@ -859,9 +927,10 @@ mod tests {
             hist.push(mk("assistant", format!("answer {i} {}", "y".repeat(500))));
         }
         hist.push(mk("user", "final".into()));
-        let out = build_history(&hist, 4096, 1000);
+        let (files, _dir) = store();
+        let out = build_history(&hist, 4096, 1000, &files, false);
         assert_eq!(out.first().unwrap().role, "user");
-        assert_eq!(out.last().unwrap().content.as_deref(), Some("final"));
+        assert_eq!(out.last().unwrap().content_text(), "final");
         assert!(out.len() < hist.len());
     }
 

@@ -3,6 +3,7 @@
 use crate::capabilities::LocalCapabilityManager;
 use crate::database::Db;
 use crate::services::ai::lmstudio::LmStudioService;
+use crate::services::attachments::AttachmentStore;
 use crate::services::chat::{ChatEngine, ModelResolver};
 use crate::services::hardware::HardwareInfo;
 use crate::services::mcp::McpManager;
@@ -33,6 +34,7 @@ pub struct AppState {
     pub lmstudio: Arc<LmStudioService>,
     pub resolver: Arc<ModelResolver>,
     pub chat: Arc<ChatEngine>,
+    pub attachments: Arc<AttachmentStore>,
     pub mcp: Arc<McpManager>,
     pub models: Arc<ModelStore>,
     pub stt: Arc<SttService>,
