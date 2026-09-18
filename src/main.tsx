@@ -5,7 +5,6 @@ import { useSettings } from "./app/settingsStore";
 import { useVoice } from "./app/voiceStore";
 import { ErrorBoundary } from "./components/common/ErrorBoundary";
 import { Bubble } from "./pages/Bubble/Bubble";
-import { Captions } from "./pages/Captions/Captions";
 import { ChatApp } from "./pages/Chat/ChatApp";
 import { Overlay } from "./pages/Overlay/Overlay";
 import { SettingsApp } from "./pages/Settings/SettingsApp";
@@ -15,14 +14,13 @@ import "./styles/base.css";
 import "./styles/chat.css";
 import "./styles/settings.css";
 
-type Route = "chat" | "settings" | "overlay" | "bubble" | "captions";
+type Route = "chat" | "settings" | "overlay" | "bubble";
 
 function routeFromHash(): Route {
   const h = location.hash;
   if (h.startsWith("#/settings")) return "settings";
   if (h.startsWith("#/overlay")) return "overlay";
   if (h.startsWith("#/bubble")) return "bubble";
-  if (h.startsWith("#/captions")) return "captions";
   return "chat";
 }
 
@@ -96,8 +94,6 @@ function Root() {
   const screen =
     route === "overlay" ? (
       <Overlay />
-    ) : route === "captions" ? (
-      <Captions />
     ) : route === "bubble" ? (
       <Bubble />
     ) : route === "settings" ? (

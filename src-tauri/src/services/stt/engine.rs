@@ -235,8 +235,6 @@ pub struct EngineOptions {
     pub language: String,
     /// Streaming only: end an utterance after this much trailing silence.
     pub endpoint_silence: f32,
-    /// Whisper only: "transcribe", or "translate" to English.
-    pub task: String,
 }
 
 pub fn create(files: &SttModelFiles, opts: &EngineOptions) -> AppResult<Recognizer> {
@@ -274,7 +272,7 @@ pub fn create(files: &SttModelFiles, opts: &EngineOptions) -> AppResult<Recogniz
                 encoder: s(&files.encoder),
                 decoder: s(&files.decoder),
                 language: Some(opts.language.clone()),
-                task: Some(if opts.task == "translate" { "translate".into() } else { "transcribe".into() }),
+                task: Some("transcribe".into()),
                 tail_paddings: -1,
                 ..Default::default()
             };
@@ -292,8 +290,7 @@ pub fn create(files: &SttModelFiles, opts: &EngineOptions) -> AppResult<Recogniz
         SttFamily::SenseVoice => {
             config.model_config.sense_voice = sherpa_onnx::OfflineSenseVoiceModelConfig {
                 model: s(&files.model),
-                // SenseVoice knows only these; anything else is detected.
-                language: Some(if ["zh", "en", "ja", "ko", "yue"].contains(&opts.language.as_str()) { opts.language.clone() } else { "auto".into() }),
+                language: Some(if opts.language.is_empty() { "auto".into() } else { opts.language.clone() }),
                 use_itn: true,
             };
         }

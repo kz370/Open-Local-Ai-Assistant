@@ -44,12 +44,6 @@ pub async fn save_settings(app: AppHandle, state: State<'_, AppState>, settings:
     {
         state.stt.unload();
     }
-    if state.captions.is_active() && crate::services::captions::LiveCaptions::needs_restart(&before, &saved) {
-        if let Err(e) = state.captions.start() {
-            tracing::warn!(error = %e, "live captions could not restart with the new settings");
-            let _ = app.emit("captions://event", serde_json::json!({ "type": "error", "code": e.code(), "detail": e.to_string() }));
-        }
-    }
     if before.tts.output_device != saved.tts.output_device || before.tts.volume != saved.tts.volume {
         state.tts.apply_settings();
     }
@@ -60,7 +54,6 @@ pub async fn save_settings(app: AppHandle, state: State<'_, AppState>, settings:
         || before.stt.push_to_talk != saved.stt.push_to_talk
         || before.dictation.enabled != saved.dictation.enabled
         || before.dictation.shortcut != saved.dictation.shortcut
-        || before.captions.shortcut != saved.captions.shortcut
     {
         shortcuts::register_all(&app);
     }
