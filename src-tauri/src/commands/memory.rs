@@ -61,6 +61,9 @@ pub async fn memory_status(state: State<'_, AppState>) -> CmdResult<Vec<MemoryIt
     };
     let settings = state.settings.get();
     let mut items = Vec::new();
+    // The ONNX speech models run wherever the GPU pack put this process.
+    let onnx_device = Some(if crate::services::gpu::is_active() { "GPU" } else { "CPU" }.to_string());
+    let silma_device = |s: &crate::services::silma::SilmaStatus| s.device.as_deref().map(|d| if d == "cuda" { "GPU" } else { "CPU" }.to_string());
 
     // Speech recognition
     match state.stt.resolve_model(&settings.stt) {
@@ -70,7 +73,7 @@ pub async fn memory_status(state: State<'_, AppState>) -> CmdResult<Vec<MemoryIt
             role: "stt".into(),
             state: state_of("stt", state.stt.loaded_model().as_deref() == Some(m.id.as_str())),
             model: m.name,
-            detail: None,
+            detail: onnx_device.clone(),
         }),
         None => items.push(MemoryItem { key: "stt".into(), kind: "stt".into(), role: "stt".into(), model: String::new(), state: "missing".into(), detail: None }),
     }
@@ -88,7 +91,7 @@ pub async fn memory_status(state: State<'_, AppState>) -> CmdResult<Vec<MemoryIt
                     kind: "voice".into(),
                     role: lang.code().into(),
                     model: v.name,
-                    detail: Some("silma".into()),
+                    detail: silma_device(&s),
                 })
             }
             Some(v) => items.push(MemoryItem {
@@ -97,7 +100,7 @@ pub async fn memory_status(state: State<'_, AppState>) -> CmdResult<Vec<MemoryIt
                 kind: "voice".into(),
                 role: lang.code().into(),
                 model: v.name,
-                detail: None,
+                detail: onnx_device.clone(),
             }),
             None => items.push(MemoryItem { key, kind: "voice".into(), role: lang.code().into(), model: String::new(), state: "missing".into(), detail: None }),
         }
@@ -118,7 +121,7 @@ pub async fn memory_status(state: State<'_, AppState>) -> CmdResult<Vec<MemoryIt
                 _ => "idle",
             }
             .into(),
-            detail: s.device.map(|d| if d == "cuda" { "GPU".to_string() } else { "CPU".to_string() }).or(s.error),
+            detail: silma_device(&s).or(s.error),
         });
     }
 
@@ -139,12 +142,12 @@ pub async fn memory_status(state: State<'_, AppState>) -> CmdResult<Vec<MemoryIt
                     kind: "llm".into(),
                     role: "chat".into(),
                     model: info.map(|m| m.display_name.clone()).unwrap_or_else(|| id.clone()),
-                    detail: None,
+                    detail: Some("LM Studio".into()),
                 });
             }
             for m in models.iter().filter(|m| m.loaded && Some(&m.id) != chat_id.as_ref()) {
                 let key = format!("llm:{}", m.id);
-                items.push(MemoryItem { state: state_of(&key, true), key, kind: "llm".into(), role: "other".into(), model: m.display_name.clone(), detail: None });
+                items.push(MemoryItem { state: state_of(&key, true), key, kind: "llm".into(), role: "other".into(), model: m.display_name.clone(), detail: Some("LM Studio".into()) });
             }
         }
         Err(e) => items.push(MemoryItem {
