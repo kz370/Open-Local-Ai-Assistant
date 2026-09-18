@@ -194,7 +194,7 @@ fn microphone_delivers_audio_events() {
         return;
     }
     use local_ai_assistant_lib::services::audio::capture::{Capture, CaptureEvent};
-    let (mut capture, rx) = Capture::start(None).expect("microphone opens");
+    let (mut capture, rx) = Capture::start(None, false).expect("microphone opens");
     eprintln!("device: {}", capture.device_name);
     let mut samples = 0usize;
     let mut levels = 0usize;
