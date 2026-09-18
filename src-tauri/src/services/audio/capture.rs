@@ -87,8 +87,14 @@ pub struct LoopbackMonitor {
 }
 
 impl LoopbackMonitor {
-    pub fn start() -> AppResult<Self> {
-        let device = devices::output_device(None)?;
+    /// `device_id` is the output the assistant plays through (the same device
+    /// the TTS player uses); `None` watches the system default output.
+    pub fn start(device_id: Option<&str>) -> AppResult<Self> {
+        let device = devices::output_device(device_id)?;
+        tracing::info!(
+            device = %device.description().map(|d| d.name().to_string()).unwrap_or_else(|_| device.to_string()),
+            "system audio monitor opened"
+        );
         let level_bits = Arc::new(AtomicU32::new(0));
         let stop = Arc::new(AtomicBool::new(false));
         let (level2, stop2) = (level_bits.clone(), stop.clone());

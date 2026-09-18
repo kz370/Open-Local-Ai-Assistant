@@ -30,6 +30,11 @@ fn is_loopback_name(name: &str) -> bool {
         ".monitor",
         "desktop audio",
         "system audio",
+        "cable output",
+        "vb-audio",
+        "voicemeeter",
+        "virtual cable",
+        "virtual audio",
     ];
     let lower = name.to_lowercase();
     MARKS.iter().any(|m| lower.contains(m))
@@ -119,13 +124,11 @@ mod tests {
             "Desktop Audio",
             "System Audio",
             "Wave Out Mix",
+            // Virtual cables carry PC audio back into an "input", so mic-only
+            // mode must skip them too.
+            "VoiceMeeter Output (VB-Audio VoiceMeeter VAIO)",
         ] {
-            // Virtual-cable style names are NOT in the blocklist (real device).
-            if name.contains("CABLE") {
-                assert!(!is_loopback_name(name), "{name}");
-            } else {
-                assert!(is_loopback_name(name), "{name}");
-            }
+            assert!(is_loopback_name(name), "{name}");
         }
         for name in ["Microphone (Realtek High Definition Audio)", "Headset Microphone", "USB Audio Device", "Yeti Stereo Microphone"] {
             assert!(!is_loopback_name(name), "{name}");
