@@ -247,6 +247,8 @@
       "microphone": "Microphone",
       "micOnly": "Microphone only",
       "micOnlyHint": "Ignore system audio and loopback devices such as Stereo Mix. Turn off to allow them.",
+      "isolateSystemAudio": "Isolate microphone from PC audio",
+      "isolateSystemAudioHint": "While the speakers are audibly playing something, the microphone is ignored so it can't pick up PC audio. Also mutes your own voice if you talk over it.",
       "hardware": "Hardware",
       "cpu": "CPU",
       "testMic": "Test microphone",
