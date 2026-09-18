@@ -55,7 +55,9 @@ export function SpeechTicker({ sentence, paused }: { sentence: SpokenSentence; p
     const track = trackRef.current;
     const active = activeRef.current;
     if (!track || !active) return;
-    track.scrollTo({ left: active.offsetLeft - track.clientWidth / 2 + active.offsetWidth / 2, behavior: "smooth" });
+    const left = active.offsetLeft - track.clientWidth / 2 + active.offsetWidth / 2;
+    if (typeof track.scrollTo === "function") track.scrollTo({ left, behavior: "smooth" });
+    else track.scrollLeft = left;
   }, [index]);
 
   return (

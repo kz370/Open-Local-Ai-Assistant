@@ -2,6 +2,7 @@ pub mod ai;
 pub mod audio;
 pub mod chat;
 pub mod dictation;
+pub mod gpu;
 pub mod hardware;
 pub mod language;
 pub mod mcp;

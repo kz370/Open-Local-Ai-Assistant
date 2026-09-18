@@ -200,6 +200,76 @@ pub async fn models_download(app: AppHandle, state: State<'_, AppState>, ids: Ve
     Ok(())
 }
 
+
+// ---------------------------------------------------------------------------
+// GPU pack: optional CUDA libraries for the local speech models.
+// ---------------------------------------------------------------------------
+
+/// Key used for the GPU pack in the shared download table.
+const GPU_DOWNLOAD: &str = "gpu-pack";
+
+#[tauri::command]
+pub fn gpu_status(state: State<'_, AppState>) -> crate::services::gpu::GpuStatus {
+    let enabled = crate::services::gpu::is_enabled(&state.paths.data_dir);
+    crate::services::gpu::status(&state.paths.data_dir, &state.hardware, enabled)
+}
+
+/// Turns GPU acceleration on or off. It takes effect after a restart, because
+/// the libraries are chosen when the process starts.
+#[tauri::command]
+pub fn gpu_set_enabled(app: AppHandle, state: State<'_, AppState>, enabled: bool) -> CmdResult<()> {
+    crate::services::gpu::set_enabled(&state.paths.data_dir, enabled)?;
+    let _ = app.emit("gpu://changed", ());
+    Ok(())
+}
+
+/// Downloads the CUDA pack. Called only after the user confirmed the download.
+#[tauri::command]
+pub async fn gpu_install(app: AppHandle, state: State<'_, AppState>) -> CmdResult<()> {
+    if !state.hardware.has_nvidia() {
+        return Err(AppError::Invalid("no NVIDIA GPU was detected".into()));
+    }
+    let token = {
+        let mut d = state.downloads.lock().unwrap_or_else(|p| p.into_inner());
+        if d.contains_key(GPU_DOWNLOAD) {
+            return Ok(()); // already running
+        }
+        d.entry(GPU_DOWNLOAD.to_string()).or_insert_with(CancellationToken::new).clone()
+    };
+    let data_dir = state.paths.data_dir.clone();
+    let app2 = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let emitter = app2.clone();
+        let progress = move |p: crate::services::gpu::GpuProgress| {
+            let _ = emitter.emit("gpu://download", p);
+        };
+        let result = crate::services::gpu::install(&data_dir, token, &progress).await;
+        let state = app2.state::<AppState>();
+        state.downloads.lock().unwrap_or_else(|p| p.into_inner()).remove(GPU_DOWNLOAD);
+        if result.is_ok() {
+            // Installing it is what the user asked for, so switch it on too.
+            let _ = crate::services::gpu::set_enabled(&state.paths.data_dir, true);
+        }
+        let _ = app2.emit("gpu://changed", ());
+    });
+    Ok(())
+}
+
+#[tauri::command]
+pub fn gpu_cancel(state: State<'_, AppState>) {
+    if let Some(t) = state.downloads.lock().unwrap_or_else(|p| p.into_inner()).get(GPU_DOWNLOAD) {
+        t.cancel();
+    }
+}
+
+#[tauri::command]
+pub fn gpu_remove(app: AppHandle, state: State<'_, AppState>) -> CmdResult<()> {
+    crate::services::gpu::remove(&state.paths.data_dir)?;
+    crate::services::gpu::set_enabled(&state.paths.data_dir, false)?;
+    let _ = app.emit("gpu://changed", ());
+    Ok(())
+}
+
 #[tauri::command]
 pub fn models_cancel(state: State<'_, AppState>, id: String) {
     if let Some(t) = state.downloads.lock().unwrap_or_else(|p| p.into_inner()).get(&id) {

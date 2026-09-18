@@ -225,7 +225,7 @@ fn create_vad(path: &std::path::Path, settings: &SttSettings) -> Option<sherpa_o
         },
         sample_rate: 16_000,
         num_threads: 1,
-        provider: Some("cpu".into()),
+        provider: Some(crate::services::gpu::provider().into()),
         ..Default::default()
     };
     sherpa_onnx::VoiceActivityDetector::create(&config, 60.0)

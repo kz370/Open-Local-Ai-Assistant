@@ -339,6 +339,22 @@
       "queued": "Queued",
       "installedShort": "Installed"
     },
+    "gpu": {
+      "title": "GPU acceleration",
+      "intro": "Speech recognition and text-to-speech can run on an NVIDIA GPU instead of the CPU. The CUDA libraries are a separate download, so the app itself stays small.",
+      "state": "Running on",
+      "onGpu": "GPU · {{gpu}}",
+      "onCpu": "CPU",
+      "install": "Download GPU pack ({{size}})",
+      "installed": "GPU pack installed ({{size}} on disk).",
+      "remove": "Remove GPU pack",
+      "enable": "Use the GPU",
+      "enableHint": "Applies the next time the app starts.",
+      "restart": "Restart the app to run the speech models on the GPU.",
+      "downloading": "Downloading {{done}} of {{total}}…",
+      "extracting": "Extracting the GPU pack…",
+      "noNvidia": "No NVIDIA GPU was detected, so the speech models stay on the CPU."
+    },
     "mcp": {
       "intro": "MCP servers give the local model extra abilities such as web search. Servers are never installed or enabled automatically.",
       "builtinSearch": "Built-in web search",

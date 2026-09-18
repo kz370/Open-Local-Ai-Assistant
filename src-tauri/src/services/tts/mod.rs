@@ -199,7 +199,7 @@ impl TtsService {
         let data_dir = dir.join("espeak-ng-data");
         let mut config = sherpa_onnx::OfflineTtsConfig::default();
         config.model.num_threads = threads;
-        config.model.provider = Some("cpu".into());
+        config.model.provider = Some(crate::services::gpu::provider().into());
         config.max_num_sentences = 1;
         match model.engine {
             Engine::Kokoro => {
