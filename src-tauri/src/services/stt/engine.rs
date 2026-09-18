@@ -238,6 +238,8 @@ pub struct EngineOptions {
 }
 
 pub fn create(files: &SttModelFiles, opts: &EngineOptions) -> AppResult<Recognizer> {
+    // Creating a recognizer proves the speech libraries loaded and ran.
+    crate::services::gpu::mark_healthy();
     let tokens = Some(files.tokens.to_string_lossy().to_string());
     if files.family.is_streaming() {
         let mut config = sherpa_onnx::OnlineRecognizerConfig::default();
