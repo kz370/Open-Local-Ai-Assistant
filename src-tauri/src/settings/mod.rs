@@ -142,6 +142,8 @@ pub struct AiSettings {
     pub model_aliases: std::collections::BTreeMap<String, String>,
     /// Model ids left out of the chat window's model picker.
     pub hidden_models: Vec<String>,
+    /// Hosted providers: list only models that cost nothing.
+    pub free_models_only: bool,
     /// Pasted text longer than this many characters is attached as a text file
     /// instead of filling the composer. 0 turns the behaviour off.
     #[serde(default = "default_paste_as_file_chars")]
@@ -156,6 +158,7 @@ impl Default for AiSettings {
             api_key: None,
             provider_profiles: Default::default(),
             model_mode: "auto".into(),
+            free_models_only: false,
             model: None,
             temperature: 0.7,
             context_length: None,

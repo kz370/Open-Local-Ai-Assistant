@@ -71,9 +71,12 @@ export function ModelPicker({ autoModel }: { autoModel: string | null }) {
   const q = query.trim().toLowerCase();
   // Models hidden in settings stay out, except the one currently in use.
   const hidden = settings?.ai.hiddenModels ?? [];
+  // The same "free models only" choice as in Settings, so both lists agree.
+  const freeOnly = (settings?.ai.provider ?? "lmstudio") !== "lmstudio" && (settings?.ai.freeModelsOnly ?? false);
   const provider = providerLabel(settings?.ai.provider);
   const shown = models
     ?.filter((m) => !hidden.includes(m.id) || m.id === manual)
+    .filter((m) => !freeOnly || m.free || m.id === manual)
     .filter((m) => !q || [m.id, m.displayName, aliases?.[m.id] ?? ""].some((v) => v.toLowerCase().includes(q)));
 
   const onListKey = (e: React.KeyboardEvent) => {
@@ -142,6 +145,7 @@ export function ModelPicker({ autoModel }: { autoModel: string | null }) {
                     {[provider, m.params, m.quantization, m.sizeBytes ? formatBytes(m.sizeBytes) : null, m.loaded ? t("settings.ai.loaded") : null].filter(Boolean).join(" · ")}
                   </span>
                 </span>
+                {m.free && <span className="badge ok">{t("settings.ai.free")}</span>}
                 {m.vision && <span className="badge">{t("settings.ai.vision")}</span>}
                 {m.toolUse && <span className="badge accent">{t("settings.ai.toolUse")}</span>}
                 {manual === m.id && <Check size={15} aria-hidden className="picker-check" />}

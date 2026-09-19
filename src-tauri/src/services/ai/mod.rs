@@ -29,6 +29,8 @@ pub struct ModelInfo {
     pub tool_use: bool,
     pub vision: bool,
     pub reasoning: bool,
+    /// Hosted providers only: the model costs nothing to call.
+    pub free: bool,
 }
 
 impl ModelInfo {

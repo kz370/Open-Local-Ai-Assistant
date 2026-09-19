@@ -374,6 +374,7 @@ export function ChatApp() {
                 isLastAssistant={i === lastAssistantIdx}
                 modelName={m.model ? modelLabel(m.model, aliases) : undefined}
                 onRetry={m.error && i === messages.length - 1 ? () => void retryLast() : undefined}
+                onResend={m.role === "user" && i === messages.length - 1 && !busy ? () => void retryLast() : undefined}
                 onOpenSettings={() => void ipc.openSettings("ai")}
               />
             ))

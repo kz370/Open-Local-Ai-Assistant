@@ -99,7 +99,14 @@ export function AiSection() {
   useEffect(() => setModelFilter(""), [s.ai.provider]);
 
   const needle = modelFilter.trim().toLowerCase();
-  const chatModels = models.filter((m) => m.kind !== "embedding" && (!needle || m.id.toLowerCase().includes(needle) || (s.ai.modelAliases[m.id] ?? "").toLowerCase().includes(needle)));
+  const freeOnly = hosted && s.ai.freeModelsOnly;
+  const chatModels = models.filter(
+    (m) =>
+      m.kind !== "embedding" &&
+      // The model in use stays listed even when it is not free.
+      (!freeOnly || m.free || m.id === s.ai.model) &&
+      (!needle || m.id.toLowerCase().includes(needle) || (s.ai.modelAliases[m.id] ?? "").toLowerCase().includes(needle)),
+  );
   const numberOrNull = (v: string) => (v.trim() === "" ? null : Math.max(1, Math.round(Number(v)) || 0) || null);
 
   return (
@@ -179,6 +186,11 @@ export function AiSection() {
             <ErrorNotice error={error} />
           </div>
         )}
+        {hosted && models.some((m) => m.free) && (
+          <Row label={t("settings.ai.freeOnly")} hint={t("settings.ai.freeOnlyHint")} htmlFor="sw-free-only">
+            <Switch id="sw-free-only" label={t("settings.ai.freeOnly")} checked={s.ai.freeModelsOnly} onChange={(v) => set((d) => void (d.ai.freeModelsOnly = v))} />
+          </Row>
+        )}
         {hosted && models.length > 8 && (
           <div style={{ padding: "10px 0" }}>
             <input className="input" aria-label={t("settings.ai.filterModels")} placeholder={t("settings.ai.filterModels")} value={modelFilter} onChange={(e) => setModelFilter(e.target.value)} />
@@ -231,6 +243,7 @@ export function AiSection() {
                   {m.quantization && <span>{m.quantization}</span>}
                   {m.sizeBytes ? <span>{formatBytes(m.sizeBytes)}</span> : null}
                   {m.maxContextLength ? <span>{Math.round(m.maxContextLength / 1000)}k ctx</span> : null}
+                  {m.free && <span className="badge ok">{t("settings.ai.free")}</span>}
                   {m.loaded && <span className="badge ok">{t("settings.ai.loaded")}</span>}
                   {m.toolUse && <span className="badge accent">{t("settings.ai.toolUse")}</span>}
                   {m.vision && <span className="badge">{t("settings.ai.vision")}</span>}

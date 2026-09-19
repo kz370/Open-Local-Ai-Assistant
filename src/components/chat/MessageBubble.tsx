@@ -1,5 +1,5 @@
 import { memo, useState } from "react";
-import { Check, Copy, Pause, Play, Square, Volume2 } from "lucide-react";
+import { Check, Copy, Pause, Play, RefreshCw, Square, Volume2 } from "lucide-react";
 import type { UiMessage } from "../../app/chatStore";
 import { ipc } from "../../app/ipc";
 import { useSettings } from "../../app/settingsStore";
@@ -20,10 +20,12 @@ interface Props {
   isLastAssistant?: boolean;
   modelName?: string;
   onRetry?: () => void;
+  /** Sends this user message again; shown when no answer followed it. */
+  onResend?: () => void;
   onOpenSettings?: () => void;
 }
 
-export const MessageBubble = memo(function MessageBubble({ message: m, developer, showReasoning, modelName, onRetry, onOpenSettings }: Props) {
+export const MessageBubble = memo(function MessageBubble({ message: m, developer, showReasoning, modelName, onRetry, onResend, onOpenSettings }: Props) {
   const [copied, setCopied] = useState(false);
   const assistantName = useSettings((s) => s.settings?.general.assistantName) || t("chat.assistant");
   const speakingTag = useVoice((s) => s.speakingTag);
@@ -40,6 +42,13 @@ export const MessageBubble = memo(function MessageBubble({ message: m, developer
         {m.content && (
           <div className="bubble" dir={dir} lang={lang}>
             {m.content}
+          </div>
+        )}
+        {onResend && (
+          <div className="msg-actions">
+            <button className="icon-btn" aria-label={t("chat.resend")} title={t("chat.resend")} onClick={onResend}>
+              <RefreshCw size={14} />
+            </button>
           </div>
         )}
       </div>
