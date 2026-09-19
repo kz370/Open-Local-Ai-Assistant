@@ -152,28 +152,57 @@ impl WebSearch {
     /// Runs one search without the cache and names the engine that answered,
     /// so the settings page can test the current setup.
     pub async fn search_uncached(&self, query: &str) -> AppResult<(Vec<SearchResult>, String)> {
-        // SearXNG, when configured, goes first: it aggregates many engines and
-        // does not captcha a desktop app the way DuckDuckGo does.
-        let mut searxng_error = None;
+        // DuckDuckGo and SearXNG are switched on independently; with both on,
+        // the one picked as primary goes first and the other is the fallback.
         let search = self.settings.get().search;
-        if search.searxng_enabled {
-            for instance in self.searxng_candidates(&search).await {
-                match self.search_searxng(&instance, query).await {
-                    Ok(results) if !results.is_empty() => return Ok((results, format!("SearXNG ({instance})"))),
-                    Ok(_) => {
-                        tracing::info!(%instance, "searxng returned no results");
-                        searxng_error = Some(format!("{instance} returned no results"));
-                    }
-                    Err(e) => {
-                        tracing::warn!(%instance, error = %e, "searxng search failed");
-                        searxng_error = Some(format!("{instance}: {e}"));
-                    }
+        let mut errors = Vec::new();
+        for engine in engine_order(&search) {
+            let outcome = match engine {
+                Engine::Searxng => self.search_searxng_any(&search, query).await,
+                Engine::DuckDuckGo => self.search_duckduckgo(query).await.map(|r| (r, "DuckDuckGo".to_string())),
+            };
+            match outcome {
+                Ok(found) => return Ok(found),
+                Err(e) => errors.push(format!("{}: {e}", engine.name())),
+            }
+        }
+        if errors.is_empty() {
+            return Err(AppError::Invalid("no search engine is switched on".into()));
+        }
+        Err(AppError::Other(format!("web search failed ({})", errors.join("; "))))
+    }
+
+    /// Tries the configured SearXNG instances in turn.
+    async fn search_searxng_any(&self, search: &SearchSettings, query: &str) -> AppResult<(Vec<SearchResult>, String)> {
+        let candidates = self.searxng_candidates(search).await;
+        if candidates.is_empty() {
+            return Err(AppError::Invalid(if search.searxng_source == "public" {
+                "the searx.space list could not be loaded".into()
+            } else {
+                "no instance address is set".into()
+            }));
+        }
+        let mut last = String::new();
+        for instance in candidates {
+            match self.search_searxng(&instance, query).await {
+                Ok(results) if !results.is_empty() => return Ok((results, format!("SearXNG ({instance})"))),
+                Ok(_) => {
+                    tracing::info!(%instance, "searxng returned no results");
+                    last = format!("{instance} returned no results");
+                }
+                Err(e) => {
+                    tracing::warn!(%instance, error = %e, "searxng search failed");
+                    last = format!("{instance}: {e}");
                 }
             }
         }
+        Err(AppError::Other(last))
+    }
+
+    async fn search_duckduckgo(&self, query: &str) -> AppResult<Vec<SearchResult>> {
         // A challenge on one endpoint does not mean the next one refuses too,
         // and a short pause is usually enough for the engine to answer again.
-        let mut last = AppError::Other("web search produced no results".into());
+        let mut last = AppError::Other("no results".into());
         for (attempt, endpoint) in ENDPOINTS.iter().enumerate() {
             if attempt > 0 {
                 tokio::time::sleep(Duration::from_millis(1200)).await;
@@ -182,16 +211,13 @@ impl WebSearch {
                 Ok(body) => {
                     let results = parse_results(&body, 10);
                     if !results.is_empty() {
-                        return Ok((results, "DuckDuckGo".into()));
+                        return Ok(results);
                     }
                 }
                 Err(e) => last = e,
             }
         }
-        match searxng_error {
-            Some(sx) => Err(AppError::Other(format!("SearXNG failed ({sx}) and the DuckDuckGo fallback failed too ({last})"))),
-            None => Err(last),
-        }
+        Err(last)
     }
 
     /// The SearXNG instances to try, in order, for the current settings.
@@ -320,7 +346,7 @@ impl WebSearch {
 #[async_trait]
 impl ToolProvider for WebSearch {
     async fn available_tools(&self) -> Vec<ToolSpec> {
-        if self.settings.get().search.enabled {
+        if !engine_order(&self.settings.get().search).is_empty() {
             vec![self.spec()]
         } else {
             Vec::new()
@@ -430,6 +456,36 @@ fn parse_searxng(body: &str) -> Vec<SearchResult> {
             Some(SearchResult { title, url, snippet })
         })
         .collect()
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Engine {
+    Searxng,
+    DuckDuckGo,
+}
+
+impl Engine {
+    fn name(self) -> &'static str {
+        match self {
+            Engine::Searxng => "SearXNG",
+            Engine::DuckDuckGo => "DuckDuckGo",
+        }
+    }
+}
+
+/// The switched-on engines, primary first.
+fn engine_order(search: &SearchSettings) -> Vec<Engine> {
+    let mut order = Vec::new();
+    if search.searxng_enabled {
+        order.push(Engine::Searxng);
+    }
+    if search.enabled {
+        order.push(Engine::DuckDuckGo);
+    }
+    if search.primary == "duckduckgo" {
+        order.reverse();
+    }
+    order
 }
 
 /// Reads the result list of a SearXNG HTML page (the "simple" theme wraps
@@ -636,6 +692,20 @@ mod tests {
         assert_eq!(urls, ["https://fast.example/", "https://slow.example/"]);
         assert_eq!(list[1].version.as_deref(), Some("2026.1"));
         assert!(parse_instances("nope").is_empty());
+    }
+
+    #[test]
+    fn engines_are_independent() {
+        let mut s = SearchSettings { enabled: false, searxng_enabled: true, ..Default::default() };
+        assert_eq!(engine_order(&s), [Engine::Searxng], "SearXNG must work with DuckDuckGo off");
+        s.enabled = true;
+        assert_eq!(engine_order(&s), [Engine::Searxng, Engine::DuckDuckGo]);
+        s.primary = "duckduckgo".into();
+        assert_eq!(engine_order(&s), [Engine::DuckDuckGo, Engine::Searxng]);
+        s.searxng_enabled = false;
+        assert_eq!(engine_order(&s), [Engine::DuckDuckGo]);
+        s.enabled = false;
+        assert!(engine_order(&s).is_empty());
     }
 
     #[test]

@@ -399,6 +399,11 @@ pub fn on_main_window_event(app: &AppHandle, event: &tauri::WindowEvent) {
             if now_ms() < SUPPRESS_UNTIL.load(Ordering::Relaxed) {
                 return;
             }
+            // Maximizing moves the window to the screen corner; that is neither
+            // a drag to remember nor a move away from a locked preset.
+            if main_window(app).is_some_and(|w| w.is_maximized().unwrap_or(false)) {
+                return;
+            }
             let state = app.state::<AppState>();
             let g = state.settings.get().general;
             if g.window_position != "custom" {
@@ -420,6 +425,10 @@ pub fn on_main_window_event(app: &AppHandle, event: &tauri::WindowEvent) {
             if now_ms() < SUPPRESS_UNTIL.load(Ordering::Relaxed) || size.width == 0 || size.height == 0 {
                 return;
             }
+            // The maximized size is temporary; restoring brings back the saved one.
+            if main_window(app).is_some_and(|w| w.is_maximized().unwrap_or(false)) {
+                return;
+            }
             let state = app.state::<AppState>();
             if state.settings.get().general.compact {
                 return;
@@ -434,8 +443,38 @@ pub fn on_main_window_event(app: &AppHandle, event: &tauri::WindowEvent) {
     }
 }
 
+/// Maximizes or restores the chat window; works in every position mode,
+/// a locked preset included. The width cap is lifted while maximized, and
+/// restoring puts the window back at its preset or custom spot. Returns
+/// whether the window is maximized now.
+pub fn toggle_maximize(app: &AppHandle) -> bool {
+    let Some(win) = main_window(app) else { return false };
+    let s = app.state::<AppState>().settings.get();
+    suppress_persistence();
+    if win.is_maximized().unwrap_or(false) {
+        let _ = win.unmaximize();
+        apply_size_bounds(&win, s.general.compact);
+        let g = &s.general.window;
+        if !s.general.compact {
+            let _ = win.set_size(PhysicalSize::new(g.width, g.height));
+        }
+        apply_position(&win, &s.general.window_position, g);
+        false
+    } else {
+        if s.general.compact {
+            return false;
+        }
+        let _ = win.set_max_size(None::<LogicalSize<f64>>);
+        let _ = win.maximize();
+        true
+    }
+}
+
 pub fn set_compact(app: &AppHandle, compact: bool) {
     let state = app.state::<AppState>();
+    if compact && main_window(app).is_some_and(|w| w.is_maximized().unwrap_or(false)) {
+        toggle_maximize(app);
+    }
     let Ok(s) = state.settings.update(|s| s.general.compact = compact) else { return };
     // Settings windows mirror this switch, so tell every window about it.
     let _ = app.emit("settings://changed", &s);

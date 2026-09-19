@@ -165,6 +165,12 @@ impl Db {
         Ok(())
     }
 
+    /// Deletes every conversation (messages follow through the cascade) and
+    /// returns how many were removed.
+    pub fn delete_all_conversations(&self) -> AppResult<usize> {
+        Ok(self.conn().execute("DELETE FROM conversations", [])?)
+    }
+
     pub fn insert_message(&self, m: &Message) -> AppResult<()> {
         let to_s = |v: &Option<serde_json::Value>| v.as_ref().map(|v| v.to_string());
         self.conn().execute(
@@ -289,6 +295,19 @@ mod tests {
         db.delete_conversation(&c.id).unwrap();
         assert!(db.list_messages(&c.id).unwrap().is_empty());
         assert!(db.get_conversation(&c.id).is_err());
+    }
+
+    #[test]
+    fn delete_all_clears_history() {
+        let db = Db::open_in_memory().unwrap();
+        let a = db.create_conversation("One", None).unwrap();
+        let b = db.create_conversation("Two", None).unwrap();
+        db.insert_message(&msg(&a.id, "user", "findable words")).unwrap();
+        db.insert_message(&msg(&b.id, "user", "more words")).unwrap();
+        assert_eq!(db.delete_all_conversations().unwrap(), 2);
+        assert!(db.list_conversations(10, 0).unwrap().is_empty());
+        assert!(db.list_messages(&a.id).unwrap().is_empty());
+        assert!(db.search_conversations("findable", 10).unwrap().is_empty());
     }
 
     #[test]

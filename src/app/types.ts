@@ -113,6 +113,7 @@ export interface Settings {
     searxngEnabled: boolean;
     searxngSource: "local" | "public";
     searxngPublicUrl: string;
+    primary: "searxng" | "duckduckgo";
   };
   lastConversationId: string | null;
   version: number;

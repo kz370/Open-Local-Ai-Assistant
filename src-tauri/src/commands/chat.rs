@@ -62,6 +62,15 @@ pub fn conv_delete(state: State<'_, AppState>, id: String) -> CmdResult<()> {
     Ok(())
 }
 
+/// Deletes the whole conversation history and the attachment files it used.
+#[tauri::command]
+pub fn conv_clear_all(state: State<'_, AppState>) -> CmdResult<usize> {
+    let removed = state.db.delete_all_conversations()?;
+    state.settings.update(|s| s.last_conversation_id = None)?;
+    state.attachments.gc(&state.db.attachment_ids()?);
+    Ok(removed)
+}
+
 #[tauri::command]
 pub fn conv_set_last(state: State<'_, AppState>, id: Option<String>) -> CmdResult<()> {
     state.settings.update(|s| s.last_conversation_id = id)?;

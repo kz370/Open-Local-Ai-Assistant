@@ -88,7 +88,7 @@ impl Default for GeneralSettings {
             start_with_os: false,
             start_minimized: false,
             preload_models: true,
-            always_on_top: true,
+            always_on_top: false,
             window_position: "bottom-right".into(),
             window: WindowGeometry::default(),
             compact: false,
@@ -332,7 +332,8 @@ impl Default for TtsSettings {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", default)]
 pub struct SearchSettings {
-    /// Built-in DuckDuckGo web search offered to the model as a tool.
+    /// DuckDuckGo search. It and SearXNG are switched on independently; the
+    /// web_search tool is offered while either one is on.
     #[serde(default = "default_true")]
     pub enabled: bool,
     /// Results per search (1-10).
@@ -348,6 +349,9 @@ pub struct SearchSettings {
     /// The public instance picked from searx.space; empty means "pick the
     /// fastest working ones automatically".
     pub searxng_public_url: String,
+    /// Engine tried first when both are on: "searxng" or "duckduckgo"; the
+    /// other one is the fallback.
+    pub primary: String,
 }
 
 impl Default for SearchSettings {
@@ -359,6 +363,7 @@ impl Default for SearchSettings {
             searxng_enabled: true,
             searxng_source: "local".into(),
             searxng_public_url: String::new(),
+            primary: "searxng".into(),
         }
     }
 }
@@ -577,6 +582,9 @@ impl Settings {
         }
         if !matches!(self.search.searxng_source.as_str(), "local" | "public") {
             self.search.searxng_source = "local".into();
+        }
+        if !matches!(self.search.primary.as_str(), "searxng" | "duckduckgo") {
+            self.search.primary = "searxng".into();
         }
     }
 }

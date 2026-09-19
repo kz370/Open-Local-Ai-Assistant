@@ -21,6 +21,7 @@ export function HistoryPanel({ onClose }: { onClose: () => void }) {
   const [hits, setHits] = useState<SearchHit[]>([]);
   const [renaming, setRenaming] = useState<Conversation | null>(null);
   const [deleting, setDeleting] = useState<Conversation | null>(null);
+  const [clearing, setClearing] = useState(false);
   const [exporting, setExporting] = useState<string[] | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<AppErrorPayload | null>(null);
@@ -48,10 +49,10 @@ export function HistoryPanel({ onClose }: { onClose: () => void }) {
   }, [query]);
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && !renaming && !deleting && !exporting && onClose();
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && !renaming && !deleting && !clearing && !exporting && onClose();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose, renaming, deleting, exporting]);
+  }, [onClose, renaming, deleting, clearing, exporting]);
 
   const groups = useMemo(() => {
     if (query.trim()) return [{ label: "", items: hits }];
@@ -152,6 +153,9 @@ export function HistoryPanel({ onClose }: { onClose: () => void }) {
         <button className="btn btn-sm" disabled={!hits.length} onClick={() => setExporting(hits.map((h) => h.conversation.id))}>
           <Download size={13} /> {t("app.export")}
         </button>
+        <button className="btn btn-sm" style={{ marginInlineStart: "auto" }} disabled={!hits.length || !!query.trim()} onClick={() => setClearing(true)}>
+          <Trash2 size={13} /> {t("history.clearAll")}
+        </button>
       </div>
 
       {renaming && <RenameDialog conversation={renaming} onDone={async () => { setRenaming(null); await refresh(); }} />}
@@ -186,6 +190,36 @@ export function HistoryPanel({ onClose }: { onClose: () => void }) {
           }
         >
           <p dir="auto">{t("history.deleteConfirm", { title: deleting.title })}</p>
+        </Dialog>
+      )}
+      {clearing && (
+        <Dialog
+          title={t("history.clearAll")}
+          onClose={() => setClearing(false)}
+          actions={
+            <>
+              <button className="btn" onClick={() => setClearing(false)}>
+                {t("app.cancel")}
+              </button>
+              <button
+                className="btn btn-danger"
+                onClick={async () => {
+                  setClearing(false);
+                  try {
+                    await ipc.convClearAll();
+                    newConversation();
+                    onClose();
+                  } catch (e) {
+                    setError(toAppError(e));
+                  }
+                }}
+              >
+                {t("history.clearAll")}
+              </button>
+            </>
+          }
+        >
+          <p>{t("history.clearAllConfirm")}</p>
         </Dialog>
       )}
       {exporting && (

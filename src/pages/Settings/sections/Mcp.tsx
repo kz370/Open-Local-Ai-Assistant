@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
-import { Download, Pencil, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
+import { Download, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { ipc, on, toAppError } from "../../../app/ipc";
 import { useSettings } from "../../../app/settingsStore";
 import { t } from "../../../app/strings";
-import type { AppErrorPayload, ImportCandidate, McpServerConfig, Permission, PublicSearxInstance, ServerStatus } from "../../../app/types";
+import type { AppErrorPayload, ImportCandidate, McpServerConfig, Permission, ServerStatus } from "../../../app/types";
 import { Dialog, ErrorNotice, Switch } from "../../../components/common/controls";
-import { Card, Row, SectionHeader } from "../../../components/settings/layout";
+import { Card, SectionHeader } from "../../../components/settings/layout";
 
 const EMPTY: McpServerConfig = {
   id: "",
@@ -201,15 +201,6 @@ export function McpSection() {
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState<AppErrorPayload | null>(null);
   const developer = useSettings((s) => s.settings?.general.developerMode);
-  const search = useSettings((s) => s.settings?.search);
-  const setSettings = useSettings((s) => s.update);
-  const searxngOn = search?.searxngEnabled ?? true;
-  const source = search?.searxngSource ?? "local";
-  const [instances, setInstances] = useState<PublicSearxInstance[] | null>(null);
-  const [instancesError, setInstancesError] = useState<string | null>(null);
-  const [loadingInstances, setLoadingInstances] = useState(false);
-  const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState<{ ok: boolean; text: string } | null>(null);
 
   const refresh = () => ipc.mcpList().then(setServers, (e) => setError(toAppError(e)));
   useEffect(() => {
@@ -217,34 +208,6 @@ export function McpSection() {
     const sub = on("mcp://changed", () => void refresh());
     return () => void sub.then((u) => u());
   }, []);
-
-  const loadInstances = async (force: boolean) => {
-    setLoadingInstances(true);
-    setInstancesError(null);
-    try {
-      setInstances(await ipc.searchPublicInstances(force));
-    } catch (e) {
-      setInstancesError(toAppError(e).detail);
-    } finally {
-      setLoadingInstances(false);
-    }
-  };
-  useEffect(() => {
-    if (source === "public" && searxngOn && !instances) void loadInstances(false);
-  }, [source, searxngOn]);
-
-  const runTest = async () => {
-    setTesting(true);
-    setTestResult(null);
-    try {
-      const r = await ipc.searchTest();
-      setTestResult({ ok: true, text: t("settings.mcp.searchTestOk", { count: r.count, engine: r.engine }) });
-    } catch (e) {
-      setTestResult({ ok: false, text: toAppError(e).detail });
-    } finally {
-      setTesting(false);
-    }
-  };
 
   const setPermission = async (serverId: string, tool: string, p: Permission) => {
     try {
@@ -263,109 +226,6 @@ export function McpSection() {
           <ErrorNotice error={error} actions={<button className="btn btn-sm" onClick={() => setError(null)}>{t("app.close")}</button>} />
         </div>
       )}
-      <Card title={t("settings.mcp.builtinSearch")}>
-        <Row label={t("settings.mcp.builtinSearch")} hint={t("settings.mcp.builtinSearchHint")} htmlFor="sw-builtin-search">
-          <Switch
-            id="sw-builtin-search"
-            label={t("settings.mcp.builtinSearch")}
-            checked={search?.enabled ?? true}
-            onChange={(v) => setSettings((x) => void (x.search.enabled = v))}
-          />
-        </Row>
-        <Row label={t("settings.mcp.searxngEnabled")} hint={t("settings.mcp.searxngEnabledHint")} htmlFor="sw-searxng">
-          <Switch
-            id="sw-searxng"
-            label={t("settings.mcp.searxngEnabled")}
-            checked={searxngOn}
-            onChange={(v) => setSettings((x) => void (x.search.searxngEnabled = v))}
-          />
-        </Row>
-        <Row label={t("settings.mcp.searxngSource")} htmlFor="sel-searxng-source">
-          <select
-            id="sel-searxng-source"
-            className="select"
-            disabled={!searxngOn}
-            value={source}
-            onChange={(e) => setSettings((x) => void (x.search.searxngSource = e.target.value as "local" | "public"))}
-          >
-            <option value="local">{t("settings.mcp.searxngSourceLocal")}</option>
-            <option value="public">{t("settings.mcp.searxngSourcePublic")}</option>
-          </select>
-        </Row>
-        {source === "local" ? (
-          <Row label={t("settings.mcp.searxng")} hint={t("settings.mcp.searxngHint")} htmlFor="in-searxng">
-            <input
-              id="in-searxng"
-              className="input"
-              disabled={!searxngOn}
-              placeholder="http://localhost:8080"
-              value={search?.searxngUrl ?? ""}
-              onChange={(e) => setSettings((x) => void (x.search.searxngUrl = e.target.value.trim()))}
-              spellCheck={false}
-            />
-          </Row>
-        ) : (
-          <Row label={t("settings.mcp.searxngPublic")} hint={t("settings.mcp.searxngPublicHint")} htmlFor="sel-searxng-public">
-            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-              <select
-                id="sel-searxng-public"
-                className="select"
-                disabled={!searxngOn}
-                value={search?.searxngPublicUrl ?? ""}
-                onChange={(e) => setSettings((x) => void (x.search.searxngPublicUrl = e.target.value))}
-              >
-                <option value="">{t("settings.mcp.searxngAuto")}</option>
-                {/* Keep a saved pick visible even when the fresh list dropped it. */}
-                {search?.searxngPublicUrl && !instances?.some((i) => i.url === search.searxngPublicUrl) && (
-                  <option value={search.searxngPublicUrl}>{search.searxngPublicUrl}</option>
-                )}
-                {instances?.map((i) => (
-                  <option key={i.url} value={i.url}>
-                    {i.url.replace(/^https?:\/\//, "").replace(/\/$/, "")}
-                    {i.searchTime != null ? ` · ${i.searchTime.toFixed(1)}s` : ""}
-                    {` · ${Math.round(i.searchSuccess)}%`}
-                  </option>
-                ))}
-              </select>
-              <button
-                className="icon-btn"
-                aria-label={t("settings.mcp.searxngRefresh")}
-                title={t("settings.mcp.searxngRefresh")}
-                disabled={!searxngOn || loadingInstances}
-                onClick={() => void loadInstances(true)}
-              >
-                <RefreshCw size={14} className={loadingInstances ? "spin" : undefined} />
-              </button>
-            </div>
-            {instancesError && <p className="row-hint" role="alert">{t("settings.mcp.searxngListError")} {instancesError}</p>}
-          </Row>
-        )}
-        <Row label={t("settings.mcp.searchTest")} hint={t("settings.mcp.searchTestHint")}>
-          <button className="btn btn-sm" disabled={!(search?.enabled ?? true) || testing} onClick={() => void runTest()}>
-            <Search size={13} /> {testing ? t("settings.mcp.searchTesting") : t("settings.mcp.searchTest")}
-          </button>
-        </Row>
-        {testResult && (
-          <div className={`notice ${testResult.ok ? "info" : "err"}`} role="status" style={{ marginTop: 8 }}>
-            {testResult.text}
-          </div>
-        )}
-        <Row label={t("settings.mcp.builtinSearchResults")} htmlFor="sel-search-results">
-          <select
-            id="sel-search-results"
-            className="select"
-            value={String(search?.maxResults ?? 5)}
-            disabled={!(search?.enabled ?? true)}
-            onChange={(e) => setSettings((x) => void (x.search.maxResults = Number(e.target.value)))}
-          >
-            {[3, 5, 8, 10].map((n) => (
-              <option key={n} value={n}>
-                {n}
-              </option>
-            ))}
-          </select>
-        </Row>
-      </Card>
       <Card
         title={t("settings.mcp.servers")}
         actions={
