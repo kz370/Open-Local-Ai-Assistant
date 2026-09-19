@@ -1,7 +1,7 @@
 //! Microphone capture on a dedicated thread. Audio is downmixed to mono,
 //! resampled to 16 kHz and delivered in chunks through a channel.
 
-use super::{devices, level, STT_SAMPLE_RATE};
+use super::{devices, level, spectrum, STT_SAMPLE_RATE};
 use crate::errors::{AppError, AppResult};
 use cpal::traits::{DeviceTrait, StreamTrait};
 use cpal::{SampleFormat, SizedSample};
@@ -14,8 +14,8 @@ use std::time::Duration;
 pub enum CaptureEvent {
     /// 16 kHz mono samples.
     Samples(Vec<f32>),
-    /// Meter value 0..1 (about 20 per second).
-    Level(f32),
+    /// Meter value 0..1 and voice spectrum bands (about 20 per second).
+    Level(f32, Vec<f32>),
     Error(String),
 }
 
@@ -241,7 +241,7 @@ where
                     if ticks % 20 == 0 {
                         tracing::debug!(level = lvl, "microphone level");
                     }
-                    let _ = tx.send(CaptureEvent::Level(lvl));
+                    let _ = tx.send(CaptureEvent::Level(lvl, spectrum(&meter_buf)));
                     meter_buf.clear();
                 }
                 let _ = tx.send(CaptureEvent::Samples(out));

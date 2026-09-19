@@ -36,7 +36,8 @@ pub enum ListenMode {
 pub enum VoiceEvent {
     /// "listening" | "transcribing" | "idle"
     State { mode: ListenMode, state: String, device: Option<String>, streaming: bool },
-    Level { mode: ListenMode, value: f32 },
+    /// `bands` is the voice spectrum (see `audio::spectrum`), all zero when muted.
+    Level { mode: ListenMode, value: f32, bands: Vec<f32> },
     /// Live text while speaking (not final).
     Partial { mode: ListenMode, text: String },
     Transcript { mode: ListenMode, text: String, language: Option<String>, audio_ms: u64, elapsed_ms: u64 },
@@ -356,8 +357,9 @@ impl SessionCtx {
     fn run_level_only(&self, rx: &Receiver<CaptureEvent>) {
         while !self.stopped() {
             match rx.recv_timeout(Duration::from_millis(100)) {
-                Ok(CaptureEvent::Level(v)) => {
-                    (self.emit)(VoiceEvent::Level { mode: self.mode, value: if self.mic_muted() { 0.0 } else { v } })
+                Ok(CaptureEvent::Level(v, bands)) => {
+                    let muted = self.mic_muted();
+                    (self.emit)(VoiceEvent::Level { mode: self.mode, value: if muted { 0.0 } else { v }, bands: if muted { vec![0.0; bands.len()] } else { bands } })
                 }
                 Ok(CaptureEvent::Error(e)) => {
                     (self.emit)(VoiceEvent::Error { mode: self.mode, code: "audio".into(), detail: e });
@@ -390,14 +392,14 @@ impl SessionCtx {
 
         while !self.stopped() && started.elapsed() < MAX_RECORDING && !silence.expired() {
             match rx.recv_timeout(Duration::from_millis(100)) {
-                Ok(CaptureEvent::Level(v)) => {
+                Ok(CaptureEvent::Level(v, bands)) => {
                     // A muted microphone shows no level, and its silence must
                     // not count toward the idle timeout: the user is still here.
                     let muted = self.mic_muted();
                     if muted || v > SPEECH_LEVEL {
                         silence.heard_speech();
                     }
-                    (self.emit)(VoiceEvent::Level { mode: self.mode, value: if muted { 0.0 } else { v } });
+                    (self.emit)(VoiceEvent::Level { mode: self.mode, value: if muted { 0.0 } else { v }, bands: if muted { vec![0.0; bands.len()] } else { bands } });
                 }
                 Ok(CaptureEvent::Samples(s)) => {
                     if self.input_muted(hands_free) {
@@ -476,14 +478,14 @@ impl SessionCtx {
 
         while !self.stopped() && (hands_free || started.elapsed() < MAX_RECORDING) && !silence.expired() {
             match rx.recv_timeout(Duration::from_millis(100)) {
-                Ok(CaptureEvent::Level(v)) => {
+                Ok(CaptureEvent::Level(v, bands)) => {
                     // A muted microphone shows no level, and its silence must
                     // not count toward the idle timeout: the user is still here.
                     let muted = self.mic_muted();
                     if muted || v > SPEECH_LEVEL {
                         silence.heard_speech();
                     }
-                    (self.emit)(VoiceEvent::Level { mode: self.mode, value: if muted { 0.0 } else { v } });
+                    (self.emit)(VoiceEvent::Level { mode: self.mode, value: if muted { 0.0 } else { v }, bands: if muted { vec![0.0; bands.len()] } else { bands } });
                 }
                 Ok(CaptureEvent::Samples(s)) => {
                     if self.input_muted(hands_free) {
