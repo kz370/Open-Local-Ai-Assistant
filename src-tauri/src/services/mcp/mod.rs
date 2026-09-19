@@ -20,6 +20,7 @@ use rmcp::{RoleClient, ServiceExt};
 use serde::Serialize;
 use serde_json::Value;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
@@ -62,11 +63,37 @@ pub struct McpManager {
     db: Arc<Db>,
     inner: RwLock<Inner>,
     on_change: Arc<dyn Fn() + Send + Sync>,
+    /// When on, sensitive tools cannot run without confirmation.
+    safe_mode: AtomicBool,
 }
 
 impl McpManager {
     pub fn new(db: Arc<Db>, on_change: Arc<dyn Fn() + Send + Sync>) -> Self {
-        Self { db, inner: RwLock::new(Inner::default()), on_change }
+        Self { db, inner: RwLock::new(Inner::default()), on_change, safe_mode: AtomicBool::new(true) }
+    }
+
+    pub fn safe_mode(&self) -> bool {
+        self.safe_mode.load(Ordering::Relaxed)
+    }
+
+    /// Safe mode is not persisted: every launch starts with it on. Callers
+    /// must verify the user before turning it off.
+    pub fn set_safe_mode(&self, on: bool) {
+        if self.safe_mode.swap(on, Ordering::Relaxed) != on {
+            (self.on_change)();
+        }
+    }
+
+    /// The permission in force: the stored choice (or the default), capped by
+    /// safe mode. Stored choices are kept as-is so turning safe mode off
+    /// restores them.
+    fn effective_permission(&self, category: ToolCategory, stored: Option<Permission>) -> Permission {
+        let p = stored.unwrap_or_else(|| default_permission(category));
+        if self.safe_mode() {
+            clamp_permission(category, p)
+        } else {
+            p
+        }
     }
 
     /// Connects every enabled server (called at startup, in the background).
@@ -154,10 +181,25 @@ impl McpManager {
         let category = conn
             .and_then(|c| c.tools.iter().find(|t| t.name == tool).map(tool_category))
             .unwrap_or(ToolCategory::Other);
-        let effective = clamp_permission(category, requested);
-        self.db.set_tool_permission(server_id, tool, effective)?;
+        self.db.set_tool_permission(server_id, tool, requested)?;
         (self.on_change)();
-        Ok(effective)
+        Ok(self.effective_permission(category, Some(requested)))
+    }
+
+    /// Sets every tool of a connected server to `permission`, or resets them
+    /// all to their defaults when `None`.
+    pub async fn set_all_permissions(&self, server_id: &str, permission: Option<Permission>) -> AppResult<()> {
+        match permission {
+            None => self.db.clear_tool_permissions(server_id)?,
+            Some(p) => {
+                let conn = self.inner.read().await.connections.get(server_id).cloned();
+                for t in conn.iter().flat_map(|c| c.tools.iter()) {
+                    self.db.set_tool_permission(server_id, &t.name, p)?;
+                }
+            }
+        }
+        (self.on_change)();
+        Ok(())
     }
 
     pub async fn statuses(&self) -> AppResult<Vec<ServerStatus>> {
@@ -179,7 +221,7 @@ impl McpManager {
                                 name: t.name.to_string(),
                                 description: t.description.as_deref().unwrap_or("").to_string(),
                                 category,
-                                permission: perms.get(t.name.as_ref()).copied().map(|p| clamp_permission(category, p)).unwrap_or(default),
+                                permission: self.effective_permission(category, perms.get(t.name.as_ref()).copied()),
                                 default_permission: default,
                             }
                         })
@@ -344,7 +386,7 @@ impl ToolProvider for McpManager {
             let perms = self.db.tool_permissions(&cfg.id).unwrap_or_default();
             for t in &conn.tools {
                 let category = tool_category(t);
-                let permission = perms.get(t.name.as_ref()).copied().map(|p| clamp_permission(category, p)).unwrap_or_else(|| default_permission(category));
+                let permission = self.effective_permission(category, perms.get(t.name.as_ref()).copied());
                 if permission == Permission::Deny {
                     continue;
                 }

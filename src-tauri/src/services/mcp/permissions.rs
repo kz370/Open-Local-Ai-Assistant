@@ -1,8 +1,9 @@
 //! Tool classification and permission policy.
 //!
-//! Policy: only read-only categories (search, fetch, read) may run without
-//! confirmation. Write/unknown tools always require confirmation. Command
-//! execution tools are denied by default and can at most be set to "ask".
+//! Policy: only read-only categories (search, fetch, read) run without
+//! confirmation by default. Write/unknown tools ask, command execution tools
+//! are denied. In safe mode (the default) sensitive tools are capped at "ask";
+//! with safe mode off the user may allow any tool.
 
 use crate::services::chat::tools::{Permission, ToolCategory};
 

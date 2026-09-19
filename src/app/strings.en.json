@@ -496,7 +496,15 @@
         "execute": "Command execution",
         "other": "Other"
       },
-      "sensitiveHint": "Tools that change data or run commands always require confirmation."
+      "sensitiveHint": "Safe mode is on: tools that change data or run commands always require confirmation.",
+      "safeMode": "Safe mode",
+      "safeModeHint": "Tools that change data, run commands or are not recognized always ask before running. Turning it off needs your Windows PIN, fingerprint or face, and it turns back on every time the app starts.",
+      "bulk": {
+        "allow": "Allow all",
+        "ask": "Ask for all",
+        "deny": "Disable all",
+        "reset": "Reset to defaults"
+      }
     },
     "privacy": {
       "title": "Where your data goes",

@@ -5,7 +5,7 @@ import { useSettings } from "../../../app/settingsStore";
 import { t } from "../../../app/strings";
 import type { AppErrorPayload, ImportCandidate, McpServerConfig, Permission, ServerStatus } from "../../../app/types";
 import { Dialog, ErrorNotice, Switch } from "../../../components/common/controls";
-import { Card, SectionHeader } from "../../../components/settings/layout";
+import { Card, Row, SectionHeader } from "../../../components/settings/layout";
 
 const EMPTY: McpServerConfig = {
   id: "",
@@ -201,8 +201,13 @@ export function McpSection() {
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState<AppErrorPayload | null>(null);
   const developer = useSettings((s) => s.settings?.general.developerMode);
+  const [safeMode, setSafeMode] = useState(true);
 
-  const refresh = () => ipc.mcpList().then(setServers, (e) => setError(toAppError(e)));
+  const refresh = () =>
+    Promise.all([ipc.mcpList(), ipc.mcpSafeMode()]).then(([list, safe]) => {
+      setServers(list);
+      setSafeMode(safe);
+    }, (e) => setError(toAppError(e)));
   useEffect(() => {
     void refresh();
     const sub = on("mcp://changed", () => void refresh());
@@ -218,6 +223,25 @@ export function McpSection() {
     }
   };
 
+  const changeSafeMode = async (enabled: boolean) => {
+    try {
+      await ipc.mcpSetSafeMode(enabled);
+    } catch (e) {
+      const err = toAppError(e);
+      if (err.code !== "cancelled") setError(err);
+    }
+    await refresh();
+  };
+
+  const setAllPermissions = async (serverId: string, p: Permission | null) => {
+    try {
+      await ipc.mcpSetAllPermissions(serverId, p);
+      await refresh();
+    } catch (e) {
+      setError(toAppError(e));
+    }
+  };
+
   return (
     <>
       <SectionHeader title={t("settings.sections.mcp")} intro={t("settings.mcp.intro")} />
@@ -226,6 +250,11 @@ export function McpSection() {
           <ErrorNotice error={error} actions={<button className="btn btn-sm" onClick={() => setError(null)}>{t("app.close")}</button>} />
         </div>
       )}
+      <Card>
+        <Row label={t("settings.mcp.safeMode")} hint={t("settings.mcp.safeModeHint")} htmlFor="sw-mcp-safe">
+          <Switch id="sw-mcp-safe" label={t("settings.mcp.safeMode")} checked={safeMode} onChange={(v) => void changeSafeMode(v)} />
+        </Row>
+      </Card>
       <Card
         title={t("settings.mcp.servers")}
         actions={
@@ -279,6 +308,21 @@ export function McpSection() {
                 {s.tools.length === 0 ? (
                   <p className="row-hint">{t("settings.mcp.noTools")}</p>
                 ) : (
+                  <>
+                  <div className="tool-bulk">
+                    <button className="btn btn-sm" onClick={() => void setAllPermissions(s.config.id, "allow")}>
+                      {t("settings.mcp.bulk.allow")}
+                    </button>
+                    <button className="btn btn-sm" onClick={() => void setAllPermissions(s.config.id, "ask")}>
+                      {t("settings.mcp.bulk.ask")}
+                    </button>
+                    <button className="btn btn-sm" onClick={() => void setAllPermissions(s.config.id, "deny")}>
+                      {t("settings.mcp.bulk.deny")}
+                    </button>
+                    <button className="btn btn-sm" onClick={() => void setAllPermissions(s.config.id, null)}>
+                      {t("settings.mcp.bulk.reset")}
+                    </button>
+                  </div>
                   <table className="tool-table">
                     <caption className="sr-only">{t("settings.mcp.tools")}</caption>
                     <tbody>
@@ -302,7 +346,7 @@ export function McpSection() {
                                 value={tool.permission}
                                 onChange={(e) => void setPermission(s.config.id, tool.name, e.target.value as Permission)}
                               >
-                                <option value="allow" disabled={sensitive}>
+                                <option value="allow" disabled={safeMode && sensitive}>
                                   {t("settings.mcp.permission.allow")}
                                 </option>
                                 <option value="ask">{t("settings.mcp.permission.ask")}</option>
@@ -314,8 +358,11 @@ export function McpSection() {
                       })}
                     </tbody>
                   </table>
+                  </>
                 )}
-                {s.tools.some((x) => x.category === "write" || x.category === "execute") && <p className="row-hint">{t("settings.mcp.sensitiveHint")}</p>}
+                {safeMode && s.tools.some((x) => x.category === "write" || x.category === "execute" || x.category === "other") && (
+                  <p className="row-hint">{t("settings.mcp.sensitiveHint")}</p>
+                )}
               </>
             )}
           </div>

@@ -5,7 +5,7 @@ use crate::services::mcp::config::{lmstudio_mcp_json_path, parse_mcp_json, Impor
 use crate::services::mcp::ServerStatus;
 use crate::services::search::PublicInstance;
 use crate::state::AppState;
-use tauri::State;
+use tauri::{State, WebviewWindow};
 
 #[tauri::command]
 pub async fn mcp_list(state: State<'_, AppState>) -> CmdResult<Vec<ServerStatus>> {
@@ -51,6 +51,28 @@ pub async fn mcp_reconnect(state: State<'_, AppState>, id: String) -> CmdResult<
 #[tauri::command]
 pub async fn mcp_set_permission(state: State<'_, AppState>, server_id: String, tool: String, permission: Permission) -> CmdResult<Permission> {
     state.mcp.set_permission(&server_id, &tool, permission).await
+}
+
+/// `permission: None` resets every tool of the server to its default.
+#[tauri::command]
+pub async fn mcp_set_all_permissions(state: State<'_, AppState>, server_id: String, permission: Option<Permission>) -> CmdResult<()> {
+    state.mcp.set_all_permissions(&server_id, permission).await
+}
+
+#[tauri::command]
+pub fn mcp_safe_mode(state: State<'_, AppState>) -> bool {
+    state.mcp.safe_mode()
+}
+
+/// Turning safe mode off requires Windows Hello verification; turning it on
+/// never does. It resets to on at every launch.
+#[tauri::command]
+pub async fn mcp_set_safe_mode(window: WebviewWindow, state: State<'_, AppState>, enabled: bool) -> CmdResult<()> {
+    if !enabled && state.mcp.safe_mode() {
+        crate::desktop::verify::verify_user(&window, "Confirm it's you to turn off MCP safe mode").await?;
+    }
+    state.mcp.set_safe_mode(enabled);
+    Ok(())
 }
 
 #[tauri::command]

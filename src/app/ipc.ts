@@ -157,6 +157,12 @@ export const ipc = {
   mcpReconnect: (id: string) => invoke<void>("mcp_reconnect", { id }),
   mcpSetPermission: (serverId: string, tool: string, permission: Permission) =>
     invoke<Permission>("mcp_set_permission", { serverId, tool, permission }),
+  /** `null` resets every tool of the server to its default. */
+  mcpSetAllPermissions: (serverId: string, permission: Permission | null) =>
+    invoke<void>("mcp_set_all_permissions", { serverId, permission }),
+  mcpSafeMode: () => invoke<boolean>("mcp_safe_mode"),
+  /** Turning safe mode off shows a Windows Hello prompt. */
+  mcpSetSafeMode: (enabled: boolean) => invoke<void>("mcp_set_safe_mode", { enabled }),
   mcpImportPreview: () => invoke<ImportCandidate[]>("mcp_import_preview"),
   mcpImport: (names: string[]) => invoke<number>("mcp_import", { names }),
   searchPublicInstances: (refresh: boolean) => invoke<PublicSearxInstance[]>("search_public_instances", { refresh }),

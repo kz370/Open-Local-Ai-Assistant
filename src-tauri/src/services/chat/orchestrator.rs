@@ -306,6 +306,16 @@ impl ChatEngine {
 
         for round in 0..=MAX_TOOL_ROUNDS {
             let last_round = round == MAX_TOOL_ROUNDS;
+            if last_round {
+                // Without this the model often still tries to call a tool and,
+                // with no tools offered, writes the call out as plain text.
+                // Sent as "user" because some chat templates reject a system
+                // message that is not first.
+                messages.push(ChatMessage::text(
+                    "user",
+                    "[Tool limit reached. You cannot call any more tools for this message. Reply to the user now: say what you did, what worked, what failed, and what is still left to do.]",
+                ));
+            }
             let req = ChatRequest {
                 model: model.id.clone(),
                 messages: messages.clone(),

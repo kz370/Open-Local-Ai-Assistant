@@ -306,6 +306,12 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.tool-bulk {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
 .tool-table {
   width: 100%;
   border-collapse: collapse;
