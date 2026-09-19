@@ -761,6 +761,30 @@ html[data-route="chat"] #root {
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
+.picker-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 4px 4px;
+  padding: 0 8px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  color: var(--text-faint);
+}
+.picker-search:focus-within {
+  border-color: var(--accent);
+}
+.picker-search input {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-sm);
+}
 .picker-scroll {
   overflow-y: auto;
   min-height: 0;
