@@ -60,7 +60,7 @@ const SETTINGS: Settings = {
   tts: { speakResponses: false, speed: 1, volume: 1, outputDevice: null, preferredGender: "any", voiceHardware: {} },
   dictation: { enabled: true, shortcut: "CommandOrControl+Alt+Space", mode: "hold", correctionEnabled: false, correctionModel: null, insertMethod: "type", addTrailingSpace: true, overlayX: null, overlayY: null },
   silma: { hardware: "auto" },
-  search: { enabled: true, maxResults: 5, searxngUrl: "", searxngEnabled: true },
+  search: { enabled: true, maxResults: 5, searxngUrl: "", searxngEnabled: true, searxngSource: "local", searxngPublicUrl: "" },
   lastConversationId: null,
   version: 2,
 };

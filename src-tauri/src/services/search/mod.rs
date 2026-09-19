@@ -3,12 +3,14 @@
 //! Search has to work out of the box, so this is a plain HTTPS call to
 //! DuckDuckGo's HTML endpoint rather than an MCP server: no API key, no
 //! account, and no Node/Python runtime the user would have to install first.
+//! A SearXNG instance (the user's own, or a public one from searx.space) is
+//! asked first when configured.
 //! It is exposed to the model as an ordinary tool (`web_search`), so the
 //! orchestrator, permissions and citations treat it like any MCP search tool.
 
 use crate::errors::{AppError, AppResult};
 use crate::services::chat::tools::{Permission, Source, ToolCategory, ToolOutput, ToolProvider, ToolSpec};
-use crate::settings::SettingsStore;
+use crate::settings::{SearchSettings, SettingsStore};
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -29,6 +31,12 @@ const CACHE_TTL: Duration = Duration::from_secs(600);
 /// clients that do not look like a browser.
 const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
 const MAX_SNIPPET: usize = 320;
+/// searx.space's machine-readable list of public SearXNG instances.
+const INSTANCES_URL: &str = "https://searx.space/data/instances.json";
+/// searx.space re-checks instances every few hours, so the list keeps a while.
+const INSTANCES_TTL: Duration = Duration::from_secs(3 * 3600);
+/// How many public instances an automatic pick tries before DuckDuckGo.
+const AUTO_INSTANCES: usize = 3;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct SearchResult {
@@ -37,10 +45,26 @@ pub struct SearchResult {
     pub snippet: String,
 }
 
+/// One entry of the searx.space list, as shown in settings.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PublicInstance {
+    pub url: String,
+    /// Share of searx.space's test searches that returned results (0-100).
+    pub search_success: f64,
+    /// Seconds a test search took, when known.
+    pub search_time: Option<f64>,
+    pub version: Option<String>,
+}
+
 pub struct WebSearch {
     http: reqwest::Client,
     settings: Arc<SettingsStore>,
     cache: Mutex<HashMap<String, (Instant, Vec<SearchResult>)>>,
+    instances: Mutex<Option<(Instant, Vec<PublicInstance>)>>,
+    /// Search endpoint found for each SearXNG base URL (some live under a
+    /// sub path), so the discovery round trip happens once.
+    endpoints: Mutex<HashMap<String, url::Url>>,
 }
 
 impl WebSearch {
@@ -50,7 +74,13 @@ impl WebSearch {
             .timeout(Duration::from_secs(20))
             .build()
             .unwrap_or_default();
-        Self { http, settings, cache: Mutex::new(HashMap::new()) }
+        Self {
+            http,
+            settings,
+            cache: Mutex::new(HashMap::new()),
+            instances: Mutex::new(None),
+            endpoints: Mutex::new(HashMap::new()),
+        }
     }
 
     fn spec(&self) -> ToolSpec {
@@ -59,7 +89,7 @@ impl WebSearch {
             server_id: SERVER_ID.into(),
             server_name: SERVER_NAME.into(),
             tool_name: TOOL_NAME.into(),
-            description: "Search the web (DuckDuckGo) and return titles, URLs and snippets of the top results. \
+            description: "Search the web and return titles, URLs and snippets of the top results. \
                           Use it for current, recent or unfamiliar information, then cite the URLs you used."
                 .into(),
             input_schema: serde_json::json!({
@@ -114,18 +144,31 @@ impl WebSearch {
         if let Some(hit) = self.cached(query) {
             return Ok(hit.into_iter().take(max_results).collect());
         }
-        // A SearXNG instance the user runs or trusts always wins: it answers
-        // JSON and never shows a captcha.
+        let (results, _) = self.search_uncached(query).await?;
+        self.remember(query, &results);
+        Ok(results.into_iter().take(max_results).collect())
+    }
+
+    /// Runs one search without the cache and names the engine that answered,
+    /// so the settings page can test the current setup.
+    pub async fn search_uncached(&self, query: &str) -> AppResult<(Vec<SearchResult>, String)> {
+        // SearXNG, when configured, goes first: it aggregates many engines and
+        // does not captcha a desktop app the way DuckDuckGo does.
+        let mut searxng_error = None;
         let search = self.settings.get().search;
-        let instance = search.searxng_url.trim().to_string();
-        if search.searxng_enabled && !instance.is_empty() {
-            match self.search_searxng(&instance, query).await {
-                Ok(results) if !results.is_empty() => {
-                    self.remember(query, &results);
-                    return Ok(results.into_iter().take(max_results).collect());
+        if search.searxng_enabled {
+            for instance in self.searxng_candidates(&search).await {
+                match self.search_searxng(&instance, query).await {
+                    Ok(results) if !results.is_empty() => return Ok((results, format!("SearXNG ({instance})"))),
+                    Ok(_) => {
+                        tracing::info!(%instance, "searxng returned no results");
+                        searxng_error = Some(format!("{instance} returned no results"));
+                    }
+                    Err(e) => {
+                        tracing::warn!(%instance, error = %e, "searxng search failed");
+                        searxng_error = Some(format!("{instance}: {e}"));
+                    }
                 }
-                Ok(_) => tracing::info!("searxng returned no results, falling back to duckduckgo"),
-                Err(e) => tracing::warn!(error = %e, "searxng search failed, falling back to duckduckgo"),
             }
         }
         // A challenge on one endpoint does not mean the next one refuses too,
@@ -139,38 +182,127 @@ impl WebSearch {
                 Ok(body) => {
                     let results = parse_results(&body, 10);
                     if !results.is_empty() {
-                        self.remember(query, &results);
-                        return Ok(results.into_iter().take(max_results).collect());
+                        return Ok((results, "DuckDuckGo".into()));
                     }
                 }
                 Err(e) => last = e,
             }
         }
-        Err(last)
+        match searxng_error {
+            Some(sx) => Err(AppError::Other(format!("SearXNG failed ({sx}) and the DuckDuckGo fallback failed too ({last})"))),
+            None => Err(last),
+        }
     }
 
-    /// Queries a SearXNG instance through its JSON API.
-    async fn search_searxng(&self, instance: &str, query: &str) -> AppResult<Vec<SearchResult>> {
-        let base = instance.trim_end_matches('/');
-        let mut endpoint = url::Url::parse(&format!("{base}/search")).map_err(|_| AppError::Invalid("the SearXNG address is not a valid URL".into()))?;
-        endpoint
-            .query_pairs_mut()
-            .append_pair("q", query)
-            .append_pair("format", "json")
-            .append_pair("safesearch", "0");
+    /// The SearXNG instances to try, in order, for the current settings.
+    async fn searxng_candidates(&self, search: &SearchSettings) -> Vec<String> {
+        if search.searxng_source == "public" {
+            let chosen = search.searxng_public_url.trim();
+            if !chosen.is_empty() {
+                return vec![chosen.to_string()];
+            }
+            // Automatic: the fastest few from the list, so one instance that is
+            // down or rate limiting does not end the search.
+            return match self.public_instances(false).await {
+                Ok(list) => list.into_iter().take(AUTO_INSTANCES).map(|i| i.url).collect(),
+                Err(e) => {
+                    tracing::warn!(error = %e, "could not load the searx.space instance list");
+                    Vec::new()
+                }
+            };
+        }
+        let local = search.searxng_url.trim();
+        if local.is_empty() {
+            Vec::new()
+        } else {
+            vec![local.to_string()]
+        }
+    }
+
+    /// Public SearXNG instances from searx.space that currently answer
+    /// searches, fastest first. Kept for a while; `refresh` fetches anew.
+    pub async fn public_instances(&self, refresh: bool) -> AppResult<Vec<PublicInstance>> {
+        if !refresh {
+            let cached = self.instances.lock().unwrap_or_else(|p| p.into_inner());
+            if let Some((at, list)) = cached.as_ref() {
+                if at.elapsed() < INSTANCES_TTL {
+                    return Ok(list.clone());
+                }
+            }
+        }
         let body = self
             .http
-            .get(endpoint)
+            .get(INSTANCES_URL)
             .header("accept", "application/json")
             .send()
             .await
-            .map_err(|e| AppError::Other(format!("web search failed: {e}")))?
-            .error_for_status()
-            .map_err(|e| AppError::Other(format!("web search failed: {e}")))?
+            .and_then(|r| r.error_for_status())
+            .map_err(|e| AppError::Other(format!("could not load the searx.space list: {e}")))?
             .text()
             .await
-            .map_err(|e| AppError::Other(format!("web search failed: {e}")))?;
-        Ok(parse_searxng(&body))
+            .map_err(|e| AppError::Other(format!("could not load the searx.space list: {e}")))?;
+        let list = parse_instances(&body);
+        if list.is_empty() {
+            return Err(AppError::Other("the searx.space list has no working instances right now".into()));
+        }
+        *self.instances.lock().unwrap_or_else(|p| p.into_inner()) = Some((Instant::now(), list.clone()));
+        Ok(list)
+    }
+
+    /// Searches one SearXNG instance through its normal result page. The JSON
+    /// API is off on almost every instance (public ones and a fresh local
+    /// install alike), while the HTML page always answers.
+    async fn search_searxng(&self, instance: &str, query: &str) -> AppResult<Vec<SearchResult>> {
+        let base = instance_base(instance)?;
+        let known = self.endpoints.lock().unwrap_or_else(|p| p.into_inner()).get(base.as_str()).cloned();
+        let mut endpoint = known.unwrap_or_else(|| base.join("search").expect("relative path"));
+        // One retry: an instance under a sub path (searxng.site serves from
+        // /searxng/) bounces /search to a home page whose search form names
+        // the real endpoint.
+        for _ in 0..2 {
+            let (status, final_url, body) = self.fetch_searxng(&endpoint, &base, query).await?;
+            if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+                return Err(AppError::Other("the instance is rate limiting requests (HTTP 429), try another one".into()));
+            }
+            if !status.is_success() {
+                return Err(AppError::Other(format!("the instance answered HTTP {}", status.as_u16())));
+            }
+            let results = if body.trim_start().starts_with('{') { parse_searxng(&body) } else { parse_searxng_html(&body) };
+            if !results.is_empty() || is_result_page(&body) {
+                self.endpoints.lock().unwrap_or_else(|p| p.into_inner()).insert(base.to_string(), endpoint);
+                return Ok(results);
+            }
+            match form_action(&body).and_then(|a| final_url.join(&a).ok()) {
+                Some(real) if real != endpoint => endpoint = real,
+                _ => break,
+            }
+        }
+        Err(AppError::Other("this address did not return a SearXNG result page, check the URL".into()))
+    }
+
+    async fn fetch_searxng(&self, endpoint: &url::Url, base: &url::Url, query: &str) -> AppResult<(reqwest::StatusCode, url::Url, String)> {
+        let mut url = endpoint.clone();
+        url.query_pairs_mut().append_pair("q", query).append_pair("safesearch", "0");
+        // SearXNG's bot detection turns away clients without browser headers
+        // (Accept-Language, Accept-Encoding and the Sec-Fetch set).
+        let resp = self
+            .http
+            .get(url)
+            .header("accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+            .header("accept-language", "en-US,en;q=0.9")
+            .header("referer", base.as_str())
+            .header("sec-fetch-dest", "document")
+            .header("sec-fetch-mode", "navigate")
+            .header("sec-fetch-site", "same-origin")
+            .header("sec-fetch-user", "?1")
+            .header("upgrade-insecure-requests", "1")
+            .send()
+            .await
+            .map_err(|e| AppError::Other(format!("could not reach the instance: {e}")))?;
+        let status = resp.status();
+        let final_url = resp.url().clone();
+        let body = resp.text().await.map_err(|e| AppError::Other(format!("could not read the answer: {e}")))?;
+        Ok((status, final_url, body))
     }
 
     fn cached(&self, query: &str) -> Option<Vec<SearchResult>> {
@@ -300,6 +432,103 @@ fn parse_searxng(body: &str) -> Vec<SearchResult> {
         .collect()
 }
 
+/// Reads the result list of a SearXNG HTML page (the "simple" theme wraps
+/// each hit in `<article class="result ...">`, older themes in a div).
+fn parse_searxng_html(html: &str) -> Vec<SearchResult> {
+    let title = regex::Regex::new(r#"(?s)<h3[^>]*>\s*<a[^>]*href="([^"]+)"[^>]*>(.*?)</a>"#).expect("valid regex");
+    let content = regex::Regex::new(r#"(?s)<p class="content">(.*?)</p>"#).expect("valid regex");
+    html.split(r#"class="result result-"#)
+        .skip(1)
+        .filter_map(|block| {
+            let block = block.split("</article>").next().unwrap_or(block);
+            let c = title.captures(block)?;
+            let url = c[1].replace("&amp;", "&");
+            if !(url.starts_with("http://") || url.starts_with("https://")) {
+                return None;
+            }
+            let title = clean_text(&c[2]);
+            if title.is_empty() {
+                return None;
+            }
+            let snippet = content.captures(block).map(|s| clean_text(&s[1])).unwrap_or_default();
+            Some(SearchResult { title, url, snippet })
+        })
+        .collect()
+}
+
+/// True for a SearXNG result page, even one with no hits (so "nothing found"
+/// is not mistaken for a wrong address).
+fn is_result_page(html: &str) -> bool {
+    html.contains(r#"id="results""#) || html.contains(r#"id="urls""#)
+}
+
+/// The action of the page's search form, e.g. "/searxng/search".
+fn form_action(html: &str) -> Option<String> {
+    let form = regex::Regex::new(r#"<form[^>]*id="search"[^>]*>"#).expect("valid regex");
+    let action = regex::Regex::new(r#"action="([^"]+)""#).expect("valid regex");
+    let tag = form.find(html)?.as_str();
+    Some(action.captures(tag)?[1].replace("&amp;", "&"))
+}
+
+/// Normalises what the user typed into a base URL ending in "/": a missing
+/// scheme means http for local addresses and https for everything else.
+fn instance_base(instance: &str) -> AppResult<url::Url> {
+    let raw = instance.trim();
+    let with_scheme = if raw.contains("://") {
+        raw.to_string()
+    } else {
+        let host = raw.split(['/', ':']).next().unwrap_or("");
+        let local = host == "localhost" || host.starts_with("127.") || host.starts_with("192.168.") || host.starts_with("10.") || host.ends_with(".local");
+        format!("{}://{raw}", if local { "http" } else { "https" })
+    };
+    let mut url = url::Url::parse(&with_scheme).map_err(|_| AppError::Invalid("the SearXNG address is not a valid URL".into()))?;
+    if !matches!(url.scheme(), "http" | "https") {
+        return Err(AppError::Invalid("the SearXNG address must start with http:// or https://".into()));
+    }
+    url.set_query(None);
+    url.set_fragment(None);
+    // "…/search" pasted from the address bar still means the instance itself.
+    let path = url.path().trim_end_matches('/').trim_end_matches("/search").to_string();
+    url.set_path(&format!("{path}/"));
+    Ok(url)
+}
+
+/// Picks the usable public instances out of searx.space's instances.json:
+/// plain web (no Tor), answering, and passing most test searches. Fastest
+/// first.
+fn parse_instances(body: &str) -> Vec<PublicInstance> {
+    let Ok(json) = serde_json::from_str::<serde_json::Value>(body) else { return Vec::new() };
+    let Some(map) = json.get("instances").and_then(|i| i.as_object()) else { return Vec::new() };
+    let mut list: Vec<PublicInstance> = map
+        .iter()
+        .filter_map(|(url, v)| {
+            if v.get("network_type").and_then(|n| n.as_str()) != Some("normal") {
+                return None;
+            }
+            if v.pointer("/http/status_code").and_then(|s| s.as_u64()) != Some(200) {
+                return None;
+            }
+            let success = v.pointer("/timing/search/success_percentage").and_then(|s| s.as_f64()).unwrap_or(0.0);
+            if success < 50.0 {
+                return None;
+            }
+            Some(PublicInstance {
+                url: url.clone(),
+                search_success: success,
+                search_time: v.pointer("/timing/search/all/value").and_then(|s| s.as_f64()),
+                version: v.get("version").and_then(|s| s.as_str()).map(str::to_string),
+            })
+        })
+        .collect();
+    list.sort_by(|a, b| {
+        b.search_success
+            .partial_cmp(&a.search_success)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then(a.search_time.unwrap_or(f64::MAX).partial_cmp(&b.search_time.unwrap_or(f64::MAX)).unwrap_or(std::cmp::Ordering::Equal))
+    });
+    list
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -352,6 +581,61 @@ mod tests {
         assert_eq!(r[0].url, "https://example.com");
         assert_eq!(r[0].snippet, "An example page.");
         assert!(parse_searxng("not json").is_empty());
+    }
+
+    /// Trimmed from a real searxng.site result page.
+    const SEARXNG_PAGE: &str = r##"
+    <form id="search" method="GET" action="/searxng/search" role="search"></form>
+    <div id="results"><div id="urls" role="main">
+    <article class="result result-default category-general"><a href="https://www.python.org/" class="url_header" rel="noreferrer"><div class="url_wrapper">x</div></a><h3><a href="https://www.python.org/?a=1&amp;b=2" rel="noreferrer">Welcome to <span class="highlight">Python</span>.org</a></h3><time class="published_date" datetime="" ></time>  <p class="content">
+        The official home of the <span class="highlight">Python</span> Programming Language
+      </p><div class="engines"><span>bing</span></div></article>
+    <article class="result result-images category-images"><h3><a href="javascript:void(0)">bad</a></h3></article>
+    <article class="result result-default category-general"><h3><a href="https://docs.python.org/3/" rel="noreferrer">Python docs</a></h3></article>
+    </div></div>"##;
+
+    #[test]
+    fn reads_searxng_html() {
+        let r = parse_searxng_html(SEARXNG_PAGE);
+        assert_eq!(r.len(), 2);
+        assert_eq!(r[0].url, "https://www.python.org/?a=1&b=2");
+        assert_eq!(r[0].title, "Welcome to Python.org");
+        assert_eq!(r[0].snippet, "The official home of the Python Programming Language");
+        assert_eq!(r[1].snippet, "");
+        assert!(is_result_page(SEARXNG_PAGE));
+        assert!(!is_result_page("<form id=\"search\" action=\"/searxng/search\"></form>"));
+    }
+
+    #[test]
+    fn finds_the_search_form_action() {
+        assert_eq!(form_action(SEARXNG_PAGE).as_deref(), Some("/searxng/search"));
+        assert_eq!(form_action("<html></html>"), None);
+    }
+
+    #[test]
+    fn normalises_instance_addresses() {
+        assert_eq!(instance_base("https://searxng.site").unwrap().as_str(), "https://searxng.site/");
+        assert_eq!(instance_base("https://searxng.site/searxng").unwrap().as_str(), "https://searxng.site/searxng/");
+        assert_eq!(instance_base("https://searxng.site/searxng/search?q=x").unwrap().as_str(), "https://searxng.site/searxng/");
+        assert_eq!(instance_base("localhost:8080").unwrap().as_str(), "http://localhost:8080/");
+        assert_eq!(instance_base("searx.be").unwrap().as_str(), "https://searx.be/");
+        assert!(instance_base("ftp://x").is_err());
+    }
+
+    #[test]
+    fn keeps_only_working_public_instances() {
+        let body = r#"{"instances":{
+            "https://slow.example/":{"network_type":"normal","http":{"status_code":200},"timing":{"search":{"success_percentage":100.0,"all":{"value":1.5}}},"version":"2026.1"},
+            "https://fast.example/":{"network_type":"normal","http":{"status_code":200},"timing":{"search":{"success_percentage":100.0,"all":{"value":0.4}}}},
+            "https://broken.example/":{"network_type":"normal","http":{"status_code":200},"timing":{"search":{"success_percentage":0.0,"all":null}}},
+            "http://x.onion/":{"network_type":"tor","http":{"status_code":200},"timing":{"search":{"success_percentage":100.0}}},
+            "https://down.example/":{"network_type":"normal","http":{"status_code":502},"timing":{}}
+        }}"#;
+        let list = parse_instances(body);
+        let urls: Vec<_> = list.iter().map(|i| i.url.as_str()).collect();
+        assert_eq!(urls, ["https://fast.example/", "https://slow.example/"]);
+        assert_eq!(list[1].version.as_deref(), Some("2026.1"));
+        assert!(parse_instances("nope").is_empty());
     }
 
     #[test]

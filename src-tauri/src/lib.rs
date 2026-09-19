@@ -84,7 +84,7 @@ fn init_state(app: &AppHandle) -> Result<AppState, Box<dyn std::error::Error>> {
     // Web search works out of the box (no API key, no extra runtime) and sits
     // next to whatever MCP servers the user has added.
     let web_search = Arc::new(services::search::WebSearch::new(settings.clone()));
-    let tools = Arc::new(services::chat::tools::CombinedTools::new(vec![mcp.clone(), web_search]));
+    let tools = Arc::new(services::chat::tools::CombinedTools::new(vec![mcp.clone(), web_search.clone()]));
     // Attachment files outlive a single run; anything no message points at any
     // more is left over from a composer that was never sent, so drop it now.
     let attachments = Arc::new(services::attachments::AttachmentStore::new(paths.data_dir.join("attachments")));
@@ -104,6 +104,7 @@ fn init_state(app: &AppHandle) -> Result<AppState, Box<dyn std::error::Error>> {
         chat,
         attachments,
         mcp,
+        web_search,
         models,
         stt,
         tts,
@@ -389,6 +390,8 @@ pub fn run() {
             commands::mcp::mcp_set_permission,
             commands::mcp::mcp_import_preview,
             commands::mcp::mcp_import,
+            commands::mcp::search_public_instances,
+            commands::mcp::search_test,
             commands::voice::audio_devices,
             commands::voice::voice_start,
             commands::voice::voice_stop,

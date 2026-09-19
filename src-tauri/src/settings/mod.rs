@@ -337,16 +337,29 @@ pub struct SearchSettings {
     pub enabled: bool,
     /// Results per search (1-10).
     pub max_results: u32,
-    /// Optional SearXNG instance ("https://searx.example.org"). When set it is
-    /// asked first: it answers JSON and never shows a captcha.
+    /// The user's own SearXNG instance ("http://localhost:8080"), used when
+    /// `searxng_source` is "local".
     pub searxng_url: String,
-    /// Switch for the SearXNG instance above; off keeps the URL but skips it.
+    /// Switch for SearXNG; off keeps the choices but skips SearXNG entirely.
     pub searxng_enabled: bool,
+    /// Where SearXNG comes from: "local" (the URL above) or "public" (an
+    /// instance from the searx.space list).
+    pub searxng_source: String,
+    /// The public instance picked from searx.space; empty means "pick the
+    /// fastest working ones automatically".
+    pub searxng_public_url: String,
 }
 
 impl Default for SearchSettings {
     fn default() -> Self {
-        Self { enabled: true, max_results: 5, searxng_url: String::new(), searxng_enabled: true }
+        Self {
+            enabled: true,
+            max_results: 5,
+            searxng_url: String::new(),
+            searxng_enabled: true,
+            searxng_source: "local".into(),
+            searxng_public_url: String::new(),
+        }
     }
 }
 
@@ -561,6 +574,9 @@ impl Settings {
         }
         if !matches!(self.dictation.insert_method.as_str(), "type" | "paste") {
             self.dictation.insert_method = "type".into();
+        }
+        if !matches!(self.search.searxng_source.as_str(), "local" | "public") {
+            self.search.searxng_source = "local".into();
         }
     }
 }

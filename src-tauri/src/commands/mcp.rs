@@ -3,6 +3,7 @@ use crate::errors::AppError;
 use crate::services::chat::tools::Permission;
 use crate::services::mcp::config::{lmstudio_mcp_json_path, parse_mcp_json, ImportCandidate, McpServerConfig};
 use crate::services::mcp::ServerStatus;
+use crate::services::search::PublicInstance;
 use crate::state::AppState;
 use tauri::State;
 
@@ -88,4 +89,26 @@ pub fn mcp_import(state: State<'_, AppState>, names: Vec<String>) -> CmdResult<u
         }
     }
     Ok(count)
+}
+
+/// Public SearXNG instances from searx.space; `refresh` reloads the list.
+#[tauri::command]
+pub async fn search_public_instances(state: State<'_, AppState>, refresh: bool) -> CmdResult<Vec<PublicInstance>> {
+    state.web_search.public_instances(refresh).await
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchTestResult {
+    /// The engine that answered, e.g. "SearXNG (https://searx.be/)".
+    pub engine: String,
+    pub count: usize,
+    pub first_title: Option<String>,
+}
+
+/// Runs one real search with the saved settings, skipping the cache.
+#[tauri::command]
+pub async fn search_test(state: State<'_, AppState>) -> CmdResult<SearchTestResult> {
+    let (results, engine) = state.web_search.search_uncached("open source search engine").await?;
+    Ok(SearchTestResult { engine, count: results.len(), first_title: results.first().map(|r| r.title.clone()) })
 }

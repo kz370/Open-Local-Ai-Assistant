@@ -7,6 +7,7 @@ use crate::services::attachments::AttachmentStore;
 use crate::services::chat::{ChatEngine, ModelResolver};
 use crate::services::hardware::HardwareInfo;
 use crate::services::mcp::McpManager;
+use crate::services::search::WebSearch;
 use crate::services::models::ModelStore;
 use crate::services::silma::Silma;
 use crate::services::stt::session::VoiceSessions;
@@ -37,6 +38,7 @@ pub struct AppState {
     pub chat: Arc<ChatEngine>,
     pub attachments: Arc<AttachmentStore>,
     pub mcp: Arc<McpManager>,
+    pub web_search: Arc<WebSearch>,
     pub models: Arc<ModelStore>,
     pub stt: Arc<SttService>,
     pub tts: Arc<TtsService>,

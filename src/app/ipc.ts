@@ -16,6 +16,8 @@ import type {
   SilmaStatus,
   Conversation,
   ImportCandidate,
+  PublicSearxInstance,
+  SearchTestResult,
   IncompatibleModel,
   InstalledModel,
   ListenMode,
@@ -153,6 +155,8 @@ export const ipc = {
     invoke<Permission>("mcp_set_permission", { serverId, tool, permission }),
   mcpImportPreview: () => invoke<ImportCandidate[]>("mcp_import_preview"),
   mcpImport: (names: string[]) => invoke<number>("mcp_import", { names }),
+  searchPublicInstances: (refresh: boolean) => invoke<PublicSearxInstance[]>("search_public_instances", { refresh }),
+  searchTest: () => invoke<SearchTestResult>("search_test"),
 };
 
 export function on<T>(event: string, handler: (payload: T) => void): Promise<UnlistenFn> {
