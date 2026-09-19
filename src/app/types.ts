@@ -93,6 +93,8 @@ export interface Settings {
     preferredGender: "any" | "female" | "male";
     /** Per-voice hardware override ("auto" | "cpu"), keyed by voice/model id. */
     voiceHardware: Record<string, string>;
+    /** Orpheus voices: language code -> LM Studio model that speaks it. */
+    orpheusModels: Record<string, string>;
   };
   dictation: {
     enabled: boolean;

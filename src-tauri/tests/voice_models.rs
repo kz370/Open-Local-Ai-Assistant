@@ -203,7 +203,7 @@ fn microphone_delivers_audio_events() {
     while std::time::Instant::now() < deadline {
         match rx.recv_timeout(std::time::Duration::from_millis(300)) {
             Ok(CaptureEvent::Samples(s)) => samples += s.len(),
-            Ok(CaptureEvent::Level(v)) => {
+            Ok(CaptureEvent::Level(v, _)) => {
                 levels += 1;
                 peak = peak.max(v);
             }

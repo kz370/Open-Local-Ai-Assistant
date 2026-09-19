@@ -71,6 +71,7 @@ fn init_state(app: &AppHandle) -> Result<AppState, Box<dyn std::error::Error>> {
     ));
     silma.set_force_cpu(s.silma.hardware == "cpu");
     tts.set_silma(silma.clone());
+    tts.set_orpheus(Arc::new(services::tts::orpheus::Orpheus::new(lmstudio.clone(), models.clone())));
 
     let handle = app.clone();
     let tts_probe = tts.clone();

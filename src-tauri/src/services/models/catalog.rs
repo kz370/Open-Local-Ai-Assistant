@@ -24,6 +24,10 @@ pub enum Engine {
     Kitten,
     /// SILMA TTS, run by the Python helper in services::silma.
     Silma,
+    /// Orpheus voices: an LM Studio model writes audio codes (services::tts::orpheus).
+    Orpheus,
+    /// SNAC audio decoder that turns Orpheus codes into sound.
+    Snac,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -336,6 +340,25 @@ pub static CATALOG: &[CatalogModel] = &[
         min_ram_gb: 1,
         license: "see model card",
         gender: "female",
+    },
+    // ---------------- Orpheus (LM Studio) ----------------
+    CatalogModel {
+        id: "snac-24khz-decoder",
+        kind: ModelKind::Tts,
+        engine: Engine::Snac,
+        name: "SNAC decoder (needed for Orpheus voices)",
+        languages: &["en", "de"],
+        files: &[RemoteFile {
+            url: "https://huggingface.co/onnx-community/snac_24khz-ONNX/resolve/main/onnx/decoder_model.onnx",
+            sha256: Some("9e2991fce96c3b49c508304e656052f4f6b860fe8432164fcd976eee195fd4f0"),
+            dest: "decoder_model.onnx",
+            archive: false,
+            size_bytes: 52_600_822,
+        }],
+        quality: 3,
+        min_ram_gb: 1,
+        license: "MIT",
+        gender: "",
     },
 ];
 

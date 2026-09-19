@@ -118,6 +118,11 @@ pub trait SpeechSink: Send + Sync {
     fn push_text(&self, turn_id: &str, text: &str);
     fn finish(&self, turn_id: &str);
     fn cancel(&self, turn_id: &str);
+    /// True when replies are spoken by a voice that performs expressive tags
+    /// such as `<laugh>` (Orpheus), so the model may use them.
+    fn expressive_tags(&self) -> bool {
+        false
+    }
 }
 
 pub struct NoSpeech;
