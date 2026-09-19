@@ -111,6 +111,8 @@ export interface Settings {
     maxResults: number;
     searxngUrl: string;
     searxngEnabled: boolean;
+    searxngSource: "local" | "public";
+    searxngPublicUrl: string;
   };
   lastConversationId: string | null;
   version: number;
@@ -391,6 +393,19 @@ export interface ServerStatus {
   error: string | null;
   tools: ToolView[];
   internet: boolean;
+}
+
+export interface PublicSearxInstance {
+  url: string;
+  searchSuccess: number;
+  searchTime: number | null;
+  version: string | null;
+}
+
+export interface SearchTestResult {
+  engine: string;
+  count: number;
+  firstTitle: string | null;
 }
 
 export interface ImportCandidate {

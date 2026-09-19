@@ -19,3 +19,38 @@ async fn finds_results_for_a_real_query() {
     assert!(!results.is_empty(), "DuckDuckGo returned no parsable results");
     assert!(results.iter().all(|r| r.url.starts_with("http")));
 }
+
+/// A SearXNG instance under a sub path (searxng.site serves /searxng/) that
+/// only answers browser-like HTML requests.
+#[tokio::test]
+#[ignore]
+async fn searches_a_searxng_instance() {
+    let db = Arc::new(Db::open_in_memory().unwrap());
+    let settings = Arc::new(SettingsStore::load(db).unwrap());
+    settings
+        .update(|s| {
+            s.search.searxng_source = "local".into();
+            s.search.searxng_url = "https://searxng.site".into();
+        })
+        .unwrap();
+    let search = WebSearch::new(settings);
+    let (results, engine) = search.search_uncached("rust programming language").await.expect("search failed");
+    println!("{engine}: {} results", results.len());
+    assert!(engine.starts_with("SearXNG"), "fell back to {engine}");
+    assert!(!results.is_empty());
+}
+
+/// The searx.space list loads and an automatic pick finds results.
+#[tokio::test]
+#[ignore]
+async fn searches_a_public_instance_from_searx_space() {
+    let db = Arc::new(Db::open_in_memory().unwrap());
+    let settings = Arc::new(SettingsStore::load(db).unwrap());
+    settings.update(|s| s.search.searxng_source = "public".into()).unwrap();
+    let search = WebSearch::new(settings);
+    let list = search.public_instances(true).await.expect("list failed");
+    println!("{} public instances, first {:?}", list.len(), list.first());
+    let (results, engine) = search.search_uncached("rust programming language").await.expect("search failed");
+    println!("{engine}: {} results", results.len());
+    assert!(!results.is_empty());
+}

@@ -8,7 +8,7 @@ A small, fast, local-first desktop AI assistant. It lives in a floating window (
 - **Text-to-speech:** local neural voices. Kitten nano (31 MB) is the small, natural-sounding English default; Kokoro and the German/Arabic Piper voices are one click away, and you can prefer male or female voices.
 - **Natural Arabic voice (SILMA):** optional one-click setup in Settings → Text-to-Speech. SILMA TTS v1 runs on PyTorch in a private Python environment inside the app data folder (about 6 GB download, 5.6 GB on disk with the NVIDIA build) and adds tashkeel by itself. It can also be picked as the English voice (it does not speak German). The app starts and stops it automatically; nothing else has to be installed or run.
 - **Models in memory:** a settings page shows which models are loaded right now (speech recognition, each voice, SILMA, the LM Studio chat model) with Load / Unload buttons, and an option to load them all in the background when the app starts.
-- **Tools:** generic MCP (Model Context Protocol) client with explicit per-tool permissions. Web search comes from an MCP server you choose.
+- **Tools:** generic MCP (Model Context Protocol) client with explicit per-tool permissions. Built-in web search uses SearXNG (your own instance or a public one from searx.space) with DuckDuckGo as the fallback.
 - **Dictation:** a global hotkey (`Ctrl+Alt+Space`) types what you say into any application. A small window shows the text live while you speak, with optional grammar cleanup by a small LM Studio model you pick.
 - **Privacy:** conversations, settings and logs stay on disk locally. There is no telemetry. Logs contain no conversation content unless you turn that on.
 
