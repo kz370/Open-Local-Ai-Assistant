@@ -343,7 +343,7 @@ impl SessionCtx {
     }
 
     fn emit_partial(&self, text: &str) {
-        (self.emit)(VoiceEvent::Partial { mode: self.mode, text: text.to_string() });
+        (self.emit)(VoiceEvent::Partial { mode: self.mode, text: super::clean_transcript(text) });
     }
 
     fn emit_transcript(&self, text: &str, audio_ms: u64, elapsed_ms: u64) {
