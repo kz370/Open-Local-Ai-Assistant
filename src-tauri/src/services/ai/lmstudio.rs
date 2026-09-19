@@ -207,6 +207,7 @@ pub fn parse_native_v1(v: &Value) -> Vec<ModelInfo> {
                         quantization: m["quantization"]["name"].as_str().map(str::to_string),
                         bits_per_weight: m["quantization"]["bits_per_weight"].as_f64().map(|b| b as f32),
                         max_context_length: as_u32(m.get("max_context_length")),
+                        free: false,
                         loaded,
                         loaded_context_length: as_u32(m["loaded_instances"].get(0).and_then(|i| i["config"].get("context_length"))),
                         tool_use: caps["trained_for_tool_use"].as_bool().unwrap_or(false),
@@ -229,6 +230,7 @@ pub fn parse_native_v0(v: &Value) -> Vec<ModelInfo> {
                     let id = m.get("id")?.as_str()?.to_string();
                     let caps: Vec<&str> = m["capabilities"].as_array().map(|a| a.iter().filter_map(Value::as_str).collect()).unwrap_or_default();
                     Some(ModelInfo {
+                        free: false,
                         display_name: id.clone(),
                         kind: m["type"].as_str().unwrap_or("unknown").to_string(),
                         size_bytes: None,
@@ -270,6 +272,13 @@ pub fn parse_openai_models(v: &Value) -> Vec<ModelInfo> {
 /// model ready, so all count as loaded. Gemini prefixes ids with `models/`, which
 /// its chat endpoint does not want. OpenRouter adds context length and
 /// capability metadata; the others only return ids.
+/// True when a hosted model charges nothing for input and output. Prices come
+/// as decimal strings ("0.000000075"), and a model without prices is not free.
+fn is_free(pricing: &Value) -> bool {
+    let zero = |key: &str| pricing[key].as_str().and_then(|p| p.parse::<f64>().ok()).is_some_and(|p| p == 0.0);
+    zero("prompt") && zero("completion")
+}
+
 pub fn parse_hosted_models(v: &Value) -> Vec<ModelInfo> {
     let has = |m: &Value, key: &str, want: &str| m[key].as_array().is_some_and(|a| a.iter().any(|x| x.as_str() == Some(want)));
     v["data"]
@@ -290,6 +299,7 @@ pub fn parse_hosted_models(v: &Value) -> Vec<ModelInfo> {
                         tool_use: has(m, "supported_parameters", "tools"),
                         vision: has(&m["architecture"], "input_modalities", "image"),
                         reasoning: has(m, "supported_parameters", "reasoning"),
+                        free: is_free(&m["pricing"]),
                         id,
                         ..Default::default()
                     })
@@ -479,6 +489,26 @@ mod tests {
         Json, Router,
     };
     use std::sync::{Arc, Mutex};
+
+    #[test]
+    fn hosted_models_are_marked_free_by_price() {
+        let v = serde_json::json!({"data": [
+            {"id": "vendor/free-one:free", "pricing": {"prompt": "0", "completion": "0"}},
+            {"id": "vendor/cheap", "pricing": {"prompt": "0.000000075", "completion": "0.0000005"}},
+            {"id": "vendor/half-free", "pricing": {"prompt": "0", "completion": "0.000002"}},
+            {"id": "vendor/unpriced"},
+        ]});
+        let free: Vec<(String, bool)> = parse_hosted_models(&v).into_iter().map(|m| (m.id, m.free)).collect();
+        assert_eq!(
+            free,
+            vec![
+                ("vendor/free-one:free".to_string(), true),
+                ("vendor/cheap".to_string(), false),
+                ("vendor/half-free".to_string(), false),
+                ("vendor/unpriced".to_string(), false),
+            ]
+        );
+    }
 
     #[derive(Clone, Default)]
     struct Mock {

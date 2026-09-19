@@ -95,6 +95,14 @@ describe("MessageBubble", () => {
     expect(onRetry).toHaveBeenCalled();
     expect(screen.getByText("Open Settings")).toBeInTheDocument();
   });
+
+  it("offers Send again on a user message that got no answer", () => {
+    const retryLast = vi.fn(async () => {});
+    useChat.setState({ retryLast });
+    render(<MessageBubble message={{ ...base, role: "user", content: "hello?" }} developer={false} showReasoning={false} onResend={() => void retryLast()} onOpenSettings={() => {}} />);
+    fireEvent.click(screen.getByLabelText("Send again"));
+    expect(retryLast).toHaveBeenCalled();
+  });
 });
 
 describe("chat store", () => {

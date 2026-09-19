@@ -44,7 +44,7 @@ const SETTINGS: Settings = {
     requestTimeoutSecs: 300,
     showReasoning: false,
     modelAliases: { "qwen/qwen3.5-9b": "Qwen 9B" },
-    hiddenModels: [],
+    hiddenModels: [], freeModelsOnly: false,
     pasteAsFileChars: 2000,
   },
   language: {

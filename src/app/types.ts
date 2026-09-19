@@ -59,6 +59,8 @@ export interface Settings {
     modelAliases: Record<string, string>;
     /** Model ids left out of the chat window's model picker. */
     hiddenModels: string[];
+    /** Hosted providers: list only models that cost nothing. */
+    freeModelsOnly: boolean;
     /** Pasted text longer than this becomes a text attachment. 0 disables it. */
     pasteAsFileChars: number;
   };
@@ -151,6 +153,8 @@ export interface ModelInfo {
   toolUse: boolean;
   vision: boolean;
   reasoning: boolean;
+  /** Hosted providers only: the model costs nothing to call. */
+  free: boolean;
 }
 
 export interface ModelSelection {

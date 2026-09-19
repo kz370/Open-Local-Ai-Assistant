@@ -413,6 +413,13 @@ html[data-route="chat"] #root {
   transition: opacity var(--dur-fast);
   margin-inline-start: -6px;
 }
+.msg.user .msg-actions {
+  justify-content: flex-end;
+  margin-inline: 0 -6px;
+}
+.msg.user .msg-actions:dir(rtl) {
+  justify-content: flex-start;
+}
 .msg:hover .msg-actions,
 .msg:focus-within .msg-actions {
   opacity: 1;
