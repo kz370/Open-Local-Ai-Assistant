@@ -102,7 +102,7 @@ export function ChatApp() {
   const updateSettings = useSettings((s) => s.update);
   const [maximized, setMaximized] = useState(false);
   const toggleMaximize = useCallback(() => {
-    void ipc.toggleMaximize().then(setMaximized);
+    ipc.toggleMaximize().then(setMaximized, (err) => console.error("maximize failed", err));
   }, []);
   useEffect(() => {
     const win = getCurrentWindow();
@@ -255,7 +255,7 @@ export function ChatApp() {
 
   return (
     <div
-      className={`app-shell${compact ? " compact" : ""}`}
+      className={`app-shell${compact ? " compact" : ""}${maximized ? " maximized" : ""}`}
       data-morph={morph.phase}
       style={{ "--zx": `${morph.fx}px`, "--zy": `${morph.fy}px` } as React.CSSProperties}
     >

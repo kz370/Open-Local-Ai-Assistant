@@ -99,7 +99,7 @@ function mockBackend() {
       case "mcp_list":
         return [];
       case "privacy_status":
-        return { llm: "LM Studio", llmServer: "http://localhost:1234/v1", llmIsLocalAddress: true, sttLocal: true, ttsLocal: true, conversationsLocal: true, settingsLocal: true, telemetry: false, internetViaMcp: false, internetServers: [] };
+        return { llm: "LM Studio", llmServer: "http://localhost:1234/v1", llmIsLocalAddress: true, llmIsCloud: false, sttLocal: true, ttsLocal: true, conversationsLocal: true, settingsLocal: true, telemetry: false, internetViaMcp: false, internetServers: [] };
       case "scan_capabilities":
         return {
           lmStudio: { connected: true, serverUrl: "http://localhost:1234/v1", api: "native-v1", modelCount: 2, errorCode: null, errorDetail: null, selection: { modelId: "qwen/qwen3.5-9b", needsLoad: false, score: 115, reasons: [] }, loadedModels: ["qwen/qwen3.5-9b"] },
@@ -189,5 +189,22 @@ describe("bubble", () => {
     fireEvent.pointerDown(bubble, { button: 0, screenX: 10, screenY: 10 });
     fireEvent.pointerUp(bubble, { button: 0, screenX: 10, screenY: 10 });
     await waitFor(() => expect(vi.mocked(invoke)).toHaveBeenCalledWith("bubble_open_chat"));
+  });
+});
+
+describe("web search settings", () => {
+  it("keeps the built-in search when it is picked as try first", async () => {
+    vi.mocked(invoke).mockReset();
+    mockBackend();
+    // Echo what is saved, like the real backend does.
+    const base = vi.mocked(invoke).getMockImplementation()!;
+    vi.mocked(invoke).mockImplementation(async (cmd: string, args?: unknown) => (cmd === "save_settings" ? (args as { settings: Settings }).settings : base(cmd, args as never)));
+    await useSettings.getState().load();
+    location.hash = "#/settings/search";
+    render(<SettingsApp />);
+    const select = (await screen.findByLabelText(/^Try first/)) as HTMLSelectElement;
+    fireEvent.change(select, { target: { value: "duckduckgo" } });
+    await waitFor(() => expect(useSettings.getState().settings?.search.primary).toBe("duckduckgo"));
+    expect(select.value).toBe("duckduckgo");
   });
 });

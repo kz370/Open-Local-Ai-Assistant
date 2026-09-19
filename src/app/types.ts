@@ -473,6 +473,7 @@ export interface PrivacyStatus {
   llm: string;
   llmServer: string;
   llmIsLocalAddress: boolean;
+  llmIsCloud: boolean;
   sttLocal: boolean;
   ttsLocal: boolean;
   conversationsLocal: boolean;

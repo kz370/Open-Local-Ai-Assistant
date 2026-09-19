@@ -16,6 +16,11 @@ html[data-route="chat"] #root {
     radial-gradient(90% 50% at 0% 100%, var(--glow-2) 0%, transparent 60%),
     var(--bg);
 }
+/* Maximized fills the screen edge to edge: square corners, no outline. */
+.app-shell.maximized {
+  border-radius: 0;
+  border-color: transparent;
+}
 
 /* Zoom morph: whole shell scales from bubble point (fx/fy).
    Transparent native frame lets scaled shell read as growing window.

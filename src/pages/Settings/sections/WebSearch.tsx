@@ -146,11 +146,11 @@ export function WebSearchSection() {
     <>
       <SectionHeader title={t("settings.sections.search")} intro={t("settings.search.intro")} />
       <Card title={t("settings.search.engines")}>
+        <Row label={t("settings.search.builtin")} hint={t("settings.search.builtinHint")} htmlFor="sw-ddg">
+          <Switch id="sw-ddg" label={t("settings.search.builtin")} checked={ddgOn} onChange={(v) => setSettings((x) => void (x.search.enabled = v))} />
+        </Row>
         <Row label={t("settings.search.searxng")} hint={t("settings.search.searxngHint")} htmlFor="sw-searxng">
           <Switch id="sw-searxng" label={t("settings.search.searxng")} checked={searxngOn} onChange={(v) => setSettings((x) => void (x.search.searxngEnabled = v))} />
-        </Row>
-        <Row label={t("settings.search.duckduckgo")} hint={t("settings.search.duckduckgoHint")} htmlFor="sw-ddg">
-          <Switch id="sw-ddg" label={t("settings.search.duckduckgo")} checked={ddgOn} onChange={(v) => setSettings((x) => void (x.search.enabled = v))} />
         </Row>
         {searxngOn && ddgOn && (
           <Row label={t("settings.search.primary")} hint={t("settings.search.primaryHint")} htmlFor="sel-primary">
@@ -161,7 +161,7 @@ export function WebSearchSection() {
               onChange={(e) => setSettings((x) => void (x.search.primary = e.target.value as "searxng" | "duckduckgo"))}
             >
               <option value="searxng">{t("settings.search.searxng")}</option>
-              <option value="duckduckgo">{t("settings.search.duckduckgo")}</option>
+              <option value="duckduckgo">{t("settings.search.builtin")}</option>
             </select>
           </Row>
         )}

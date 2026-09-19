@@ -27,29 +27,40 @@ export function PrivacySection() {
   const [s, set] = useS();
   const [p, setP] = useState<PrivacyStatus | null>(null);
   useEffect(() => void ipc.privacyStatus().then(setP), []);
+  const searchEngines = [
+    ...(s.search.searxngEnabled ? ["SearXNG"] : []),
+    ...(s.search.enabled ? [t("settings.search.builtin")] : []),
+  ];
   return (
     <>
       <SectionHeader title={t("settings.sections.privacy")} />
       <Card title={t("settings.privacy.title")}>
         <ul className="check-list" style={{ padding: "12px 0" }}>
-          <CheckItem level="ok" label={t("settings.privacy.llm")} detail={p?.llmServer} />
-          {p && !p.llmIsLocalAddress && <CheckItem level="warn" label={t("settings.privacy.remoteServer")} />}
+          {p &&
+            (p.llmIsCloud ? (
+              <CheckItem level="info" label={t("settings.privacy.llmCloud", { name: p.llm })} detail={t("settings.privacy.llmCloudHint", { name: p.llm })} />
+            ) : p.llmIsLocalAddress ? (
+              <CheckItem level="ok" label={t("settings.privacy.llmLocal", { name: p.llm })} detail={p.llmServer} />
+            ) : (
+              <CheckItem level="warn" label={t("settings.privacy.llmNetwork", { name: p.llm })} detail={`${p.llmServer} · ${t("settings.privacy.llmNetworkHint")}`} />
+            ))}
           <CheckItem level="ok" label={t("settings.privacy.stt")} />
           <CheckItem level="ok" label={t("settings.privacy.tts")} />
           <CheckItem level="ok" label={t("settings.privacy.conversations")} />
           <CheckItem level="ok" label={t("settings.privacy.settings")} />
-          <CheckItem level="ok" label={t("settings.privacy.noCloudLlm")} />
           <CheckItem level="ok" label={t("settings.privacy.noCloudSpeech")} />
           <CheckItem level="ok" label={t("settings.privacy.noTelemetry")} />
         </ul>
       </Card>
       <Card title={t("settings.privacy.internet")}>
         <ul className="check-list" style={{ padding: "12px 0" }}>
-          {p?.internetViaMcp ? (
-            <CheckItem level="info" label={t("settings.privacy.internetVia", { servers: p.internetServers.join(", ") })} detail={t("settings.privacy.llmStaysLocal")} />
-          ) : (
-            <CheckItem level="ok" label={t("settings.privacy.internetNone")} />
+          {searchEngines.length > 0 && (
+            <CheckItem level="info" label={t("settings.privacy.webSearchOn", { engines: searchEngines.join(", ") })} detail={t("settings.privacy.webSearchHint")} />
           )}
+          {p?.internetViaMcp && (
+            <CheckItem level="info" label={t("settings.privacy.internetVia", { servers: p.internetServers.join(", ") })} detail={t("settings.privacy.internetViaHint")} />
+          )}
+          {searchEngines.length === 0 && !p?.internetViaMcp && <CheckItem level="ok" label={t("settings.privacy.internetNone")} />}
         </ul>
       </Card>
       <Card>
