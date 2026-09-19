@@ -1,8 +1,10 @@
-//! Local neural text-to-speech (sherpa-onnx Kokoro / Piper VITS).
+//! Neural text-to-speech: local sherpa-onnx voices (Kokoro / Piper VITS),
+//! SILMA, and Orpheus voices generated through LM Studio.
 //!
 //! Streaming: assistant text -> SentenceBuffer -> per-sentence language
 //! detection -> voice selection -> synthesis worker -> playback queue.
 
+pub mod orpheus;
 pub mod sentence_buffer;
 pub mod speech_text;
 pub mod voices;
@@ -16,6 +18,7 @@ use crate::services::models::catalog::Engine;
 use crate::services::models::{find_file, ModelStore};
 use crate::services::silma::Silma;
 use crate::settings::SettingsStore;
+use orpheus::Orpheus;
 use sentence_buffer::SentenceBuffer;
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
@@ -77,6 +80,8 @@ pub struct TtsService {
     warned: Mutex<HashSet<(String, Lang)>>,
     /// Natural Arabic voice, when the user installed it.
     silma: OnceLock<Arc<Silma>>,
+    /// Orpheus voices through LM Studio.
+    orpheus: OnceLock<Arc<Orpheus>>,
 }
 
 impl TtsService {
@@ -99,6 +104,7 @@ impl TtsService {
             emit,
             warned: Mutex::new(HashSet::new()),
             silma: OnceLock::new(),
+            orpheus: OnceLock::new(),
         });
         svc.clone().watch_playback();
         let weak = Arc::downgrade(&svc);
@@ -156,7 +162,7 @@ impl TtsService {
                     let Some(sentence) = queued.get(&current) else { continue };
                     (svc.emit)(TtsEvent::Sentence {
                         tag: sentence.tag.clone(),
-                        text: sentence.text.clone(),
+                        text: orpheus::strip_expressive_tags(&sentence.text),
                         duration_ms: sentence.duration_ms,
                     });
                 }
@@ -168,12 +174,25 @@ impl TtsService {
         let _ = self.silma.set(silma);
     }
 
+    pub fn set_orpheus(&self, orpheus: Arc<Orpheus>) {
+        let _ = self.orpheus.set(orpheus);
+    }
+
     pub fn voices(&self) -> Vec<VoiceInfo> {
         let mut voices = list_voices(&self.store.installed());
         if self.silma.get().is_some_and(|s| s.is_installed()) {
             voices.extend(voices::silma_voices());
         }
+        if self.orpheus.get().is_some() {
+            voices.extend(voices::orpheus_voices(&self.settings.get().tts.orpheus_models));
+        }
         voices
+    }
+
+    /// True when replies in `lang` are spoken by Orpheus, which can perform
+    /// expressive tags such as `<laugh>`.
+    pub fn is_expressive(&self, lang: Lang) -> bool {
+        self.voice_for(lang).is_some_and(|v| v.engine == Engine::Orpheus)
     }
 
     /// True when any language speaks through SILMA (so it is worth warming up).
@@ -194,27 +213,43 @@ impl TtsService {
 
     /// Ids of the ONNX voice models in memory.
     pub fn loaded_models(&self) -> Vec<String> {
-        self.engines.lock().unwrap_or_else(|p| p.into_inner()).keys().cloned().collect()
+        let mut ids: Vec<String> = self.engines.lock().unwrap_or_else(|p| p.into_inner()).keys().cloned().collect();
+        if self.orpheus.get().is_some_and(|o| o.is_loaded()) {
+            ids.push(orpheus::SNAC_MODEL_ID.into());
+        }
+        ids
     }
 
     /// Frees a voice model (a sentence being spoken keeps its own handle).
     pub fn unload_model(&self, model_id: &str) {
+        if model_id == orpheus::SNAC_MODEL_ID {
+            if let Some(o) = self.orpheus.get() {
+                o.unload();
+            }
+        }
         self.engines.lock().unwrap_or_else(|p| p.into_inner()).remove(model_id);
     }
 
     /// Loads the ONNX voice for `lang` now (SILMA is started separately).
     pub fn preload_lang(&self, lang: Lang, threads: i32) -> AppResult<()> {
         let voice = self.voice_for(lang).ok_or_else(|| AppError::Tts(format!("no local voice installed for {}", lang.english_name())))?;
-        if voice.engine == Engine::Silma {
-            return Ok(());
+        match voice.engine {
+            Engine::Silma => Ok(()),
+            Engine::Orpheus => self.orpheus.get().ok_or_else(|| AppError::Tts("Orpheus is not available".into()))?.preload(),
+            _ => self.engine(&voice.model_id, threads).map(|_| ()),
         }
-        self.engine(&voice.model_id, threads).map(|_| ())
     }
 
     fn voice_for(&self, lang: Lang) -> Option<VoiceInfo> {
         let s = self.settings.get();
         let pref = s.language.entries.iter().find(|e| e.code == lang.code()).map(|e| e.tts_voice.clone()).unwrap_or_else(|| "auto".into());
         select_voice(&self.voices(), lang, &pref, &s.tts.preferred_gender)
+    }
+
+    /// The best local voice for `lang`, used when Orpheus cannot speak.
+    fn fallback_voice(&self, lang: Lang) -> Option<VoiceInfo> {
+        let voices: Vec<VoiceInfo> = self.voices().into_iter().filter(|v| v.engine != Engine::Orpheus).collect();
+        select_voice(&voices, lang, "auto", &self.settings.get().tts.preferred_gender)
     }
 
     pub fn apply_settings(&self) {
@@ -272,7 +307,24 @@ impl TtsService {
 
     /// Synthesizes text to 16-bit-range float PCM (for tests / warm-up).
     pub fn synthesize(&self, text: &str, lang: Lang, threads: i32) -> AppResult<(Vec<f32>, u32)> {
-        let voice = self.voice_for(lang).ok_or_else(|| AppError::Tts(format!("no local voice installed for {}", lang.english_name())))?;
+        let mut voice = self.voice_for(lang).ok_or_else(|| AppError::Tts(format!("no local voice installed for {}", lang.english_name())))?;
+        if voice.engine == Engine::Orpheus {
+            let orpheus = self.orpheus.get().ok_or_else(|| AppError::Tts("Orpheus is not available".into()))?;
+            let name = voice.id.rsplit(':').next().unwrap_or("tara");
+            match orpheus.synthesize(&voice.model_id, name, text) {
+                Ok(audio) => return Ok(audio),
+                Err(e) => {
+                    // LM Studio down or the model missing: keep talking with a local voice.
+                    tracing::warn!(error = %e, model = %voice.model_id, "orpheus failed; using a local voice");
+                    voice = self.fallback_voice(lang).ok_or(e)?;
+                }
+            }
+        }
+        // Only Orpheus performs expressive tags; any other voice would read them out.
+        let text = &orpheus::strip_expressive_tags(text);
+        if text.is_empty() {
+            return Ok((Vec::new(), 24_000));
+        }
         let speed = self.settings.get().tts.speed;
         if voice.engine == Engine::Silma {
             let silma = self.silma.get().ok_or_else(|| AppError::Tts("SILMA is not available".into()))?;
@@ -297,6 +349,9 @@ impl TtsService {
             return Ok(());
         };
         let (samples, rate) = self.synthesize(&job.text, job.lang, threads)?;
+        if samples.is_empty() {
+            return Ok(());
+        }
         if self.cancelled.lock().unwrap_or_else(|p| p.into_inner()).contains(&job.tag) {
             return Ok(());
         }
@@ -402,6 +457,10 @@ impl SpeechSink for TtsService {
             state.spoken.push((sentence, lang));
         }
         *self.last_turn.lock().unwrap_or_else(|p| p.into_inner()) = Some(state.spoken);
+    }
+
+    fn expressive_tags(&self) -> bool {
+        [Lang::En, Lang::De].into_iter().any(|l| self.is_expressive(l))
     }
 
     fn cancel(&self, turn_id: &str) {

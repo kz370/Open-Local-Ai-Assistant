@@ -12,6 +12,10 @@ import { Markdown } from "./Markdown";
 import { Sources } from "./Sources";
 import { ToolActivity } from "./ToolActivity";
 
+/** Sounds an Orpheus voice performs (`<laugh>` …); hidden from the text. */
+const EXPRESSIVE_TAG = /\s*<(?:laugh|chuckle|sigh|cough|sniffle|groan|yawn|gasp)>/gi;
+const withoutTags = (text: string) => text.replace(EXPRESSIVE_TAG, "");
+
 interface Props {
   message: UiMessage;
   developer: boolean;
@@ -73,7 +77,7 @@ export const MessageBubble = memo(function MessageBubble({ message: m, developer
       )}
       {m.content && (
         <div className="bubble" dir={dir} lang={lang}>
-          <Markdown text={m.content} />
+          <Markdown text={withoutTags(m.content)} />
         </div>
       )}
       <Sources sources={m.sources} />
@@ -103,7 +107,7 @@ export const MessageBubble = memo(function MessageBubble({ message: m, developer
             aria-label={copied ? t("app.copied") : t("chat.copyMessage")}
             title={copied ? t("app.copied") : t("chat.copyMessage")}
             onClick={() => {
-              void navigator.clipboard.writeText(m.content);
+              void navigator.clipboard.writeText(withoutTags(m.content));
               setCopied(true);
               setTimeout(() => setCopied(false), 1500);
             }}

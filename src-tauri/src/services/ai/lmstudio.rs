@@ -104,6 +104,25 @@ impl LmStudioService {
         base.strip_suffix("/v1").unwrap_or(&base).to_string()
     }
 
+    /// Plain (non-chat) completion: sends `body` to `/completions` and returns
+    /// the generated text. Used for models with their own prompt format.
+    pub async fn complete_text(&self, body: Value) -> AppResult<String> {
+        let resp = self
+            .authed(self.http().post(format!("{}/completions", self.base_url())))
+            .json(&body)
+            .timeout(self.timeout())
+            .send()
+            .await
+            .map_err(from_lmstudio_http)?;
+        let status = resp.status();
+        let v: Value = resp.json().await.map_err(|e| AppError::LmStudio(e.to_string()))?;
+        if !status.is_success() {
+            let detail = v["error"]["message"].as_str().or(v["error"].as_str()).unwrap_or("request failed");
+            return Err(AppError::LmStudio(format!("{status}: {detail}")));
+        }
+        Ok(v["choices"][0]["text"].as_str().unwrap_or_default().to_string())
+    }
+
     async fn get_json(&self, url: &str) -> AppResult<Value> {
         let resp = self
             .authed(self.http().get(url))

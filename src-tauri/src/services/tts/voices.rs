@@ -155,6 +155,29 @@ pub fn silma_voices() -> Vec<VoiceInfo> {
     ]
 }
 
+/// Orpheus voices for every language that has an LM Studio model set. They
+/// rank above every local voice, so a configured language speaks with Orpheus.
+pub fn orpheus_voices(models: &std::collections::BTreeMap<String, String>) -> Vec<VoiceInfo> {
+    let mut out = Vec::new();
+    for (lang, model) in models.iter().filter(|(_, m)| !m.trim().is_empty()) {
+        for (sid, (name, gender)) in super::orpheus::voices_for(lang).iter().enumerate() {
+            let mut pretty = name.to_string();
+            pretty[..1].make_ascii_uppercase();
+            out.push(VoiceInfo {
+                id: format!("orpheus-{lang}:{name}"),
+                model_id: model.clone(),
+                name: format!("{pretty} (Orpheus)"),
+                language: lang.clone(),
+                speaker_id: sid as i32,
+                engine: Engine::Orpheus,
+                quality: if sid == 0 { 21 } else { 20 },
+                gender: gender.to_string(),
+            });
+        }
+    }
+    out
+}
+
 /// `preference` is "auto" or a voice id from settings; `gender` is
 /// "any" | "female" | "male" and only steers the automatic choice.
 pub fn select_voice(voices: &[VoiceInfo], lang: Lang, preference: &str, gender: &str) -> Option<VoiceInfo> {

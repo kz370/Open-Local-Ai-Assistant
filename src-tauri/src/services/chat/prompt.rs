@@ -19,6 +19,8 @@ pub struct PromptContext<'a> {
     pub tashkeel_enabled: bool,
     /// Replaces the default tashkeel-enabled instruction when non-empty.
     pub tashkeel_instruction: &'a str,
+    /// The reply is spoken by a voice that performs tags such as `<laugh>`.
+    pub expressive_tags: bool,
 }
 
 pub fn build_system_prompt(ctx: &PromptContext) -> String {
@@ -82,6 +84,13 @@ pub fn build_system_prompt(ctx: &PromptContext) -> String {
             "The answer will be spoken aloud. Use short natural sentences, avoid tables, long lists, \
              markdown symbols and code unless explicitly requested.\n",
         );
+        if ctx.expressive_tags {
+            p.push_str(
+                "Your voice can perform these sounds when you write the tag inline: <laugh>, <chuckle>, <sigh>, \
+                 <cough>, <sniffle>, <groan>, <yawn>, <gasp>. Use one only where a person would naturally make \
+                 that sound, at most one or two per answer, and never explain or mention the tags.\n",
+            );
+        }
     } else {
         p.push_str("Use Markdown when it helps readability. Keep answers focused.\n");
     }
@@ -152,7 +161,16 @@ mod tests {
             custom_prompt: "Be brief.",
             tashkeel_enabled: false,
             tashkeel_instruction: "",
+            expressive_tags: false,
         }
+    }
+
+    #[test]
+    fn expressive_tags_only_when_spoken() {
+        let spoken = PromptContext { voice_mode: true, expressive_tags: true, ..ctx(&[], None, Some(Lang::En), false) };
+        assert!(build_system_prompt(&spoken).contains("<laugh>"));
+        let plain = PromptContext { voice_mode: true, ..ctx(&[], None, Some(Lang::En), false) };
+        assert!(!build_system_prompt(&plain).contains("<laugh>"));
     }
 
     #[test]

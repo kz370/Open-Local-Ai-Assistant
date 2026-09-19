@@ -316,6 +316,9 @@ pub struct TtsSettings {
     /// Per-voice hardware override ("auto" | "cpu"), keyed by voice/model id.
     /// Absent key = "auto".
     pub voice_hardware: std::collections::BTreeMap<String, String>,
+    /// Orpheus voices: language code -> LM Studio model that speaks it.
+    /// A language without an entry uses the local voices.
+    pub orpheus_models: std::collections::BTreeMap<String, String>,
 }
 
 impl Default for TtsSettings {
@@ -330,6 +333,7 @@ impl Default for TtsSettings {
             output_device: None,
             preferred_gender: "any".into(),
             voice_hardware: Default::default(),
+            orpheus_models: Default::default(),
         }
     }
 }

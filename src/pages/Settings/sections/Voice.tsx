@@ -3,7 +3,7 @@ import { FolderOpen, FolderPlus, Plus, Play, Square, Trash2 } from "lucide-react
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { ipc, on, toAppError } from "../../../app/ipc";
 import { formatBytes, t } from "../../../app/strings";
-import type { AppErrorPayload, AppInfo, AudioDevice, GpuStatus, IncompatibleModel, InstalledModel, LangSetting, LanguageEntry, VoiceEvent, VoiceInfo } from "../../../app/types";
+import type { AppErrorPayload, AppInfo, AudioDevice, GpuStatus, IncompatibleModel, InstalledModel, LangSetting, LanguageEntry, ModelInfo, VoiceEvent, VoiceInfo } from "../../../app/types";
 import { ErrorNotice, Segmented, Switch } from "../../../components/common/controls";
 import { GpuCard } from "../../../components/settings/GpuCard";
 import { Card, Row, SectionHeader } from "../../../components/settings/layout";
@@ -312,21 +312,37 @@ export function SpeechSection() {
   );
 }
 
-function useVoices() {
+/** Languages an Orpheus model can speak (see services::tts::orpheus). */
+const ORPHEUS_LANGS = ["en", "de"];
+
+/** `reloadKey` changes whenever settings that add or remove voices change. */
+function useVoices(reloadKey: string) {
   const [voices, setVoices] = useState<VoiceInfo[]>([]);
   useEffect(() => {
     const load = () => void ipc.ttsVoices().then(setVoices);
     load();
     const subs = [on("models://changed", load), on("silma://status", load)];
     return () => subs.forEach((s) => void s.then((u) => u()));
-  }, []);
+  }, [reloadKey]);
   return voices;
+}
+
+function useLmModels() {
+  const [models, setModels] = useState<ModelInfo[]>([]);
+  useEffect(() => {
+    void ipc
+      .lmstudioModels(false)
+      .then((m) => setModels(m.filter((x) => x.kind !== "embedding")))
+      .catch(() => setModels([]));
+  }, []);
+  return models;
 }
 
 export function VoiceSection() {
   const [s, set] = useS();
   const devices = useDevices(s.stt.micOnly);
-  const voices = useVoices();
+  const voices = useVoices(JSON.stringify(s.tts.orpheusModels));
+  const lmModels = useLmModels();
   const gpu = useGpuStatus();
   const [error, setError] = useState<AppErrorPayload | null>(null);
   const [activeLang, setActiveLang] = useState(s.language.entries[0]?.code ?? "en");
@@ -418,6 +434,35 @@ export function VoiceSection() {
           </Row>
         )}
         {entry && !entry.builtIn && <p className="row-hint">{t("settings.voice.unsupportedLanguageHint")}</p>}
+        {entry && ORPHEUS_LANGS.includes(entry.code) && (
+          <Row label={t("settings.voice.orpheus")} hint={t("settings.voice.orpheusHint")} htmlFor="sel-orpheus">
+            <select
+              id="sel-orpheus"
+              className="select"
+              value={s.tts.orpheusModels[entry.code] ?? ""}
+              onChange={(e) =>
+                set((d) => {
+                  if (e.target.value) d.tts.orpheusModels[entry.code] = e.target.value;
+                  else delete d.tts.orpheusModels[entry.code];
+                  // A voice picked from the other engine would no longer apply.
+                  const target = d.language.entries.find((x) => x.code === entry.code);
+                  if (target) target.ttsVoice = "auto";
+                })
+              }
+              style={{ maxWidth: 260 }}
+            >
+              <option value="">{t("settings.voice.orpheusOff")}</option>
+              {[...lmModels]
+                .sort((a, b) => Number(b.id.toLowerCase().includes("orpheus")) - Number(a.id.toLowerCase().includes("orpheus")))
+                .map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.displayName || m.id}
+                  </option>
+                ))}
+              {s.tts.orpheusModels[entry.code] && !lmModels.some((m) => m.id === s.tts.orpheusModels[entry.code]) && <option value={s.tts.orpheusModels[entry.code]}>{s.tts.orpheusModels[entry.code]}</option>}
+            </select>
+          </Row>
+        )}
         {entry && (
           <Row label={t("settings.voice.voiceFor", { language: languageLabel(entry) })} htmlFor="sel-voice">
             <select id="sel-voice" className="select" value={entry.ttsVoice} onChange={(e) => updateEntry(entry.code, { ttsVoice: e.target.value })} disabled={!list.length} style={{ maxWidth: 260 }}>
