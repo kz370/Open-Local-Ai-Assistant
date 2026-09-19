@@ -125,34 +125,21 @@ pub fn list_voices(installed: &[InstalledModel]) -> Vec<VoiceInfo> {
 }
 
 pub const SILMA_VOICE_ID: &str = "silma:0";
-pub const SILMA_EN_VOICE_ID: &str = "silma:en";
 
-/// The SILMA voices (see services::silma). SILMA is bilingual: for Arabic it
-/// ranks above every ONNX voice; for English it is offered but not picked
-/// automatically (it speaks with the Arabic reference speaker's voice).
+/// The SILMA voice (see services::silma). SILMA speaks Arabic only: its
+/// English sounds like the Arabic reference speaker reading English, so it is
+/// not offered for other languages.
 pub fn silma_voices() -> Vec<VoiceInfo> {
-    vec![
-        VoiceInfo {
-            id: SILMA_VOICE_ID.into(),
-            model_id: "silma".into(),
-            name: "SILMA (natural Arabic)".into(),
-            language: "ar".into(),
-            speaker_id: 0,
-            engine: Engine::Silma,
-            quality: 9,
-            gender: String::new(),
-        },
-        VoiceInfo {
-            id: SILMA_EN_VOICE_ID.into(),
-            model_id: "silma".into(),
-            name: "SILMA (English)".into(),
-            language: "en".into(),
-            speaker_id: 0,
-            engine: Engine::Silma,
-            quality: 1,
-            gender: String::new(),
-        },
-    ]
+    vec![VoiceInfo {
+        id: SILMA_VOICE_ID.into(),
+        model_id: "silma".into(),
+        name: "SILMA (natural Arabic)".into(),
+        language: "ar".into(),
+        speaker_id: 0,
+        engine: Engine::Silma,
+        quality: 9,
+        gender: String::new(),
+    }]
 }
 
 /// `preference` is "auto" or a voice id from settings; `gender` is
@@ -197,6 +184,17 @@ mod tests {
             gender: String::new(),
             size_bytes: 0,
         }
+    }
+
+    #[test]
+    fn silma_speaks_arabic_only() {
+        let voices = silma_voices();
+        assert!(voices.iter().all(|v| v.language == "ar"), "SILMA must not be offered for other languages");
+        // English keeps its own voices even when SILMA is installed.
+        let mut all = list_voices(&[installed("kokoro-en-v0_19", Engine::Kokoro, "en")]);
+        all.extend(silma_voices());
+        assert_eq!(select_voice(&all, Lang::En, "auto", "any").unwrap().engine, Engine::Kokoro);
+        assert_eq!(select_voice(&all, Lang::Ar, "auto", "any").unwrap().engine, Engine::Silma);
     }
 
     #[test]

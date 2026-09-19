@@ -539,7 +539,7 @@ impl Silma {
         Ok(())
     }
 
-    /// Speaks `text` (Arabic and/or English) at 24 kHz. Blocking.
+    /// Speaks Arabic `text` at 24 kHz. Blocking.
     pub fn synthesize(&self, text: &str, speed: f32) -> AppResult<(Vec<f32>, u32)> {
         self.start()?;
         {

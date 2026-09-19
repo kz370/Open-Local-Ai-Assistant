@@ -594,7 +594,7 @@
     },
     "silma": {
       "title": "Natural Arabic voice (SILMA)",
-      "intro": "SILMA speaks Arabic far more naturally than the built-in voices and adds the missing vowel marks (tashkeel) by itself. It can also speak English (choose “SILMA (English)” as the English voice); it does not speak German. It runs on PyTorch, so it is a one-time setup; after that the app starts and stops it automatically.",
+      "intro": "SILMA speaks Arabic far more naturally than the built-in voices and adds the missing vowel marks (tashkeel) by itself. It speaks Arabic only; English and German use the built-in voices. It runs on PyTorch, so it is a one-time setup; after that the app starts and stops it automatically.",
       "state": "Status",
       "hardwareHint": "Force SILMA off the GPU even when GPU acceleration is on. Takes effect on the next sentence spoken.",
       "notInstalled": "Not installed",
@@ -624,7 +624,7 @@
       "models": "Models",
       "stt": "Speech recognition",
       "voice": "{{language}} voice",
-      "silma": "SILMA (Arabic/English voice)",
+      "silma": "SILMA (Arabic voice)",
       "chat": "Chat model (LM Studio)",
       "otherLlm": "Also loaded in LM Studio",
       "none": "Not installed",

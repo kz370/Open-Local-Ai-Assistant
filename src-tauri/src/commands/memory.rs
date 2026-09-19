@@ -125,39 +125,42 @@ pub async fn memory_status(state: State<'_, AppState>) -> CmdResult<Vec<MemoryIt
         });
     }
 
-    // LM Studio: the chat model plus anything else it holds in memory.
-    match state.resolver.models(true).await {
-        Ok(models) => {
-            let chat_id = if settings.ai.model_mode == "manual" {
-                settings.ai.model.clone().filter(|m| !m.is_empty())
-            } else {
-                state.resolver.auto_selection().await.ok().flatten().map(|s| s.model_id)
-            };
-            if let Some(id) = &chat_id {
-                let info = models.iter().find(|m| &m.id == id);
-                let key = format!("llm:{id}");
-                items.push(MemoryItem {
-                    state: state_of(&key, info.is_some_and(|m| m.loaded)),
-                    key,
-                    kind: "llm".into(),
-                    role: "chat".into(),
-                    model: info.map(|m| m.display_name.clone()).unwrap_or_else(|| id.clone()),
-                    detail: Some("LM Studio".into()),
-                });
+    // LM Studio: the chat model plus anything else it holds in memory. A hosted
+    // provider keeps no models on this computer, so it has nothing to show here.
+    if settings.ai.provider == "lmstudio" {
+        match state.resolver.models(true).await {
+            Ok(models) => {
+                let chat_id = if settings.ai.model_mode == "manual" {
+                    settings.ai.model.clone().filter(|m| !m.is_empty())
+                } else {
+                    state.resolver.auto_selection().await.ok().flatten().map(|s| s.model_id)
+                };
+                if let Some(id) = &chat_id {
+                    let info = models.iter().find(|m| &m.id == id);
+                    let key = format!("llm:{id}");
+                    items.push(MemoryItem {
+                        state: state_of(&key, info.is_some_and(|m| m.loaded)),
+                        key,
+                        kind: "llm".into(),
+                        role: "chat".into(),
+                        model: info.map(|m| m.display_name.clone()).unwrap_or_else(|| id.clone()),
+                        detail: Some("LM Studio".into()),
+                    });
+                }
+                for m in models.iter().filter(|m| m.loaded && Some(&m.id) != chat_id.as_ref()) {
+                    let key = format!("llm:{}", m.id);
+                    items.push(MemoryItem { state: state_of(&key, true), key, kind: "llm".into(), role: "other".into(), model: m.display_name.clone(), detail: Some("LM Studio".into()) });
+                }
             }
-            for m in models.iter().filter(|m| m.loaded && Some(&m.id) != chat_id.as_ref()) {
-                let key = format!("llm:{}", m.id);
-                items.push(MemoryItem { state: state_of(&key, true), key, kind: "llm".into(), role: "other".into(), model: m.display_name.clone(), detail: Some("LM Studio".into()) });
-            }
+            Err(e) => items.push(MemoryItem {
+                key: "llm".into(),
+                kind: "llm".into(),
+                role: "chat".into(),
+                model: String::new(),
+                state: "failed".into(),
+                detail: Some(e.to_string()),
+            }),
         }
-        Err(e) => items.push(MemoryItem {
-            key: "llm".into(),
-            kind: "llm".into(),
-            role: "chat".into(),
-            model: String::new(),
-            state: "failed".into(),
-            detail: Some(e.to_string()),
-        }),
     }
     Ok(items)
 }
