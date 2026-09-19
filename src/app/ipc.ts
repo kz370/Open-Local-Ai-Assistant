@@ -57,7 +57,7 @@ export const ipc = {
   quit: () => invoke<void>("quit_app"),
 
   // LM Studio
-  lmstudioTest: (url?: string, apiKey?: string) => invoke<ConnectionStatus>("lmstudio_test", { url, apiKey }),
+  lmstudioTest: (url?: string, apiKey?: string, provider?: string) => invoke<ConnectionStatus>("lmstudio_test", { url, apiKey, provider }),
   lmstudioModels: (refresh: boolean) => invoke<ModelInfo[]>("lmstudio_models", { refresh }),
   lmstudioAutoSelection: () => invoke<ModelSelection | null>("lmstudio_auto_selection"),
 

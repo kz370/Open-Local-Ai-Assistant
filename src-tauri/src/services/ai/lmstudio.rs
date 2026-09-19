@@ -1,20 +1,30 @@
-//! LM Studio client over its local HTTP APIs.
+//! LM Studio client over its local HTTP APIs, also used for hosted
+//! OpenAI-compatible providers (OpenRouter, Groq, Gemini, Hugging Face, Cerebras).
 //!
 //! * Chat: OpenAI-compatible `POST {base}/chat/completions` (streaming, tools).
 //! * Discovery: native `GET /api/v1/models` (size, quantization, loaded state,
 //!   capabilities), falling back to `/api/v0/models`, then `{base}/models`.
 //! * Loading: native `POST /api/v1/models/load`.
+//!
+//! For any provider other than `lmstudio` the native endpoints are skipped:
+//! discovery is `{base}/models`, models count as loaded, and load/unload are no-ops.
 
 use super::sse::{DeltaToolCall, SseDecoder, ToolCallAccumulator};
 use super::*;
 use crate::errors::{from_lmstudio_http, AppError, AppResult};
 use futures_util::StreamExt;
 use serde_json::{json, Value};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::RwLock;
 use std::time::{Duration, Instant};
 
 pub struct LmStudioService {
+    /// Local client: never routed through a system proxy.
     client: reqwest::Client,
+    /// Client for hosted providers: honours the system proxy and needs a longer connect timeout.
+    remote_client: reqwest::Client,
+    /// True for LM Studio (native endpoints available), false for hosted providers.
+    native: AtomicBool,
     base_url: RwLock<String>,
     api_key: RwLock<Option<String>>,
     timeout: RwLock<Duration>,
@@ -28,11 +38,31 @@ impl LmStudioService {
             .no_proxy()
             .build()
             .expect("http client");
+        let remote_client = reqwest::Client::builder().connect_timeout(Duration::from_secs(10)).build().expect("http client");
         Self {
             client,
+            remote_client,
+            native: AtomicBool::new(true),
             base_url: RwLock::new(normalize_base(base_url)),
             api_key: RwLock::new(None),
             timeout: RwLock::new(Duration::from_secs(timeout_secs)),
+        }
+    }
+
+    /// Selects LM Studio (native endpoints) or a hosted OpenAI-compatible provider.
+    pub fn set_provider(&self, provider: &str) {
+        self.native.store(provider == "lmstudio", Ordering::Relaxed);
+    }
+
+    fn is_native(&self) -> bool {
+        self.native.load(Ordering::Relaxed)
+    }
+
+    fn http(&self) -> &reqwest::Client {
+        if self.is_native() {
+            &self.client
+        } else {
+            &self.remote_client
         }
     }
 
@@ -76,7 +106,7 @@ impl LmStudioService {
 
     async fn get_json(&self, url: &str) -> AppResult<Value> {
         let resp = self
-            .authed(self.client.get(url))
+            .authed(self.http().get(url))
             .timeout(Duration::from_secs(8))
             .send()
             .await
@@ -88,6 +118,10 @@ impl LmStudioService {
     }
 
     async fn discover(&self) -> AppResult<(Vec<ModelInfo>, &'static str)> {
+        if !self.is_native() {
+            let v = self.get_json(&format!("{}/models", self.base_url())).await?;
+            return Ok((parse_hosted_models(&v), "openai"));
+        }
         let root = self.root();
         let v1_err = match self.get_json(&format!("{root}/api/v1/models")).await {
             Ok(v) if v.get("models").is_some() => return Ok((parse_native_v1(&v), "native-v1")),
@@ -111,7 +145,10 @@ impl LmStudioService {
 impl LmStudioService {
     /// Unloads every loaded instance of `model_id` in LM Studio.
     pub async fn unload_model(&self, model_id: &str) -> AppResult<()> {
-        let v = self.get_json(&format!("{}/api/v1/models", self.root())).await?;
+        if !self.is_native() {
+            return Ok(());
+        }
+        let v =self.get_json(&format!("{}/api/v1/models", self.root())).await?;
         let instances: Vec<String> = v["models"]
             .as_array()
             .into_iter()
@@ -122,7 +159,7 @@ impl LmStudioService {
             .collect();
         for id in instances {
             let resp = self
-                .authed(self.client.post(format!("{}/api/v1/models/unload", self.root())))
+                .authed(self.http().post(format!("{}/api/v1/models/unload", self.root())))
                 .json(&json!({ "instance_id": id }))
                 .timeout(Duration::from_secs(60))
                 .send()
@@ -229,6 +266,39 @@ pub fn parse_openai_models(v: &Value) -> Vec<ModelInfo> {
         .unwrap_or_default()
 }
 
+/// Model list of a hosted OpenAI-compatible provider. These servers keep every
+/// model ready, so all count as loaded. Gemini prefixes ids with `models/`, which
+/// its chat endpoint does not want. OpenRouter adds context length and
+/// capability metadata; the others only return ids.
+pub fn parse_hosted_models(v: &Value) -> Vec<ModelInfo> {
+    let has = |m: &Value, key: &str, want: &str| m[key].as_array().is_some_and(|a| a.iter().any(|x| x.as_str() == Some(want)));
+    v["data"]
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|m| {
+                    let id = m.get("id")?.as_str()?;
+                    let id = id.strip_prefix("models/").unwrap_or(id).to_string();
+                    let lower = id.to_lowercase();
+                    let output_text_only = m["architecture"]["output_modalities"].as_array().is_none_or(|a| a.iter().any(|x| x.as_str() == Some("text")));
+                    let embedding = lower.contains("embed") || lower.contains("whisper") || lower.contains("tts") || lower.contains("guard") || !output_text_only;
+                    Some(ModelInfo {
+                        display_name: m["name"].as_str().unwrap_or(&id).to_string(),
+                        kind: if embedding { "embedding".into() } else { "llm".into() },
+                        max_context_length: as_u32(m.get("context_length").or(m.get("context_window")).or(m.get("inputTokenLimit"))),
+                        loaded: true,
+                        tool_use: has(m, "supported_parameters", "tools"),
+                        vision: has(&m["architecture"], "input_modalities", "image"),
+                        reasoning: has(m, "supported_parameters", "reasoning"),
+                        id,
+                        ..Default::default()
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 #[async_trait]
 impl AiService for LmStudioService {
     async fn test_connection(&self) -> AppResult<ConnectionStatus> {
@@ -248,12 +318,15 @@ impl AiService for LmStudioService {
     }
 
     async fn load_model(&self, model_id: &str, context_length: Option<u32>) -> AppResult<()> {
+        if !self.is_native() {
+            return Ok(());
+        }
         let mut body = json!({ "model": model_id });
         if let Some(ctx) = context_length {
             body["context_length"] = json!(ctx);
         }
         let resp = self
-            .authed(self.client.post(format!("{}/api/v1/models/load", self.root())))
+            .authed(self.http().post(format!("{}/api/v1/models/load", self.root())))
             .json(&body)
             .timeout(Duration::from_secs(600))
             .send()
@@ -288,7 +361,7 @@ impl AiService for LmStudioService {
         }
 
         let send = self
-            .authed(self.client.post(format!("{}/chat/completions", self.base_url())))
+            .authed(self.http().post(format!("{}/chat/completions", self.base_url())))
             .json(&body)
             .timeout(self.timeout())
             .send();
@@ -590,6 +663,22 @@ mod tests {
         });
         let err = svc.chat(req("m", true), token, &mut |_| {}).await.unwrap_err();
         assert_eq!(err.code(), "cancelled");
+    }
+
+    #[test]
+    fn hosted_models_are_loaded_and_ids_are_clean() {
+        let v = json!({"data":[
+            {"id":"models/gemini-2.5-flash"},
+            {"id":"text-embedding-004"},
+            {"id":"openai/gpt-oss-20b","name":"GPT OSS","context_length":131072,"supported_parameters":["tools","reasoning"],"architecture":{"input_modalities":["text","image"],"output_modalities":["text"]}}
+        ]});
+        let m = parse_hosted_models(&v);
+        assert_eq!(m[0].id, "gemini-2.5-flash");
+        assert!(m[0].loaded && m[0].is_chat_model());
+        assert!(!m[1].is_chat_model());
+        assert_eq!(m[2].display_name, "GPT OSS");
+        assert_eq!(m[2].max_context_length, Some(131072));
+        assert!(m[2].tool_use && m[2].reasoning && m[2].vision);
     }
 
     #[test]

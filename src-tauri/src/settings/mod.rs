@@ -10,6 +10,25 @@ use std::sync::{Arc, RwLock};
 
 const KEY: &str = "app_settings";
 pub const DEFAULT_LMSTUDIO_URL: &str = "http://localhost:1234/v1";
+
+/// Supported chat providers: (id, display name, default OpenAI-compatible base URL).
+/// Everything except `lmstudio` is a hosted API that needs an API key.
+pub const PROVIDERS: &[(&str, &str, &str)] = &[
+    ("lmstudio", "LM Studio", DEFAULT_LMSTUDIO_URL),
+    ("openrouter", "OpenRouter", "https://openrouter.ai/api/v1"),
+    ("groq", "Groq", "https://api.groq.com/openai/v1"),
+    ("gemini", "Google Gemini API", "https://generativelanguage.googleapis.com/v1beta/openai"),
+    ("huggingface", "Hugging Face", "https://router.huggingface.co/v1"),
+    ("cerebras", "Cerebras", "https://api.cerebras.ai/v1"),
+];
+
+pub fn provider_name(id: &str) -> &'static str {
+    PROVIDERS.iter().find(|p| p.0 == id).map_or("LM Studio", |p| p.1)
+}
+
+pub fn provider_default_url(id: &str) -> &'static str {
+    PROVIDERS.iter().find(|p| p.0 == id).map_or(DEFAULT_LMSTUDIO_URL, |p| p.2)
+}
 const CURRENT_VERSION: u32 = 4;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -84,16 +103,29 @@ impl Default for GeneralSettings {
     }
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ProviderProfile {
+    pub server_url: String,
+    pub api_key: Option<String>,
+    pub model: Option<String>,
+    /// "auto" | "manual"; empty means "auto".
+    pub model_mode: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", default)]
 pub struct AiSettings {
-    /// "lmstudio" — reserved for future providers; only one exists today.
+    /// One of the ids in [`PROVIDERS`]: "lmstudio" | "openrouter" | "groq" |
+    /// "gemini" | "huggingface" | "cerebras".
     pub provider: String,
     pub server_url: String,
     /// Bearer token sent as `Authorization: Bearer <key>`. LM Studio itself
-    /// ignores it, but other OpenAI-compatible servers behind this same URL
-    /// field (OpenRouter, a hosted vLLM, etc.) may require one.
+    /// ignores it; the hosted providers all require one.
     pub api_key: Option<String>,
+    /// Remembered URL / key / model of the providers that are not currently
+    /// selected, so switching back restores them. Keyed by provider id.
+    pub provider_profiles: std::collections::BTreeMap<String, ProviderProfile>,
     /// "auto" | "manual"
     pub model_mode: String,
     pub model: Option<String>,
@@ -118,6 +150,7 @@ impl Default for AiSettings {
             provider: "lmstudio".into(),
             server_url: DEFAULT_LMSTUDIO_URL.into(),
             api_key: None,
+            provider_profiles: Default::default(),
             model_mode: "auto".into(),
             model: None,
             temperature: 0.7,
@@ -307,11 +340,13 @@ pub struct SearchSettings {
     /// Optional SearXNG instance ("https://searx.example.org"). When set it is
     /// asked first: it answers JSON and never shows a captcha.
     pub searxng_url: String,
+    /// Switch for the SearXNG instance above; off keeps the URL but skips it.
+    pub searxng_enabled: bool,
 }
 
 impl Default for SearchSettings {
     fn default() -> Self {
-        Self { enabled: true, max_results: 5, searxng_url: String::new() }
+        Self { enabled: true, max_results: 5, searxng_url: String::new(), searxng_enabled: true }
     }
 }
 
@@ -465,13 +500,19 @@ impl Settings {
         self.general.font_scale = self.general.font_scale.clamp(0.8, 1.6);
         self.general.window.width = self.general.window.width.clamp(320, 4000);
         self.general.window.height = self.general.window.height.clamp(260, 4000);
-        if self.ai.provider != "lmstudio" {
+        if !PROVIDERS.iter().any(|p| p.0 == self.ai.provider) {
             self.ai.provider = "lmstudio".into();
         }
         self.ai.temperature = self.ai.temperature.clamp(0.0, 2.0);
         self.ai.server_url = self.ai.server_url.trim().trim_end_matches('/').to_string();
         if self.ai.server_url.is_empty() {
-            self.ai.server_url = DEFAULT_LMSTUDIO_URL.into();
+            self.ai.server_url = provider_default_url(&self.ai.provider).into();
+        }
+        self.ai.provider_profiles.retain(|id, _| PROVIDERS.iter().any(|p| p.0 == id));
+        // Hosted providers list hundreds of models, so there is nothing sensible
+        // to auto-pick from: the user always chooses one.
+        if self.ai.provider != "lmstudio" {
+            self.ai.model_mode = "manual".into();
         }
         self.ai.api_key = self.ai.api_key.take().map(|k| k.trim().to_string()).filter(|k| !k.is_empty());
         if !matches!(self.ai.model_mode.as_str(), "auto" | "manual") {
@@ -624,6 +665,20 @@ mod tests {
         assert_eq!(reloaded.ai.server_url, "http://127.0.0.1:4321/v1");
         assert_eq!(reloaded.general.theme, "dark");
         assert_eq!(reloaded.general.window.x, 10);
+    }
+
+    #[test]
+    fn sanitize_keeps_known_providers_and_forces_manual_for_hosted() {
+        let mut s = Settings::default();
+        s.ai.provider = "groq".into();
+        s.ai.server_url = String::new();
+        s.sanitize();
+        assert_eq!(s.ai.provider, "groq");
+        assert_eq!(s.ai.server_url, "https://api.groq.com/openai/v1");
+        assert_eq!(s.ai.model_mode, "manual");
+        s.ai.provider = "nope".into();
+        s.sanitize();
+        assert_eq!(s.ai.provider, "lmstudio");
     }
 
     #[test]
