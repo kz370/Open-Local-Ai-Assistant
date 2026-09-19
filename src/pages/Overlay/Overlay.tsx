@@ -28,6 +28,10 @@ function useOverlayDrag() {
   return {
     onPointerDown: (e: React.PointerEvent) => {
       if (e.button !== 0) return;
+      // Without capture, the browser stops delivering move events to this
+      // element the instant the (async) window move puts the cursor even
+      // slightly outside its bounds — the drag would visually never start.
+      e.currentTarget.setPointerCapture(e.pointerId);
       void getCurrentWindow()
         .outerPosition()
         .then((pos) => {
@@ -37,14 +41,18 @@ function useOverlayDrag() {
     onPointerMove: (e: React.PointerEvent) => {
       const d = drag.current;
       if (!d || (e.buttons & 1) === 0) return;
-      let dx = e.screenX - d.startX;
-      let dy = e.screenY - d.startY;
+      // screenX/screenY are logical (CSS) pixels; PhysicalPosition wants
+      // real screen pixels, so scale by the monitor's DPI factor.
+      const scale = window.devicePixelRatio || 1;
+      let dx = Math.round((e.screenX - d.startX) * scale);
+      let dy = Math.round((e.screenY - d.startY) * scale);
       if (e.shiftKey) dy = 0;
       if (e.altKey) dx = 0;
       d.pending = { x: d.winX + dx, y: d.winY + dy };
       if (d.frame == null) d.frame = requestAnimationFrame(flush);
     },
-    onPointerUp: () => {
+    onPointerUp: (e: React.PointerEvent) => {
+      if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
       drag.current = null;
     },
   };
