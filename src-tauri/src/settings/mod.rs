@@ -316,6 +316,13 @@ pub struct TtsSettings {
     /// Per-voice hardware override ("auto" | "cpu"), keyed by voice/model id.
     /// Absent key = "auto".
     pub voice_hardware: std::collections::BTreeMap<String, String>,
+    /// Speak only once the whole reply is written, instead of sentence by
+    /// sentence. Slower to start, but the voice model and the chat model then
+    /// take turns on the GPU instead of competing.
+    pub speak_after_reply: bool,
+    /// Megabytes of generated speech kept on disk so the same sentence is not
+    /// generated twice (0 = keep nothing).
+    pub cache_mb: u32,
     /// Orpheus voices: language code -> LM Studio model that speaks it.
     /// A language without an entry uses the local voices.
     pub orpheus_models: std::collections::BTreeMap<String, String>,
@@ -333,6 +340,8 @@ impl Default for TtsSettings {
             output_device: None,
             preferred_gender: "any".into(),
             voice_hardware: Default::default(),
+            speak_after_reply: false,
+            cache_mb: 500,
             orpheus_models: Default::default(),
         }
     }
