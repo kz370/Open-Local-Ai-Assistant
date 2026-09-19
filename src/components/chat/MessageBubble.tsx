@@ -12,9 +12,19 @@ import { Markdown } from "./Markdown";
 import { Sources } from "./Sources";
 import { ToolActivity } from "./ToolActivity";
 
-/** Sounds an Orpheus voice performs (`<laugh>` …); hidden from the text. */
-const EXPRESSIVE_TAG = /\s*<(?:laugh|chuckle|sigh|cough|sniffle|groan|yawn|gasp)>/gi;
-const withoutTags = (text: string) => text.replace(EXPRESSIVE_TAG, "");
+/** Sounds an Orpheus voice performs (`<laugh>` …), shown as stage directions. */
+const PERFORMED: Record<string, string> = {
+  laugh: "laughs",
+  chuckle: "chuckles",
+  sigh: "sighs",
+  cough: "coughs",
+  sniffle: "sniffles",
+  groan: "groans",
+  yawn: "yawns",
+  gasp: "gasps",
+};
+const EXPRESSIVE_TAG = new RegExp(`<(${Object.keys(PERFORMED).join("|")})>`, "gi");
+const showTags = (text: string, wrap = "*") => text.replace(EXPRESSIVE_TAG, (_, tag: string) => `${wrap}(${PERFORMED[tag.toLowerCase()]})${wrap}`);
 
 interface Props {
   message: UiMessage;
@@ -77,7 +87,7 @@ export const MessageBubble = memo(function MessageBubble({ message: m, developer
       )}
       {m.content && (
         <div className="bubble" dir={dir} lang={lang}>
-          <Markdown text={withoutTags(m.content)} />
+          <Markdown text={showTags(m.content)} />
         </div>
       )}
       <Sources sources={m.sources} />
@@ -107,7 +117,7 @@ export const MessageBubble = memo(function MessageBubble({ message: m, developer
             aria-label={copied ? t("app.copied") : t("chat.copyMessage")}
             title={copied ? t("app.copied") : t("chat.copyMessage")}
             onClick={() => {
-              void navigator.clipboard.writeText(withoutTags(m.content));
+              void navigator.clipboard.writeText(showTags(m.content, ""));
               setCopied(true);
               setTimeout(() => setCopied(false), 1500);
             }}
