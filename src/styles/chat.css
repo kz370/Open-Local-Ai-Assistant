@@ -885,10 +885,24 @@ html[data-route="chat"] #root {
   min-height: 38px;
   padding: 0 0 0 8px;
 }
-.recording-row .voice-wave {
+.voice-bars {
   flex: 1;
   min-width: 0;
-  height: 28px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  overflow: hidden;
+}
+.voice-bars span {
+  flex: none;
+  width: 3px;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--accent);
+  transform-origin: center;
+  transition: transform 90ms linear;
 }
 .recording-label {
   color: var(--text-muted);

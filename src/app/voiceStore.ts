@@ -5,11 +5,16 @@ import { useSettings } from "./settingsStore";
 import { languageName, t } from "./strings";
 import type { AppErrorPayload, ListenMode, TtsEvent, VoiceEvent } from "./types";
 
+/** Bands per `level` event; matches `audio::SPECTRUM_BANDS` in the backend. */
+export const SPECTRUM_BANDS = 24;
+
 interface VoiceState {
   mode: ListenMode | null;
   phase: "idle" | "listening" | "transcribing";
   level: number;
   levels: number[];
+  /** Latest voice spectrum, low to high pitch (0..1 each). */
+  bands: number[];
   speaking: boolean;
   /// Tag of the audio currently playing (message id for "read aloud").
   speakingTag: string | null;
@@ -55,6 +60,7 @@ export const useVoice = create<VoiceState>((set, get) => ({
   phase: "idle",
   level: 0,
   levels: new Array(BARS).fill(0),
+  bands: [],
   speaking: false,
   speakingTag: null,
   paused: false,
@@ -130,13 +136,13 @@ export const useVoice = create<VoiceState>((set, get) => ({
       switch (ev.type) {
         case "state":
           if (ev.state === "idle") {
-            set((s) => ({ phase: "idle", level: 0, mode: s.handsFree && ev.mode === "handsFree" ? null : s.mode === ev.mode ? null : s.mode, handsFree: ev.mode === "handsFree" ? false : s.handsFree }));
+            set((s) => ({ phase: "idle", level: 0, bands: [], mode: s.handsFree && ev.mode === "handsFree" ? null : s.mode === ev.mode ? null : s.mode, handsFree: ev.mode === "handsFree" ? false : s.handsFree }));
           } else {
             set({ phase: ev.state, mode: ev.mode, handsFree: ev.mode === "handsFree" ? true : get().handsFree, ...(ev.device ? { device: ev.device } : {}) });
           }
           break;
         case "level":
-          set((s) => ({ level: ev.value, levels: [...s.levels.slice(1), ev.value] }));
+          set((s) => ({ level: ev.value, bands: ev.bands, levels: [...s.levels.slice(1), ev.value] }));
           break;
         case "partial":
           set({ partial: ev.text });

@@ -8,7 +8,7 @@ import { errorMessage, t } from "../../app/strings";
 import { useVoice } from "../../app/voiceStore";
 import { textDir } from "../common/controls";
 import { LevelMeter } from "../voice/LevelMeter";
-import { VoiceWave } from "../voice/VoiceWave";
+import { VoiceBars } from "../voice/VoiceBars";
 import { AttachmentList } from "./Attachments";
 import { ModelPicker } from "./ModelPicker";
 
@@ -152,7 +152,7 @@ export const Composer = forwardRef<ComposerHandle, { onVoiceSetup: () => void; a
               <>
                 <span className="rec-dot" aria-hidden />
                 <span className="sr-only">{t("voice.listening")}</span>
-                <VoiceWave level={voice.level} label={t("voice.level")} />
+                <VoiceBars bands={voice.bands} level={voice.level} label={t("voice.level")} />
                 <button className="round-btn mic" aria-label={t("voice.cancel")} title={`${t("voice.cancel")} (Esc)`} onClick={() => void voice.stopPushToTalk(false)}>
                   <X size={16} />
                 </button>
