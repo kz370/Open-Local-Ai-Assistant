@@ -57,9 +57,22 @@ const ACCENTS: Record<string, { light: string[]; dark: string[]; grad: string }>
   slate: { light: ["#334155", "#1e293b", "#e4e8ee", "#1f2937"], dark: ["#94a3b8", "#cbd5e1", "#232a35", "#e2e8f0"], grad: "linear-gradient(145deg, #94a3b8, #475569)" },
 };
 
-function applyAccent(root: HTMLElement, name: string, dark: boolean) {
+const ACCENT_PROPS = ["--accent", "--accent-hover", "--accent-soft", "--accent-soft-text", "--accent-contrast", "--focus", "--brand-gradient", "--user-bubble", "--user-bubble-text", "--user-bubble-shadow", "--glow-1", "--glow-strong", "--focus-ring"];
+
+function applyAccent(root: HTMLElement, name: string, dark: boolean, highContrast: boolean) {
+  // High contrast has its own fixed palette in tokens.css; inline values would override it.
+  if (highContrast) {
+    ACCENT_PROPS.forEach((p) => root.style.removeProperty(p));
+    return;
+  }
   const accent = ACCENTS[name] ?? ACCENTS.teal;
   const [main, hover, soft, softText] = dark ? accent.dark : accent.light;
+  // The user bubble carries white text, so it needs a deep fill in both themes:
+  // the light palette's darker shades, or the dark palette's bright accent pushed toward black.
+  const [lightMain, lightHover] = accent.light;
+  const bubble = dark
+    ? `linear-gradient(145deg, color-mix(in srgb, ${main} 55%, #000), color-mix(in srgb, ${main} 40%, #000))`
+    : `linear-gradient(145deg, ${lightMain}, ${lightHover})`;
   root.style.setProperty("--accent", main);
   root.style.setProperty("--accent-hover", hover);
   root.style.setProperty("--accent-soft", soft);
@@ -67,7 +80,9 @@ function applyAccent(root: HTMLElement, name: string, dark: boolean) {
   root.style.setProperty("--accent-contrast", dark ? "#05201c" : "#ffffff");
   root.style.setProperty("--focus", dark ? hover : main);
   root.style.setProperty("--brand-gradient", accent.grad);
-  root.style.setProperty("--user-bubble", accent.grad);
+  root.style.setProperty("--user-bubble", bubble);
+  root.style.setProperty("--user-bubble-text", "#ffffff");
+  root.style.setProperty("--user-bubble-shadow", dark ? "rgba(0, 0, 0, 0.25)" : `color-mix(in srgb, ${main} 22%, transparent)`);
   root.style.setProperty("--glow-1", `color-mix(in srgb, ${main} ${dark ? "12%" : "16%"}, transparent)`);
   root.style.setProperty("--glow-strong", `color-mix(in srgb, ${main} 28%, transparent)`);
   root.style.setProperty("--focus-ring", `color-mix(in srgb, ${main} 16%, transparent)`);
@@ -80,12 +95,12 @@ export function applyAppearance(s: Settings) {
   root.dataset.theme = resolve();
   root.dataset.contrast = s.general.highContrast ? "high" : "normal";
   root.style.setProperty("--font-scale", String(s.general.fontScale || 1));
-  applyAccent(root, s.general.accent, resolve() === "dark");
+  applyAccent(root, s.general.accent, resolve() === "dark", s.general.highContrast);
   if (mq) {
     if (mediaListener) mq.removeEventListener?.("change", mediaListener);
     mediaListener = () => {
       root.dataset.theme = resolve();
-      applyAccent(root, s.general.accent, resolve() === "dark");
+      applyAccent(root, s.general.accent, resolve() === "dark", s.general.highContrast);
     };
     mq.addEventListener?.("change", mediaListener);
   }

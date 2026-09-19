@@ -31,6 +31,15 @@ export interface UiMessage {
   createdAt: string;
 }
 
+type SendOpts = { spokenLanguage?: string | null; voice?: boolean };
+
+export interface QueuedMessage {
+  id: string;
+  text: string;
+  attachments: Attachment[];
+  opts?: SendOpts;
+}
+
 interface ChatState {
   conversationId: string | null;
   messages: UiMessage[];
@@ -40,6 +49,8 @@ interface ChatState {
   attachments: Attachment[];
   /** Files the backend refused, shown once above the composer. */
   attachmentErrors: string[];
+  /** Messages typed while a reply is streaming, sent in order once it finishes. */
+  queue: QueuedMessage[];
   confirmation: UiToolActivity | null;
   /** Set when the last turn failed because LM Studio is unreachable. */
   connectionError: AppErrorPayload | null;
@@ -49,7 +60,8 @@ interface ChatState {
   removeAttachment: (id: string) => void;
   clearAttachments: () => void;
   dismissAttachmentErrors: () => void;
-  send: (text: string, opts?: { spokenLanguage?: string | null; voice?: boolean }) => Promise<void>;
+  send: (text: string, opts?: SendOpts) => Promise<void>;
+  removeQueued: (id: string) => void;
   retryLast: () => Promise<void>;
   stop: () => void;
   newConversation: () => void;
@@ -95,6 +107,56 @@ export const useChat = create<ChatState>((set, get) => {
     set((s) => ({ messages: s.messages.map((m) => (m.id === PENDING_ID ? fn(m) : m)) }));
   };
 
+  const startTurn = async (text: string, attachments: Attachment[], opts?: SendOpts) => {
+    const turnId = newId();
+    const now = new Date().toISOString();
+    set((s) => ({
+      turnId,
+      confirmation: null,
+      connectionError: null,
+      voiceNotice: null,
+      messages: [
+        ...s.messages.filter((m) => m.id !== PENDING_ID),
+        { id: `local-${turnId}`, role: "user", content: text, attachments, language: opts?.spokenLanguage ?? null, reasoning: "", sources: [], tools: [], streaming: false, createdAt: now },
+        { id: PENDING_ID, role: "assistant", content: "", attachments: [], language: null, reasoning: "", sources: [], tools: [], streaming: true, createdAt: now },
+      ],
+    }));
+    try {
+      await ipc.chatSend(
+        {
+          turnId,
+          conversationId: get().conversationId,
+          text,
+          spokenLanguage: opts?.spokenLanguage ?? null,
+          voice: !!opts?.voice,
+          attachmentIds: attachments.map((a) => a.id),
+        },
+        (ev) => get().handleEvent(ev),
+      );
+    } catch (e) {
+      get().handleEvent({ type: "error", turnId, ...toAppError(e), partialMessage: null });
+    }
+  };
+
+  /** Puts queued messages back into the composer instead of sending them. */
+  const restoreQueue = () => {
+    const queue = get().queue;
+    if (!queue.length) return;
+    set((s) => ({
+      queue: [],
+      draft: [...queue.map((q) => q.text), s.draft].filter(Boolean).join("\n\n"),
+      attachments: [...queue.flatMap((q) => q.attachments), ...s.attachments],
+    }));
+  };
+
+  /** Starts the next queued message, if any. */
+  const sendNextQueued = () => {
+    const [next, ...rest] = get().queue;
+    if (!next) return;
+    set({ queue: rest });
+    void startTurn(next.text, next.attachments, next.opts);
+  };
+
   return {
     conversationId: null,
     messages: [],
@@ -102,6 +164,7 @@ export const useChat = create<ChatState>((set, get) => {
     draft: "",
     attachments: [],
     attachmentErrors: [],
+    queue: [],
     confirmation: null,
     connectionError: null,
     voiceNotice: null,
@@ -129,38 +192,23 @@ export const useChat = create<ChatState>((set, get) => {
       const trimmed = text.trim();
       const attachments = get().attachments;
       if (!trimmed && attachments.length === 0) return;
-      if (get().turnId) get().stop();
-      const turnId = newId();
-      const now = new Date().toISOString();
-      set((s) => ({
-        turnId,
-        draft: "",
-        attachments: [],
-        attachmentErrors: [],
-        confirmation: null,
-        connectionError: null,
-        voiceNotice: null,
-        messages: [
-          ...s.messages.filter((m) => m.id !== PENDING_ID),
-          { id: `local-${turnId}`, role: "user", content: trimmed, attachments, language: opts?.spokenLanguage ?? null, reasoning: "", sources: [], tools: [], streaming: false, createdAt: now },
-          { id: PENDING_ID, role: "assistant", content: "", attachments: [], language: null, reasoning: "", sources: [], tools: [], streaming: true, createdAt: now },
-        ],
-      }));
-      try {
-        await ipc.chatSend(
-          {
-            turnId,
-            conversationId: get().conversationId,
-            text: trimmed,
-            spokenLanguage: opts?.spokenLanguage ?? null,
-            voice: !!opts?.voice,
-            attachmentIds: attachments.map((a) => a.id),
-          },
-          (ev) => get().handleEvent(ev),
-        );
-      } catch (e) {
-        get().handleEvent({ type: "error", turnId, ...toAppError(e), partialMessage: null });
+      if (get().turnId) {
+        // Voice barges in on the current reply; typed messages wait their turn.
+        if (!opts?.voice) {
+          set((s) => ({ queue: [...s.queue, { id: newId(), text: trimmed, attachments, opts }], draft: "", attachments: [], attachmentErrors: [] }));
+          return;
+        }
       }
+      set({ draft: "", attachments: [], attachmentErrors: [] });
+      // Stopping after clearing the composer lets queued messages land back in it.
+      if (get().turnId) get().stop();
+      await startTurn(trimmed, attachments, opts);
+    },
+
+    removeQueued: (id) => {
+      const item = get().queue.find((q) => q.id === id);
+      item?.attachments.forEach((a) => void ipc.attachRemove(a.id).catch(() => undefined));
+      set((s) => ({ queue: s.queue.filter((q) => q.id !== id) }));
     },
 
     retryLast: async () => {
@@ -177,6 +225,7 @@ export const useChat = create<ChatState>((set, get) => {
       const id = get().turnId;
       if (id) void ipc.chatStop(id);
       void ipc.ttsStop();
+      restoreQueue();
     },
 
     newConversation: () => {
@@ -254,6 +303,7 @@ export const useChat = create<ChatState>((set, get) => {
               return { ...done, tools: m.tools.length ? m.tools : done.tools, model: m.model };
             }),
           }));
+          sendNextQueued();
           break;
         case "error": {
           if (get().turnId !== ev.turnId) return;
@@ -273,6 +323,8 @@ export const useChat = create<ChatState>((set, get) => {
               return [{ ...m, id: `failed-${ev.turnId}`, streaming: false, error: cancelled ? undefined : err }];
             }),
           }));
+          // A failed turn would likely fail the queued ones too; hand them back.
+          restoreQueue();
           break;
         }
       }
