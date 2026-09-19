@@ -29,7 +29,7 @@ export function GeneralSection() {
         <Row label={t("settings.general.alwaysOnTop")} htmlFor="sw-top">
           <Switch id="sw-top" label={t("settings.general.alwaysOnTop")} checked={g.alwaysOnTop} onChange={(v) => set((d) => void (d.general.alwaysOnTop = v))} />
         </Row>
-        <Row label={t("settings.general.windowPosition")} htmlFor="sel-pos">
+        <Row label={t("settings.general.windowPosition")} hint={t("settings.general.windowPositionHint")} htmlFor="sel-pos">
           <select id="sel-pos" className="select" value={g.windowPosition} onChange={(e) => set((d) => void (d.general.windowPosition = e.target.value as Settings["general"]["windowPosition"]))}>
             {(["bottom-right", "bottom-left", "center", "custom"] as const).map((p) => (
               <option key={p} value={p}>

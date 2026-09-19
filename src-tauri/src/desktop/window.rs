@@ -115,17 +115,20 @@ fn on_any_monitor(window: &WebviewWindow, x: i32, y: i32) -> bool {
         .unwrap_or(false)
 }
 
+/// Top-left the window should sit at for `preset` (or the saved custom spot).
+fn position_for(window: &WebviewWindow, preset: &str, custom: &WindowGeometry, size: PhysicalSize<u32>) -> Option<(i32, i32)> {
+    if preset == "custom" && on_any_monitor(window, custom.x, custom.y) {
+        return Some((custom.x, custom.y));
+    }
+    let monitor = window.current_monitor().ok().flatten().or_else(|| window.primary_monitor().ok().flatten())?;
+    let area = monitor.work_area();
+    Some(preset_position(preset, (area.position.x, area.position.y), (area.size.width, area.size.height), (size.width, size.height)))
+}
+
 pub fn apply_position(window: &WebviewWindow, preset: &str, custom: &WindowGeometry) {
     suppress_persistence();
     let Ok(size) = window.outer_size() else { return };
-    if preset == "custom" && on_any_monitor(window, custom.x, custom.y) {
-        let _ = window.set_position(PhysicalPosition::new(custom.x, custom.y));
-        return;
-    }
-    let monitor = window.current_monitor().ok().flatten().or_else(|| window.primary_monitor().ok().flatten());
-    if let Some(m) = monitor {
-        let area = m.work_area();
-        let (x, y) = preset_position(preset, (area.position.x, area.position.y), (area.size.width, area.size.height), (size.width, size.height));
+    if let Some((x, y)) = position_for(window, preset, custom, size) {
         let _ = window.set_position(PhysicalPosition::new(x, y));
     }
 }
@@ -266,6 +269,8 @@ pub fn show_main(app: &AppHandle, focus_input: bool) {
         });
     let mut target: Option<(i32, i32, u32, u32)> = None;
     if was_hidden && s.window_position != "custom" {
+        // A preset position is locked: the window always reopens exactly there
+        // (only "custom" follows drags, see `on_main_window_event`).
         // Heal collapsed size from previous shrink (never persist tiny).
         let size = chat_target_size(&win, &app.state::<AppState>().settings.get());
         if let Ok(cur) = win.outer_size() {
@@ -274,21 +279,10 @@ pub fn show_main(app: &AppHandle, focus_input: bool) {
                 let _ = win.set_size(size);
             }
         }
-        if let Some((bx, by, bw, bh)) = bubble_rect {
-            if let Some(bubble) = app.get_webview_window(BUBBLE) {
-                if let Ok(Some(m)) = bubble.current_monitor() {
-                    let area = m.work_area();
-                    let desired = (bx + bw as i32 - size.width as i32, by + bh as i32 - size.height as i32);
-                    let (x, y) = clamp_into((area.position.x, area.position.y), (area.size.width, area.size.height), desired, (size.width, size.height));
-                    if x <= area.position.x + 4 {
-                        origin = "bottom-left".to_string();
-                    } else if y <= area.position.y + 4 {
-                        origin = "top-right".to_string();
-                    }
-                    target = Some((x, y, size.width, size.height));
-                }
-            }
+        if s.window_position == "bottom-left" {
+            origin = "bottom-left".to_string();
         }
+        target = position_for(&win, &s.window_position, &s.window, size).map(|(x, y)| (x, y, size.width, size.height));
     }
     if win.is_minimized().unwrap_or(false) {
         let _ = win.unminimize();
@@ -406,6 +400,15 @@ pub fn on_main_window_event(app: &AppHandle, event: &tauri::WindowEvent) {
                 return;
             }
             let state = app.state::<AppState>();
+            let g = state.settings.get().general;
+            if g.window_position != "custom" {
+                // A preset position is locked; only "custom" follows drags. Anything
+                // that still moves it (Win+arrow, a stray drag) is undone.
+                if let Some(win) = main_window(app) {
+                    apply_position(&win, &g.window_position, &g.window);
+                }
+                return;
+            }
             let (x, y) = (pos.x, pos.y);
             let _ = state.settings.update(|s| {
                 s.general.window.x = x;

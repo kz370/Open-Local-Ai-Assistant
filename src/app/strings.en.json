@@ -192,6 +192,7 @@
       "preloadModelsHint": "Speech recognition, voices, SILMA and the LM Studio chat model load in the background, so the first answer is instant. Uses memory while idle.",
       "alwaysOnTop": "Always on top",
       "windowPosition": "Window position",
+      "windowPositionHint": "Bottom-right, bottom-left and center lock the chat window in place. Choose Custom to drag it anywhere; it remembers where you leave it.",
       "positions": {
         "bottom-right": "Bottom-right",
         "bottom-left": "Bottom-left",
