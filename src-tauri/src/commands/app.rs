@@ -1,6 +1,6 @@
 use super::CmdResult;
 use crate::capabilities::CapabilityReport;
-use crate::desktop::{icon, shortcuts, window};
+use crate::desktop::{autostart, icon, shortcuts, window};
 use crate::errors::AppError;
 use crate::services::ai::model_selector::ModelSelection;
 use crate::services::ai::{AiService, ConnectionStatus, ModelInfo};
@@ -9,7 +9,6 @@ use crate::settings::Settings;
 use crate::state::{AppPaths, AppState};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
-use tauri_plugin_autostart::ManagerExt;
 
 #[tauri::command]
 pub fn get_settings(state: State<'_, AppState>) -> Settings {
@@ -85,9 +84,7 @@ pub async fn save_settings(app: AppHandle, state: State<'_, AppState>, settings:
         shortcuts::register_all(&app);
     }
     if g_before.start_with_os != g.start_with_os {
-        let al = app.autolaunch();
-        let res = if g.start_with_os { al.enable() } else { al.disable() };
-        if let Err(e) = res {
+        if let Err(e) = autostart::set_enabled(&app, g.start_with_os) {
             tracing::warn!(error = %e, "autostart change failed");
         }
     }
