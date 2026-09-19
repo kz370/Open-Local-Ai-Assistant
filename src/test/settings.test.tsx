@@ -60,7 +60,7 @@ const SETTINGS: Settings = {
   tts: { speakResponses: false, speed: 1, volume: 1, outputDevice: null, preferredGender: "any", voiceHardware: {} },
   dictation: { enabled: true, shortcut: "CommandOrControl+Alt+Space", mode: "hold", correctionEnabled: false, correctionModel: null, insertMethod: "type", addTrailingSpace: true, overlayX: null, overlayY: null },
   silma: { hardware: "auto" },
-  search: { enabled: true, maxResults: 5, searxngUrl: "", searxngEnabled: true, searxngSource: "local", searxngPublicUrl: "" },
+  search: { enabled: true, maxResults: 5, searxngUrl: "", searxngEnabled: true, searxngSource: "local", searxngPublicUrl: "", primary: "searxng" },
   lastConversationId: null,
   version: 2,
 };
@@ -121,7 +121,7 @@ function mockBackend() {
   });
 }
 
-const SECTIONS = ["general", "ai", "speech", "voice", "language", "dictation", "mcp", "privacy", "appearance", "shortcuts", "diagnostics"];
+const SECTIONS = ["general", "ai", "speech", "voice", "language", "dictation", "search", "mcp", "privacy", "appearance", "shortcuts", "diagnostics"];
 
 describe("settings dashboard", () => {
   beforeEach(async () => {

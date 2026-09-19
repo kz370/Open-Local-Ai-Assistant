@@ -228,6 +228,12 @@ pub fn window_minimize(app: AppHandle) {
     window::minimize_to_bubble(&app);
 }
 
+/// Maximizes or restores the chat window; returns whether it is maximized.
+#[tauri::command]
+pub fn window_toggle_maximize(app: AppHandle) -> bool {
+    window::toggle_maximize(&app)
+}
+
 #[tauri::command]
 pub fn window_show_main(app: AppHandle) {
     window::show_main(&app, true);

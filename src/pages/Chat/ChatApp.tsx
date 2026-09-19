@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { History, Minus, Settings2, SquarePen, Upload, X } from "lucide-react";
+import { History, Maximize2, Minimize2, Minus, Pin, PinOff, Settings2, SquarePen, Upload, X } from "lucide-react";
 import { attachPaths } from "../../app/attach";
 import { useChat } from "../../app/chatStore";
 import { ipc, on } from "../../app/ipc";
@@ -94,11 +94,27 @@ export function ChatApp() {
   // starts a window drag from a document-level mousedown on any
   // [data-tauri-drag-region]; a window capture listener runs first, so
   // stopping the event there keeps the window where it is.
+  // Tauri's own double-click maximize is blocked too: it keeps the width cap
+  // and breaks in locked mode, so the header double click (and the button)
+  // go through toggleMaximize instead.
   const locked = (settings?.general.windowPosition ?? "custom") !== "custom";
+  const pinned = settings?.general.alwaysOnTop ?? false;
+  const updateSettings = useSettings((s) => s.update);
+  const [maximized, setMaximized] = useState(false);
+  const toggleMaximize = useCallback(() => {
+    void ipc.toggleMaximize().then(setMaximized);
+  }, []);
   useEffect(() => {
-    if (!locked) return;
+    const win = getCurrentWindow();
+    const sync = () => void win.isMaximized().then(setMaximized, () => undefined);
+    sync();
+    const sub = win.onResized(sync);
+    return () => void sub.then((u) => u());
+  }, []);
+  useEffect(() => {
     const block = (e: MouseEvent) => {
-      if (e.target instanceof Element && e.target.hasAttribute("data-tauri-drag-region")) e.stopPropagation();
+      if (!(e.target instanceof Element && e.target.hasAttribute("data-tauri-drag-region"))) return;
+      if (locked || e.detail >= 2) e.stopPropagation();
     };
     window.addEventListener("mousedown", block, true);
     return () => window.removeEventListener("mousedown", block, true);
@@ -245,7 +261,7 @@ export function ChatApp() {
     >
       <div className="morph-content">
       <header className="header">
-        <div className="header-drag" data-tauri-drag-region>
+        <div className="header-drag" data-tauri-drag-region onDoubleClick={compact ? undefined : toggleMaximize}>
           <BrandMark size={30} />
           <div className="header-titles" data-tauri-drag-region>
             <span className="header-title" data-tauri-drag-region>
@@ -276,6 +292,20 @@ export function ChatApp() {
             <Settings2 size={16} />
           </button>
           <span className="header-sep" aria-hidden />
+          <button
+            className={`icon-btn${pinned ? " active" : ""}`}
+            aria-label={t("app.pin")}
+            aria-pressed={pinned}
+            title={pinned ? t("app.unpin") : t("app.pin")}
+            onClick={() => void updateSettings((d) => void (d.general.alwaysOnTop = !pinned))}
+          >
+            {pinned ? <Pin size={15} /> : <PinOff size={15} />}
+          </button>
+          {!compact && (
+            <button className="icon-btn" aria-label={maximized ? t("app.restore") : t("app.maximize")} title={maximized ? t("app.restore") : t("app.maximize")} onClick={toggleMaximize}>
+              {maximized ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+            </button>
+          )}
           <button className="icon-btn" aria-label={t("app.minimize")} title={t("app.minimize")} onClick={() => void ipc.minimizeWindow()}>
             <Minus size={16} />
           </button>
