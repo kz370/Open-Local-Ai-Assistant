@@ -71,7 +71,6 @@ fn init_state(app: &AppHandle) -> Result<AppState, Box<dyn std::error::Error>> {
     ));
     silma.set_force_cpu(s.silma.hardware == "cpu");
     tts.set_silma(silma.clone());
-    tts.set_orpheus(Arc::new(services::tts::orpheus::Orpheus::new(lmstudio.clone(), models.clone(), paths.data_dir.join("voice-cache"))));
 
     let handle = app.clone();
     let tts_probe = tts.clone();
@@ -418,8 +417,6 @@ pub fn run() {
             commands::voice::tts_set_paused,
             commands::voice::tts_state,
             commands::voice::tts_replay_last,
-            commands::voice::tts_cache_info,
-            commands::voice::tts_cache_clear,
             commands::voice::models_catalog,
             commands::voice::models_installed,
             commands::voice::models_incompatible,

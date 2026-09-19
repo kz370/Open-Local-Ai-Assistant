@@ -93,12 +93,8 @@ export interface Settings {
     preferredGender: "any" | "female" | "male";
     /** Per-voice hardware override ("auto" | "cpu"), keyed by voice/model id. */
     voiceHardware: Record<string, string>;
-    /** Megabytes of generated speech kept on disk (0 = keep nothing). */
-    cacheMb: number;
     /** Speak only once the whole reply is written. */
     speakAfterReply: boolean;
-    /** Orpheus voices: language code -> LM Studio model that speaks it. */
-    orpheusModels: Record<string, string>;
   };
   dictation: {
     enabled: boolean;
