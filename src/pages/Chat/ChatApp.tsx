@@ -82,6 +82,20 @@ export function ChatApp() {
     if (connectionError) setLm("unavailable");
   }, [connectionError]);
 
+  // A preset window position is locked; only "custom" can be dragged. Tauri
+  // starts a window drag from a document-level mousedown on any
+  // [data-tauri-drag-region]; a window capture listener runs first, so
+  // stopping the event there keeps the window where it is.
+  const locked = (settings?.general.windowPosition ?? "custom") !== "custom";
+  useEffect(() => {
+    if (!locked) return;
+    const block = (e: MouseEvent) => {
+      if (e.target instanceof Element && e.target.hasAttribute("data-tauri-drag-region")) e.stopPropagation();
+    };
+    window.addEventListener("mousedown", block, true);
+    return () => window.removeEventListener("mousedown", block, true);
+  }, [locked]);
+
   useEffect(() => {
     // Self-heal: missed window-shown (first mount race) leaves veil stuck.
     getCurrentWindow()

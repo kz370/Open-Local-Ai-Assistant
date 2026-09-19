@@ -67,9 +67,17 @@ export function SpeechTicker({ sentence, paused }: { sentence: SpokenSentence; p
     const view = viewRef.current;
     const line = lineRef.current;
     if (!view || !line) return;
+    // Screen rects rather than offsetLeft, so the math is the same for
+    // right-to-left (Arabic) lines, which overflow the box to the left. The
+    // line's transform is cleared first so it does not skew the measurement.
+    line.style.transform = "none";
+    const box = view.getBoundingClientRect();
+    const middle = box.left + box.width / 2;
     const spans = Array.from(line.children) as HTMLElement[];
-    const middle = view.clientWidth / 2;
-    shiftsRef.current = spans.map((s) => middle - (s.offsetLeft + s.offsetWidth / 2));
+    shiftsRef.current = spans.map((s) => {
+      const r = s.getBoundingClientRect();
+      return middle - (r.left + r.width / 2);
+    });
     line.style.transform = `translate3d(${shiftsRef.current[0] ?? 0}px, 0, 0)`;
   }, [words]);
 
@@ -102,8 +110,9 @@ export function SpeechTicker({ sentence, paused }: { sentence: SpokenSentence; p
     return () => cancelAnimationFrame(frameRef.current);
   }, [paused, words, sentence.startedAt, sentence.durationMs]);
 
+  const dir = textDir(sentence.text);
   return (
-    <div className="ticker" ref={viewRef} dir={textDir(sentence.text)} aria-live="off">
+    <div className="ticker" ref={viewRef} dir={dir} lang={dir === "rtl" ? "ar" : undefined} aria-live="off">
       <p className="ticker-line" ref={lineRef}>
         {words.map((w, i) => (
           <span key={`${i}-${w.text}`} className={`ticker-word${i === index ? " on" : i < index ? " done" : ""}`}>

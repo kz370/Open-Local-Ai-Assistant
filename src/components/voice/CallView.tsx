@@ -57,7 +57,7 @@ export function CallView() {
       {voice.spoken && state === "speaking" ? (
         <SpeechTicker sentence={voice.spoken} paused={voice.paused} />
       ) : (
-        <div className="call-caption" dir={caption ? textDir(caption) : "auto"}>
+        <div className="call-caption" dir={caption ? textDir(caption) : "auto"} lang={caption && textDir(caption) === "rtl" ? "ar" : undefined}>
           {caption || t("call.saySomething")}
         </div>
       )}
