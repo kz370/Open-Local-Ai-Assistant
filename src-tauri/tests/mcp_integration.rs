@@ -58,9 +58,19 @@ async fn discovery_invocation_permissions() {
     let fail = tools.iter().find(|t| t.tool_name == "fail").unwrap();
     assert!(mgr.call_tool(fail, serde_json::json!({})).await.unwrap().is_error);
 
-    // Users cannot grant "allow" to sensitive tools.
+    // Safe mode (default) caps sensitive tools at "ask"; turning it off lets the stored "allow" through.
     assert_eq!(mgr.set_permission(&cfg.id, "write_file", Permission::Allow).await.unwrap(), Permission::Ask);
     assert_eq!(mgr.set_permission(&cfg.id, "run_command", Permission::Allow).await.unwrap(), Permission::Ask);
+    mgr.set_safe_mode(false);
+    let status = mgr.statuses().await.unwrap().into_iter().find(|s| s.config.id == cfg.id).unwrap();
+    let perm = |n: &str| status.tools.iter().find(|t| t.name == n).unwrap().permission;
+    assert_eq!(perm("write_file"), Permission::Allow);
+    assert_eq!(perm("run_command"), Permission::Allow);
+    // Bulk reset returns every tool to its default.
+    mgr.set_all_permissions(&cfg.id, None).await.unwrap();
+    let status = mgr.statuses().await.unwrap().into_iter().find(|s| s.config.id == cfg.id).unwrap();
+    assert!(status.tools.iter().all(|t| t.permission == t.default_permission));
+    mgr.set_safe_mode(true);
     mgr.set_permission(&cfg.id, "web_search", Permission::Deny).await.unwrap();
     assert!(mgr.available_tools().await.iter().all(|t| t.tool_name != "web_search"));
     assert!(mgr.call_tool(&search, serde_json::json!({"query": "x"})).await.is_err());

@@ -1,14 +1,22 @@
 //! Separates in-band `<think>…</think>` reasoning from visible content in a
-//! token stream (some models emit reasoning inside `content`).
+//! token stream (some models emit reasoning inside `content`). Also drops
+//! `<tool_call>…</tool_call>` blocks a model writes as plain text when the
+//! server did not parse them into real tool calls.
 
 #[derive(Default)]
 pub struct ThinkFilter {
-    in_think: bool,
+    /// Index into `SPANS` of the span currently open.
+    open: Option<usize>,
     pending: String,
 }
 
-const OPEN: &str = "<think>";
-const CLOSE: &str = "</think>";
+#[derive(Clone, Copy, PartialEq)]
+enum Sink {
+    Reasoning,
+    Drop,
+}
+
+const SPANS: &[(&str, &str, Sink)] = &[("<think>", "</think>", Sink::Reasoning), ("<tool_call>", "</tool_call>", Sink::Drop)];
 
 impl ThinkFilter {
     /// Returns (visible, reasoning) text for this chunk.
@@ -17,27 +25,29 @@ impl ThinkFilter {
         let mut visible = String::new();
         let mut reasoning = String::new();
         loop {
-            let tag = if self.in_think { CLOSE } else { OPEN };
-            if let Some(pos) = self.pending.find(tag) {
+            let found = match self.open {
+                Some(i) => self.pending.find(SPANS[i].1).map(|pos| (pos, SPANS[i].1.len(), None)),
+                None => SPANS
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(i, s)| self.pending.find(s.0).map(|pos| (pos, s.0.len(), Some(i))))
+                    .min_by_key(|x| x.0),
+            };
+            if let Some((pos, tag_len, next)) = found {
                 let before: String = self.pending.drain(..pos).collect();
-                self.pending.drain(..tag.len());
-                if self.in_think {
-                    reasoning.push_str(&before);
-                } else {
-                    visible.push_str(&before);
-                }
-                self.in_think = !self.in_think;
+                self.pending.drain(..tag_len);
+                self.route(before, &mut visible, &mut reasoning);
+                self.open = next;
                 continue;
             }
             // Keep a possible partial tag at the end for the next chunk.
-            let keep = partial_suffix_len(&self.pending, tag);
+            let keep = match self.open {
+                Some(i) => partial_suffix_len(&self.pending, SPANS[i].1),
+                None => SPANS.iter().map(|s| partial_suffix_len(&self.pending, s.0)).max().unwrap_or(0),
+            };
             let emit_len = self.pending.len() - keep;
             let out: String = self.pending.drain(..emit_len).collect();
-            if self.in_think {
-                reasoning.push_str(&out);
-            } else {
-                visible.push_str(&out);
-            }
+            self.route(out, &mut visible, &mut reasoning);
             break;
         }
         (visible, reasoning)
@@ -45,10 +55,16 @@ impl ThinkFilter {
 
     pub fn finish(&mut self) -> (String, String) {
         let rest = std::mem::take(&mut self.pending);
-        if self.in_think {
-            (String::new(), rest)
-        } else {
-            (rest, String::new())
+        let (mut visible, mut reasoning) = (String::new(), String::new());
+        self.route(rest, &mut visible, &mut reasoning);
+        (visible, reasoning)
+    }
+
+    fn route(&self, text: String, visible: &mut String, reasoning: &mut String) {
+        match self.open.map(|i| SPANS[i].2) {
+            None => visible.push_str(&text),
+            Some(Sink::Reasoning) => reasoning.push_str(&text),
+            Some(Sink::Drop) => {}
         }
     }
 }
@@ -86,5 +102,16 @@ mod tests {
         let mut f = ThinkFilter::default();
         assert_eq!(f.push("مرحبا <").0, "مرحبا ");
         assert_eq!(f.push("3").0, "<3");
+    }
+
+    #[test]
+    fn drops_leaked_tool_calls() {
+        let mut f = ThinkFilter::default();
+        let mut vis = String::new();
+        for c in ["Opening it. <tool_", "call> <function=run> <parameter=command> x", " </tool_call> Done", " <tool_call> unclosed"] {
+            vis.push_str(&f.push(c).0);
+        }
+        vis.push_str(&f.finish().0);
+        assert_eq!(vis, "Opening it.  Done ");
     }
 }

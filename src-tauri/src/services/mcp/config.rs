@@ -167,6 +167,11 @@ impl Db {
         )?;
         Ok(())
     }
+
+    pub fn clear_tool_permissions(&self, server_id: &str) -> AppResult<()> {
+        self.conn().execute("DELETE FROM mcp_tool_permissions WHERE server_id = ?1", [server_id])?;
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
