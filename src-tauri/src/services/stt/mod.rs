@@ -164,22 +164,71 @@ impl SttService {
     }
 }
 
-/// Removes recognizer artifacts: bracketed non-speech tags and the common
-/// hallucinations models produce on silence.
+/// Removes recognizer artifacts: anything inside (), [], {} or <> (sound
+/// captions such as "(crickets chirping)" or "[BLANK_AUDIO]"), music notes, and
+/// the common hallucinations models produce on silence.
 pub fn clean_transcript(text: &str) -> String {
-    let mut t = text.trim().to_string();
-    for tag in ["[BLANK_AUDIO]", "[MUSIC]", "(music)", "[Music]", "[silence]", "(silence)", "[NOISE]", "<|nospeech|>"] {
-        t = t.replace(tag, "");
+    let t = strip_bracketed(text).replace(['♪', '♫'], " ");
+    let t = t.split_whitespace().collect::<Vec<_>>().join(" ");
+    // A removed caption can leave "Hello , world"; reattach the punctuation.
+    let mut t = t;
+    for p in [",", ".", "!", "?", ";", ":", "،", "؟"] {
+        t = t.replace(&format!(" {p}"), p);
     }
-    let lower = t.trim().to_lowercase();
+    let t = t.trim_start_matches([',', '.', ';', ':', '،']).trim().to_string();
     const HALLUCINATIONS: &[&str] = &[
         "thank you.", "thanks for watching!", "thank you for watching.", "you", ".", "untertitel der amara.org-community",
         "untertitelung des zdf, 2020", "ترجمة نانسي قنقر", "اشتركوا في القناة",
     ];
-    if HALLUCINATIONS.contains(&lower.as_str()) {
+    if HALLUCINATIONS.contains(&t.to_lowercase().as_str()) {
         return String::new();
     }
-    t.split_whitespace().collect::<Vec<_>>().join(" ")
+    t
+}
+
+/// Drops every bracket pair and what is between it, nested pairs included.
+/// A bracket without its partner is kept, with the text after it.
+fn strip_bracketed(text: &str) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    let mut out = String::with_capacity(text.len());
+    let mut i = 0;
+    while i < chars.len() {
+        match matching_close(&chars, i) {
+            Some(end) => {
+                out.push(' ');
+                i = end + 1;
+            }
+            None => {
+                out.push(chars[i]);
+                i += 1;
+            }
+        }
+    }
+    out
+}
+
+/// Index of the bracket closing the one opened at `start`, if `start` opens one.
+fn matching_close(chars: &[char], start: usize) -> Option<usize> {
+    let close_of = |c: char| match c {
+        '(' => Some(')'),
+        '[' => Some(']'),
+        '{' => Some('}'),
+        '<' => Some('>'),
+        _ => None,
+    };
+    close_of(chars[start])?;
+    let mut stack = Vec::new();
+    for (i, &c) in chars.iter().enumerate().skip(start) {
+        if let Some(close) = close_of(c) {
+            stack.push(close);
+        } else if stack.last() == Some(&c) {
+            stack.pop();
+            if stack.is_empty() {
+                return Some(i);
+            }
+        }
+    }
+    None
 }
 
 #[cfg(test)]
@@ -192,6 +241,15 @@ mod tests {
         assert_eq!(clean_transcript("Thank you."), "");
         assert_eq!(clean_transcript("Hello   world [MUSIC]"), "Hello world");
         assert_eq!(clean_transcript("كيف حالك اليوم؟"), "كيف حالك اليوم؟");
+    }
+
+    #[test]
+    fn strips_every_bracketed_caption() {
+        assert_eq!(clean_transcript("(crickets chirping)"), "");
+        assert_eq!(clean_transcript("Hello (coughs), world [laughs] {x} <|nospeech|> ♪"), "Hello, world");
+        assert_eq!(clean_transcript("(outer (inner) still) open the file"), "open the file");
+        assert_eq!(clean_transcript("keep a < b as is"), "keep a < b as is");
+        assert_eq!(clean_transcript("(applause) Thank you."), "");
     }
 
     #[test]
