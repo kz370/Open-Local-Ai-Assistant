@@ -99,7 +99,7 @@ describe("MessageBubble", () => {
 
 describe("chat store", () => {
   beforeEach(() => {
-    useChat.setState({ conversationId: null, messages: [], turnId: null, draft: "", confirmation: null, connectionError: null, voiceNotice: null });
+    useChat.setState({ conversationId: null, messages: [], turnId: null, draft: "", attachments: [], queue: [], confirmation: null, connectionError: null, voiceNotice: null });
     vi.mocked(invoke).mockReset();
   });
 
@@ -154,6 +154,33 @@ describe("chat store", () => {
     useChat.getState().confirmTool(false);
     expect(vi.mocked(invoke)).toHaveBeenCalledWith("chat_confirm_tool", { callId: "w1", approved: false });
     expect(useChat.getState().confirmation).toBeNull();
+  });
+
+  it("queues typed messages while a reply streams and sends them after", async () => {
+    const turns: string[] = [];
+    vi.mocked(invoke).mockImplementation(async (cmd: string, args?: unknown) => {
+      if (cmd === "chat_send") turns.push((args as { input: { turnId: string } }).input.turnId);
+    });
+    await useChat.getState().send("first");
+    await useChat.getState().send("second");
+    expect(turns).toHaveLength(1);
+    expect(vi.mocked(invoke)).not.toHaveBeenCalledWith("chat_stop", expect.anything());
+    expect(useChat.getState().queue.map((q) => q.text)).toEqual(["second"]);
+    useChat.getState().handleEvent({ type: "done", turnId: turns[0], message: { id: "a1", conversationId: "c1", role: "assistant", content: "ok", language: "en", sources: [], createdAt: "" } });
+    await Promise.resolve();
+    expect(turns).toHaveLength(2);
+    expect(useChat.getState().queue).toHaveLength(0);
+    expect(useChat.getState().messages.at(-2)?.content).toBe("second");
+  });
+
+  it("returns queued messages to the composer when stopped", async () => {
+    vi.mocked(invoke).mockImplementation(async () => undefined);
+    await useChat.getState().send("first");
+    await useChat.getState().send("second");
+    useChat.getState().stop();
+    const s = useChat.getState();
+    expect(s.queue).toHaveLength(0);
+    expect(s.draft).toBe("second");
   });
 });
 

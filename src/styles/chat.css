@@ -597,6 +597,15 @@ html[data-route="chat"] #root {
   justify-content: space-between;
   gap: 6px;
 }
+.queued-text {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.queued-text svg {
+  vertical-align: -1px;
+}
 .composer {
   display: flex;
   flex-direction: column;

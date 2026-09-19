@@ -1,5 +1,5 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
-import { ArrowUp, AudioLines, Mic, Paperclip, Square, Volume2, VolumeX } from "lucide-react";
+import { ArrowUp, AudioLines, Clock, Mic, Paperclip, Square, Volume2, VolumeX, X } from "lucide-react";
 import { attachFromPaste, pickFiles } from "../../app/attach";
 import { useChat } from "../../app/chatStore";
 import { ipc } from "../../app/ipc";
@@ -21,6 +21,8 @@ export const Composer = forwardRef<ComposerHandle, { onVoiceSetup: () => void; a
   const send = useChat((s) => s.send);
   const stop = useChat((s) => s.stop);
   const busy = useChat((s) => s.turnId !== null);
+  const queue = useChat((s) => s.queue);
+  const removeQueued = useChat((s) => s.removeQueued);
   const voiceNotice = useChat((s) => s.voiceNotice);
   const setVoiceNotice = useChat((s) => s.setVoiceNotice);
   const attachments = useChat((s) => s.attachments);
@@ -35,14 +37,16 @@ export const Composer = forwardRef<ComposerHandle, { onVoiceSetup: () => void; a
 
   useImperativeHandle(ref, () => ({ focus: () => taRef.current?.focus() }));
 
+  const recording = voice.mode === "pushToTalk" && voice.phase !== "idle";
+
+  // Also re-measure when recording ends: the textarea is unmounted while
+  // recording, so a transcript lands in the draft before it exists.
   useEffect(() => {
     const ta = taRef.current;
     if (!ta) return;
     ta.style.height = "auto";
     ta.style.height = `${Math.min(ta.scrollHeight, 180)}px`;
-  }, [draft]);
-
-  const recording = voice.mode === "pushToTalk" && voice.phase !== "idle";
+  }, [draft, recording]);
   const canSend = (draft.trim().length > 0 || attachments.length > 0) && !recording;
   const submit = () => {
     if (canSend) void send(draft);
@@ -128,6 +132,16 @@ export const Composer = forwardRef<ComposerHandle, { onVoiceSetup: () => void; a
           </button>
         </div>
       )}
+      {queue.map((q) => (
+        <div key={q.id} className="voice-notice queued" role="status">
+          <span className="queued-text" dir="auto">
+            <Clock size={12} aria-hidden /> {t("chat.queued")}: {q.text || q.attachments.map((a) => a.name).join(", ")}
+          </span>
+          <button className="btn btn-sm btn-ghost" aria-label={t("chat.unqueue")} title={t("chat.unqueue")} onClick={() => removeQueued(q.id)}>
+            <X size={12} />
+          </button>
+        </div>
+      ))}
       <div className="composer">
         <AttachmentList items={attachments} onRemove={removeAttachment} />
         <label className="sr-only" htmlFor="composer-input">
@@ -199,6 +213,11 @@ export const Composer = forwardRef<ComposerHandle, { onVoiceSetup: () => void; a
           <button className="round-btn mic" aria-label={t("chat.microphone")} title={t("chat.microphone")} onClick={() => void voice.startPushToTalk()} disabled={voice.handsFree}>
             <Mic size={16} />
           </button>
+          {busy && canSend && (
+            <button className="round-btn send" aria-label={t("chat.queue")} title={t("chat.queue")} onClick={submit}>
+              <ArrowUp size={17} strokeWidth={2.4} />
+            </button>
+          )}
           {busy ? (
             <button className="round-btn send stop" aria-label={t("chat.stop")} title={t("chat.stop")} onClick={stop}>
               <Square size={12} fill="currentColor" />
