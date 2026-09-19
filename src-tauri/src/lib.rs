@@ -11,7 +11,7 @@ pub mod settings;
 pub mod state;
 
 use database::Db;
-use desktop::{icon, shortcuts, tray, window};
+use desktop::{autostart, icon, shortcuts, tray, window};
 use services::ai::lmstudio::LmStudioService;
 use services::chat::{ChatEngine, ModelResolver};
 use services::dictation;
@@ -282,7 +282,6 @@ pub fn run() {
             window::show_main(app, true);
         }))
         .plugin(tauri_plugin_global_shortcut::Builder::new().with_handler(shortcuts::handle).build())
-        .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, Some(vec!["--minimized"])))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
@@ -298,6 +297,10 @@ pub fn run() {
             let mcp = state.mcp.clone();
             app.manage(state);
 
+            {
+                let start_with_os = handle.state::<AppState>().settings.get().general.start_with_os;
+                autostart::sync(&handle, start_with_os);
+            }
             tray::create(&handle)?;
             shortcuts::register_all(&handle);
             window::restore(&handle);

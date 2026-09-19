@@ -194,8 +194,62 @@ fn has_nvidia_driver() -> bool {
 /// caller should exit because the replacement process is running.
 pub fn activate_early() -> bool {
     let Some(dir) = default_data_dir() else { return false };
+    if std::env::var_os(RELAUNCH_MARKER).is_none() {
+        if let Ok(exe) = std::env::current_exe() {
+            if is_pack_copy(&dir, &exe) {
+                // Started straight from the copy (an old autostart entry, a
+                // pinned shortcut): hand over to the installed app, which
+                // refreshes the copy before it runs again.
+                if let Some(installed) = recorded_launcher(&dir) {
+                    if std::process::Command::new(&installed).args(std::env::args_os().skip(1)).spawn().is_ok() {
+                        return true;
+                    }
+                }
+            } else {
+                record_launcher(&dir, &exe);
+            }
+        }
+    }
     let enabled = is_enabled(&dir);
     activate(&dir, enabled)
+}
+
+/// File holding the installed executable's path, for the copy in the pack folder.
+fn launcher_file(data_dir: &Path) -> PathBuf {
+    data_dir.join("gpu").join("launcher")
+}
+
+/// True when `exe` is the copy inside the app data folder, not the installed app.
+fn is_pack_copy(data_dir: &Path, exe: &Path) -> bool {
+    let gpu = data_dir.join("gpu").to_string_lossy().to_lowercase();
+    exe.to_string_lossy().to_lowercase().starts_with(&gpu)
+}
+
+fn record_launcher(data_dir: &Path, exe: &Path) {
+    let file = launcher_file(data_dir);
+    // Only once a pack is there: the folder is not created for CPU-only users.
+    if !file.parent().is_some_and(Path::is_dir) {
+        return;
+    }
+    let path = exe.to_string_lossy();
+    if std::fs::read_to_string(&file).ok().as_deref() != Some(&*path) {
+        let _ = std::fs::write(&file, path.as_bytes());
+    }
+}
+
+fn recorded_launcher(data_dir: &Path) -> Option<PathBuf> {
+    let path = PathBuf::from(std::fs::read_to_string(launcher_file(data_dir)).ok()?.trim());
+    path.is_file().then_some(path)
+}
+
+/// The installed executable, even when this process is the GPU copy. This is
+/// what "start with Windows" and similar entries must point at.
+pub fn launcher_exe() -> PathBuf {
+    let exe = std::env::current_exe().unwrap_or_default();
+    match default_data_dir() {
+        Some(dir) if is_pack_copy(&dir, &exe) => recorded_launcher(&dir).unwrap_or(exe),
+        _ => exe,
+    }
 }
 
 pub fn pack_dir(data_dir: &Path) -> PathBuf {
@@ -498,6 +552,25 @@ mod tests {
         assert!(is_installed(dir.path()));
         std::fs::remove_file(pack.join(REQUIRED[1])).unwrap();
         assert!(!is_installed(dir.path()), "a half-extracted pack must not count as installed");
+    }
+
+    #[test]
+    fn the_installed_app_is_remembered_for_the_pack_copy() {
+        let dir = tempfile::tempdir().unwrap();
+        let installed = dir.path().join("Program Files").join("app.exe");
+        std::fs::create_dir_all(installed.parent().unwrap()).unwrap();
+        std::fs::write(&installed, b"x").unwrap();
+        let copy = pack_dir(dir.path()).join("app.exe");
+
+        assert!(is_pack_copy(dir.path(), &copy));
+        assert!(!is_pack_copy(dir.path(), &installed));
+
+        record_launcher(dir.path(), &installed);
+        assert_eq!(recorded_launcher(dir.path()), None, "nothing is written before a pack exists");
+
+        std::fs::create_dir_all(pack_dir(dir.path())).unwrap();
+        record_launcher(dir.path(), &installed);
+        assert_eq!(recorded_launcher(dir.path()), Some(installed));
     }
 
     /// Runs against the real NVIDIA archives when they have been downloaded:
