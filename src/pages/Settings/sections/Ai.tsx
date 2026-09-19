@@ -1,21 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { Eye, EyeOff, RefreshCw } from "lucide-react";
 import { ipc, toAppError } from "../../../app/ipc";
+import { PROVIDERS } from "../../../app/providers";
 import { formatBytes, modelLabel, t } from "../../../app/strings";
 import type { AppErrorPayload, ConnectionStatus, ModelInfo, ModelSelection, ProviderId } from "../../../app/types";
 import { ErrorNotice, Switch } from "../../../components/common/controls";
 import { Card, Row, SectionHeader } from "../../../components/settings/layout";
 import { useS } from "./Basic";
-
-/** Selectable providers; `url` is the OpenAI-compatible base URL preset (mirrors `PROVIDERS` in settings/mod.rs). */
-const PROVIDERS: { id: ProviderId; label: string; url: string }[] = [
-  { id: "lmstudio", label: "LM Studio", url: "http://localhost:1234/v1" },
-  { id: "openrouter", label: "OpenRouter", url: "https://openrouter.ai/api/v1" },
-  { id: "groq", label: "Groq", url: "https://api.groq.com/openai/v1" },
-  { id: "gemini", label: "Google Gemini API", url: "https://generativelanguage.googleapis.com/v1beta/openai" },
-  { id: "huggingface", label: "Hugging Face", url: "https://router.huggingface.co/v1" },
-  { id: "cerebras", label: "Cerebras", url: "https://api.cerebras.ai/v1" },
-];
 
 export function useLmModels() {
   const [s] = useS();
@@ -214,8 +205,10 @@ export function AiSection() {
             </label>
           )}
           {chatModels.length === 0 && !loading && <p className="row-hint">{hosted ? t("settings.ai.noModelsHosted") : t("settings.ai.noModels")}</p>}
-          {chatModels.map((m) => (
-            <label className="model-item" key={m.id}>
+          {chatModels.map((m) => {
+            const hidden = s.ai.hiddenModels.includes(m.id);
+            return (
+            <label className={`model-item${hidden ? " hidden-model" : ""}`} key={m.id}>
               <input
                 type="radio"
                 name="model"
@@ -233,6 +226,7 @@ export function AiSection() {
                   {s.ai.modelAliases[m.id] && <span style={{ color: "var(--text-faint)", fontWeight: 400 }}> · {m.id}</span>}
                 </div>
                 <div className="model-meta">
+                  <span className="model-provider">{provider.label}</span>
                   {m.params && <span>{m.params}</span>}
                   {m.quantization && <span>{m.quantization}</span>}
                   {m.sizeBytes ? <span>{formatBytes(m.sizeBytes)}</span> : null}
@@ -260,8 +254,25 @@ export function AiSection() {
                 }}
                 onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
               />
+              <button
+                type="button"
+                className="icon-btn"
+                aria-pressed={!hidden}
+                aria-label={`${hidden ? t("settings.ai.showInChat") : t("settings.ai.hideInChat")}: ${m.id}`}
+                title={hidden ? t("settings.ai.showInChat") : t("settings.ai.hideInChat")}
+                onClick={(e) => {
+                  // Inside the row's label: do not select the model too.
+                  e.preventDefault();
+                  set((d) => {
+                    d.ai.hiddenModels = hidden ? d.ai.hiddenModels.filter((x) => x !== m.id) : [...d.ai.hiddenModels, m.id];
+                  });
+                }}
+              >
+                {hidden ? <EyeOff size={15} /> : <Eye size={15} />}
+              </button>
             </label>
-          ))}
+            );
+          })}
         </div>
       </Card>
 

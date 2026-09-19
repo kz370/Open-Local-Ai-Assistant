@@ -346,6 +346,8 @@ pub fn run() {
             commands::app::window_hide,
             commands::app::window_minimize,
             commands::app::window_toggle_maximize,
+            commands::app::settings_export,
+            commands::app::settings_import,
             commands::app::window_show_main,
             commands::app::bubble_open_chat,
             commands::app::open_settings_window,

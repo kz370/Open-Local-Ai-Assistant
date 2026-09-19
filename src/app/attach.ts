@@ -3,14 +3,27 @@
 import { open } from "@tauri-apps/plugin-dialog";
 import { useChat } from "./chatStore";
 import { ipc, toAppError } from "./ipc";
-import { errorMessage } from "./strings";
+import { errorMessage, t } from "./strings";
+import { modelWithoutVision } from "./vision";
+
+const noVision = (name: string, model: string) => t("attach.noVision", { name, model });
 
 /** Ingests dropped or picked paths and stages whatever succeeded. */
 export async function attachPaths(paths: string[]): Promise<void> {
   if (paths.length === 0) return;
   try {
     const result = await ipc.attachFiles(paths);
-    useChat.getState().addAttachments(result.attachments, result.failures);
+    // Images are only useful to a model that can see them.
+    const blind = result.attachments.some((a) => a.kind === "image") ? await modelWithoutVision() : null;
+    const keep = blind ? result.attachments.filter((a) => a.kind !== "image") : result.attachments;
+    const failures = [...result.failures];
+    if (blind) {
+      for (const a of result.attachments.filter((x) => x.kind === "image")) {
+        failures.push(noVision(a.name, blind));
+        void ipc.attachRemove(a.id).catch(() => undefined);
+      }
+    }
+    useChat.getState().addAttachments(keep, failures);
   } catch (e) {
     useChat.getState().addAttachments([], [errorMessage(toAppError(e).code)]);
   }
@@ -59,7 +72,14 @@ async function attachFile(file: File): Promise<void> {
 export async function attachFromPaste(data: DataTransfer, pasteAsFileChars: number): Promise<boolean> {
   const files = Array.from(data.files);
   if (files.length > 0) {
-    for (const file of files) await attachFile(file);
+    const blind = files.some((f) => f.type.startsWith("image/")) ? await modelWithoutVision() : null;
+    for (const file of files) {
+      if (blind && file.type.startsWith("image/")) {
+        useChat.getState().addAttachments([], [noVision(pastedName(file), blind)]);
+        continue;
+      }
+      await attachFile(file);
+    }
     return true;
   }
   const text = data.getData("text/plain");

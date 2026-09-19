@@ -57,6 +57,8 @@ export const ipc = {
   appReady: () => invoke<void>("app_ready"),
   completeFirstRun: () => invoke<void>("complete_first_run"),
   quit: () => invoke<void>("quit_app"),
+  settingsExport: (path: string, includeKeys: boolean) => invoke<void>("settings_export", { path, includeKeys }),
+  settingsImport: (path: string) => invoke<Settings>("settings_import", { path }),
 
   // LM Studio
   lmstudioTest: (url?: string, apiKey?: string, provider?: string) => invoke<ConnectionStatus>("lmstudio_test", { url, apiKey, provider }),
