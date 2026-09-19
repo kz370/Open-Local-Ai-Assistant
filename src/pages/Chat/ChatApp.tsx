@@ -55,7 +55,15 @@ export function ChatApp() {
   const aliases = settings?.ai.modelAliases;
   const activeModel = settings?.ai.modelMode === "manual" ? settings.ai.model : autoModel;
 
+  const provider = settings?.ai.provider;
+  const hasKey = !!settings?.ai.apiKey?.trim();
+  const needsKey = !!provider && provider !== "lmstudio" && !hasKey;
+
   const checkLm = useCallback(async () => {
+    if (needsKey) {
+      setLm("unavailable");
+      return;
+    }
     try {
       await ipc.lmstudioTest();
       setLm("connected");
@@ -63,7 +71,7 @@ export function ChatApp() {
     } catch {
       setLm("unavailable");
     }
-  }, []);
+  }, [needsKey]);
 
   useEffect(() => {
     void checkLm();
@@ -76,7 +84,7 @@ export function ChatApp() {
       clearInterval(id);
       window.removeEventListener("focus", onFocus);
     };
-  }, [checkLm, settings?.ai.serverUrl]);
+  }, [checkLm, settings?.ai.serverUrl, provider]);
 
   useEffect(() => {
     if (connectionError) setLm("unavailable");
@@ -225,7 +233,7 @@ export function ChatApp() {
     ) : (
       <>
         <span className="dot err" aria-hidden />
-        {t("chat.offline")}
+        {needsKey ? t("chat.needsKey") : t("chat.offline")}
       </>
     );
 

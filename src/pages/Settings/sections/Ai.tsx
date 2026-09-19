@@ -18,11 +18,20 @@ const PROVIDERS: { id: ProviderId; label: string; url: string }[] = [
 ];
 
 export function useLmModels() {
+  const [s] = useS();
+  // Hosted providers reject every request without a key, so don't ask until there is one.
+  const skip = s.ai.provider !== "lmstudio" && !(s.ai.apiKey ?? "").trim();
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [auto, setAuto] = useState<ModelSelection | null>(null);
   const [error, setError] = useState<AppErrorPayload | null>(null);
   const [loading, setLoading] = useState(false);
   const refresh = useCallback(async (force: boolean) => {
+    if (skip) {
+      setModels([]);
+      setAuto(null);
+      setError(null);
+      return;
+    }
     setLoading(true);
     try {
       const m = await ipc.lmstudioModels(force);
@@ -36,10 +45,10 @@ export function useLmModels() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [skip]);
   useEffect(() => {
     void refresh(false);
-  }, [refresh]);
+  }, [refresh, s.ai.provider, s.ai.serverUrl, s.ai.apiKey]);
   return { models, auto, error, loading, refresh };
 }
 
@@ -71,7 +80,14 @@ export function AiSection() {
   useEffect(() => setUrl(s.ai.serverUrl), [s.ai.serverUrl]);
   useEffect(() => setApiKey(s.ai.apiKey ?? ""), [s.ai.apiKey]);
 
+  const needsKey = hosted && !apiKey.trim();
+
   const test = async () => {
+    if (needsKey) {
+      setStatus(null);
+      setTestError(null);
+      return;
+    }
     setTesting(true);
     setTestError(null);
     try {
@@ -145,15 +161,17 @@ export function AiSection() {
             <span className="badge ok">
               <span className="dot ok" /> {t("status.connected")} · {t("settings.ai.latency", { ms: status.latencyMs })}
             </span>
+          ) : needsKey ? (
+            <span className="badge">{t("settings.ai.apiKeyNeeded")}</span>
           ) : (
             <span className="badge err">
               <span className="dot err" /> {t("status.disconnected")}
             </span>
           )}
-          <button className="btn btn-sm" onClick={() => void test()}>
+          <button className="btn btn-sm" onClick={() => void test()} disabled={needsKey}>
             {t("settings.ai.testConnection")}
           </button>
-          <button className="btn btn-sm" onClick={() => void refresh(true)} disabled={loading}>
+          <button className="btn btn-sm" onClick={() => void refresh(true)} disabled={loading || needsKey}>
             <RefreshCw size={12} /> {t("settings.ai.refreshModels")}
           </button>
         </Row>
