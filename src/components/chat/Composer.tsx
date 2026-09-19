@@ -8,6 +8,7 @@ import { errorMessage, t } from "../../app/strings";
 import { useVoice } from "../../app/voiceStore";
 import { textDir } from "../common/controls";
 import { LevelMeter } from "../voice/LevelMeter";
+import { VoiceWave } from "../voice/VoiceWave";
 import { AttachmentList } from "./Attachments";
 import { ModelPicker } from "./ModelPicker";
 
@@ -39,8 +40,8 @@ export const Composer = forwardRef<ComposerHandle, { onVoiceSetup: () => void; a
 
   const recording = voice.mode === "pushToTalk" && voice.phase !== "idle";
 
-  // Also re-measure when recording ends: the textarea is unmounted while
-  // recording, so a transcript lands in the draft before it exists.
+  // Also re-measure when recording ends: an empty textarea is hidden while
+  // recording, so a transcript lands in the draft while it has no height.
   useEffect(() => {
     const ta = taRef.current;
     if (!ta) return;
@@ -51,38 +52,6 @@ export const Composer = forwardRef<ComposerHandle, { onVoiceSetup: () => void; a
   const submit = () => {
     if (canSend) void send(draft);
   };
-
-  if (recording) {
-    return (
-      <div className="composer-wrap">
-        <div className="recording" role="status" aria-live="polite">
-          <div className="recording-state">
-            {voice.phase === "listening" ? (
-              <>
-                <span className="rec-dot" aria-hidden /> {t("voice.listening")}
-              </>
-            ) : (
-              <>
-                <span className="spinner" aria-hidden /> {t("voice.transcribing")}
-              </>
-            )}
-          </div>
-          <LevelMeter levels={voice.levels} label={t("voice.level")} />
-          {voice.device && <span className="row-hint" style={{ margin: 0 }}>{t("call.usingMic", { device: voice.device })}</span>}
-          {voice.phase === "listening" && (
-            <div className="recording-actions">
-              <button className="btn btn-primary" onClick={() => void voice.stopPushToTalk(true)} autoFocus>
-                <Square size={12} fill="currentColor" /> {t("voice.stop")}
-              </button>
-              <button className="btn" onClick={() => void voice.stopPushToTalk(false)} title="Esc">
-                {t("voice.cancel")}
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  }
 
   const micError = voice.error;
   return (
@@ -152,6 +121,8 @@ export const Composer = forwardRef<ComposerHandle, { onVoiceSetup: () => void; a
           ref={taRef}
           rows={1}
           value={draft}
+          hidden={recording && !draft}
+          readOnly={recording}
           dir={draft ? textDir(draft) : "auto"}
           placeholder={t("chat.placeholder")}
           onChange={(e) => setDraft(e.target.value)}
@@ -175,6 +146,28 @@ export const Composer = forwardRef<ComposerHandle, { onVoiceSetup: () => void; a
             }
           }}
         />
+        {recording && (
+          <div className="recording-row" role="status" aria-live="polite" title={voice.device ? t("call.usingMic", { device: voice.device }) : undefined}>
+            {voice.phase === "listening" ? (
+              <>
+                <span className="rec-dot" aria-hidden />
+                <span className="sr-only">{t("voice.listening")}</span>
+                <VoiceWave level={voice.level} label={t("voice.level")} />
+                <button className="round-btn mic" aria-label={t("voice.cancel")} title={`${t("voice.cancel")} (Esc)`} onClick={() => void voice.stopPushToTalk(false)}>
+                  <X size={16} />
+                </button>
+                <button className="round-btn send" aria-label={t("voice.stop")} title={t("voice.stop")} onClick={() => void voice.stopPushToTalk(true)} autoFocus>
+                  <Square size={12} fill="currentColor" />
+                </button>
+              </>
+            ) : (
+              <>
+                <span className="spinner" aria-hidden />
+                <span className="recording-label">{t("voice.transcribing")}</span>
+              </>
+            )}
+          </div>
+        )}
         <div className="composer-bar">
           <ModelPicker autoModel={autoModel} />
           <button
@@ -210,15 +203,17 @@ export const Composer = forwardRef<ComposerHandle, { onVoiceSetup: () => void; a
             <AudioLines size={14} />
           </button>
           <span className="composer-spacer" />
-          <button className="round-btn mic" aria-label={t("chat.microphone")} title={t("chat.microphone")} onClick={() => void voice.startPushToTalk()} disabled={voice.handsFree}>
-            <Mic size={16} />
-          </button>
+          {!recording && (
+            <button className="round-btn mic" aria-label={t("chat.microphone")} title={t("chat.microphone")} onClick={() => void voice.startPushToTalk()} disabled={voice.handsFree}>
+              <Mic size={16} />
+            </button>
+          )}
           {busy && canSend && (
             <button className="round-btn send" aria-label={t("chat.queue")} title={t("chat.queue")} onClick={submit}>
               <ArrowUp size={17} strokeWidth={2.4} />
             </button>
           )}
-          {busy ? (
+          {recording ? null : busy ? (
             <button className="round-btn send stop" aria-label={t("chat.stop")} title={t("chat.stop")} onClick={stop}>
               <Square size={12} fill="currentColor" />
             </button>
