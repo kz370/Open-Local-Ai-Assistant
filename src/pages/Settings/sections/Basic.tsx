@@ -138,6 +138,24 @@ export function LanguageSection() {
           </div>
         </Row>
       </Card>
+      <Card title={t("settings.language.arabicTashkeel")}>
+        <Row label={t("settings.language.arabicTashkeelEnabled")} hint={t("settings.language.arabicTashkeelEnabledHint")} htmlFor="sw-tashkeel">
+          <Switch id="sw-tashkeel" label={t("settings.language.arabicTashkeelEnabled")} checked={s.language.arabicTashkeelEnabled} onChange={(v) => set((d) => void (d.language.arabicTashkeelEnabled = v))} />
+        </Row>
+        {s.language.arabicTashkeelEnabled && (
+          <Row label={t("settings.language.arabicTashkeelInstruction")} hint={t("settings.language.arabicTashkeelInstructionHint")} htmlFor="ta-tashkeel" stack>
+            <textarea
+              id="ta-tashkeel"
+              className="textarea"
+              rows={3}
+              dir="rtl"
+              placeholder={t("settings.language.arabicTashkeelPlaceholder")}
+              defaultValue={s.language.arabicTashkeelInstruction}
+              onBlur={(e) => set((d) => void (d.language.arabicTashkeelInstruction = e.target.value))}
+            />
+          </Row>
+        )}
+      </Card>
     </>
   );
 }

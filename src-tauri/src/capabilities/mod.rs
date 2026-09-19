@@ -105,12 +105,13 @@ impl LocalCapabilityManager {
         let voices = self.tts.voices();
         let gender = settings.tts.preferred_gender.clone();
         let voice_name = |lang: Lang, pref: &str| crate::services::tts::voices::select_voice(&voices, lang, pref, &gender).map(|v| v.name);
+        let pref_for = |code: &str| settings.language.entries.iter().find(|e| e.code == code).map(|e| e.tts_voice.clone()).unwrap_or_else(|| "auto".into());
         VoiceCapability {
             stt_model: self.stt.resolve_model(&settings.stt).map(|m| m.id),
             vad_ready: installed.iter().any(|m| m.kind == ModelKind::Vad),
-            tts_en: voice_name(Lang::En, &settings.tts.voice_en),
-            tts_ar: voice_name(Lang::Ar, &settings.tts.voice_ar),
-            tts_de: voice_name(Lang::De, &settings.tts.voice_de),
+            tts_en: voice_name(Lang::En, &pref_for("en")),
+            tts_ar: voice_name(Lang::Ar, &pref_for("ar")),
+            tts_de: voice_name(Lang::De, &pref_for("de")),
             installed,
             recommendation: recommend(&self.hardware),
             acceleration: "cpu".into(),

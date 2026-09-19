@@ -16,7 +16,7 @@ use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
@@ -391,6 +391,7 @@ pub struct Silma {
     pending: Arc<Mutex<HashMap<u64, Sender<Reply>>>>,
     next_id: AtomicU64,
     emit: Arc<dyn Fn(SilmaStatus) + Send + Sync>,
+    force_cpu: AtomicBool,
 }
 
 impl Silma {
@@ -403,7 +404,16 @@ impl Silma {
             pending: Arc::new(Mutex::new(HashMap::new())),
             next_id: AtomicU64::new(1),
             emit,
+            force_cpu: AtomicBool::new(false),
         }
+    }
+
+    /// Per-model hardware override ("auto" | "cpu"). When forced to CPU, the
+    /// subprocess is started with CUDA hidden so its own `pick_device()`
+    /// (torch.cuda.is_available()) naturally reports false — no Python change
+    /// needed. Takes effect on the next `start()`.
+    pub fn set_force_cpu(&self, v: bool) {
+        self.force_cpu.store(v, Ordering::Relaxed);
     }
 
     pub fn is_installed(&self) -> bool {
@@ -455,6 +465,9 @@ impl Silma {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
+        if self.force_cpu.load(Ordering::Relaxed) {
+            cmd.env("CUDA_VISIBLE_DEVICES", "");
+        }
         let mut child = no_window(&mut cmd).spawn().map_err(|e| AppError::Tts(format!("could not start SILMA: {e}")))?;
         let stdin = child.stdin.take().expect("piped");
         let stdout = child.stdout.take().expect("piped");

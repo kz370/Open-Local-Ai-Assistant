@@ -103,6 +103,7 @@ impl SttService {
             threads: self.hw.inference_threads(),
             language: Lang::from_code(&settings.language).map(|l| l.code().to_string()).unwrap_or_default(),
             endpoint_silence: settings.silence_ms as f32 / 1000.0,
+            provider: crate::services::gpu::provider_for(&settings.hardware),
         }
     }
 
@@ -113,7 +114,7 @@ impl SttService {
             .resolve_model(settings)
             .ok_or_else(|| AppError::Stt("no local speech recognition model is installed".into()))?;
         let opts = self.options(settings);
-        let key = format!("{}|{}|{}", model.path.display(), opts.language, opts.endpoint_silence);
+        let key = format!("{}|{}|{}|{}", model.path.display(), opts.language, opts.endpoint_silence, opts.provider);
         let mut guard = self.loaded.lock().unwrap_or_else(|p| p.into_inner());
         if guard.as_ref().map(|l| l.key != key).unwrap_or(true) {
             *guard = None; // free the previous model before loading another

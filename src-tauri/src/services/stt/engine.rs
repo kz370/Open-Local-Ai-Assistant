@@ -235,6 +235,9 @@ pub struct EngineOptions {
     pub language: String,
     /// Streaming only: end an utterance after this much trailing silence.
     pub endpoint_silence: f32,
+    /// "cuda" | "cpu", already resolved from the global GPU state and the
+    /// user's per-model hardware override (see `gpu::provider_for`).
+    pub provider: &'static str,
 }
 
 pub fn create(files: &SttModelFiles, opts: &EngineOptions) -> AppResult<Recognizer> {
@@ -250,7 +253,7 @@ pub fn create(files: &SttModelFiles, opts: &EngineOptions) -> AppResult<Recogniz
         };
         config.model_config.tokens = tokens;
         config.model_config.num_threads = opts.threads;
-        config.model_config.provider = Some(crate::services::gpu::provider().into());
+        config.model_config.provider = Some(opts.provider.into());
         config.decoding_method = Some("greedy_search".into());
         config.enable_endpoint = true;
         config.rule1_min_trailing_silence = 2.4;
@@ -264,7 +267,7 @@ pub fn create(files: &SttModelFiles, opts: &EngineOptions) -> AppResult<Recogniz
     let mut config = sherpa_onnx::OfflineRecognizerConfig::default();
     config.model_config.tokens = tokens;
     config.model_config.num_threads = opts.threads;
-    config.model_config.provider = Some(crate::services::gpu::provider().into());
+    config.model_config.provider = Some(opts.provider.into());
     config.decoding_method = Some("greedy_search".into());
     match files.family {
         SttFamily::Whisper => {

@@ -49,6 +49,9 @@ pub struct AppState {
     pub dictation_busy: AtomicBool,
     /// Set by Esc/X cancel; consumed by run_dictation before any insert.
     pub dictation_cancel: AtomicBool,
+    /// Tracks what dictation has live-typed so far this session (insert
+    /// method "type" only); see `services::dictation::LiveTyper`.
+    pub dictation_live_typer: crate::services::dictation::LiveTyper,
     pub shortcut_errors: Mutex<Vec<String>>,
 }
 

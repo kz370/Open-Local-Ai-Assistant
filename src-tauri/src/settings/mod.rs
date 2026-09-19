@@ -10,7 +10,7 @@ use std::sync::{Arc, RwLock};
 
 const KEY: &str = "app_settings";
 pub const DEFAULT_LMSTUDIO_URL: &str = "http://localhost:1234/v1";
-const CURRENT_VERSION: u32 = 3;
+const CURRENT_VERSION: u32 = 4;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", default)]
@@ -87,6 +87,8 @@ impl Default for GeneralSettings {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", default)]
 pub struct AiSettings {
+    /// "lmstudio" — reserved for future providers; only one exists today.
+    pub provider: String,
     pub server_url: String,
     /// Bearer token sent as `Authorization: Bearer <key>`. LM Studio itself
     /// ignores it, but other OpenAI-compatible servers behind this same URL
@@ -113,6 +115,7 @@ pub struct AiSettings {
 impl Default for AiSettings {
     fn default() -> Self {
         Self {
+            provider: "lmstudio".into(),
             server_url: DEFAULT_LMSTUDIO_URL.into(),
             api_key: None,
             model_mode: "auto".into(),
@@ -130,16 +133,59 @@ impl Default for AiSettings {
     }
 }
 
+/// One entry in the user-editable language list. `en`/`ar`/`de` ship as
+/// built-ins; a user can add further codes, but only en/ar/de get real
+/// detection/response support today (see `services::language::detect::Lang`,
+/// still a closed 3-variant enum) — anything else only gets a TTS voice
+/// preference slot in Settings.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(rename_all = "camelCase", default)]
+pub struct LanguageEntry {
+    pub code: String,
+    pub display_name: String,
+    /// "ltr" | "rtl"
+    pub direction: String,
+    /// Language hint passed to the STT recognizer; usually equal to `code`.
+    pub stt_language: String,
+    /// "auto" or a catalog voice id.
+    pub tts_voice: String,
+    /// True for the shipped en/ar/de entries; UI-only signal (nothing
+    /// server-side depends on it besides never letting the list hit zero).
+    pub built_in: bool,
+}
+
+impl LanguageEntry {
+    fn builtins() -> Vec<LanguageEntry> {
+        vec![
+            LanguageEntry { code: "en".into(), display_name: "English".into(), direction: "ltr".into(), stt_language: "en".into(), tts_voice: "auto".into(), built_in: true },
+            LanguageEntry { code: "ar".into(), display_name: "Arabic".into(), direction: "rtl".into(), stt_language: "ar".into(), tts_voice: "auto".into(), built_in: true },
+            LanguageEntry { code: "de".into(), display_name: "German".into(), direction: "ltr".into(), stt_language: "de".into(), tts_voice: "auto".into(), built_in: true },
+        ]
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", default)]
 pub struct LanguageSettings {
-    /// "auto" | "en" | "ar" | "de"
+    /// "auto" or one of entries[].code
     pub response_language: String,
+    pub entries: Vec<LanguageEntry>,
+    /// When true, Arabic replies are asked to include full tashkeel
+    /// (diacritics) instead of today's "write without diacritics" default.
+    pub arabic_tashkeel_enabled: bool,
+    /// Custom instruction used instead of the built-in default text when
+    /// tashkeel is enabled. Empty = use the default instruction.
+    pub arabic_tashkeel_instruction: String,
 }
 
 impl Default for LanguageSettings {
     fn default() -> Self {
-        Self { response_language: "auto".into() }
+        Self {
+            response_language: "auto".into(),
+            entries: LanguageEntry::builtins(),
+            arabic_tashkeel_enabled: false,
+            arabic_tashkeel_instruction: String::new(),
+        }
     }
 }
 
@@ -196,7 +242,7 @@ impl Default for SttSettings {
             mic_only: true,
             isolate_system_audio: true,
             hardware: "auto".into(),
-            auto_submit: true,
+            auto_submit: false,
             hands_free: false,
             push_to_talk: true,
             vad_threshold: 0.5,
@@ -213,29 +259,39 @@ impl Default for SttSettings {
 #[serde(rename_all = "camelCase", default)]
 pub struct TtsSettings {
     pub speak_responses: bool,
-    /// "auto" or a voice id, per language
-    pub voice_en: String,
-    pub voice_ar: String,
-    pub voice_de: String,
+    /// Superseded by `LanguageSettings.entries[].tts_voice`. Kept only so a
+    /// pre-v4 settings blob still deserializes into *something*, which the v4
+    /// migration then copies into the matching language entry; never read at
+    /// runtime otherwise. Do not delete without a migration.
+    #[serde(rename = "voiceEn")]
+    pub legacy_voice_en: String,
+    #[serde(rename = "voiceAr")]
+    pub legacy_voice_ar: String,
+    #[serde(rename = "voiceDe")]
+    pub legacy_voice_de: String,
     pub speed: f32,
     pub volume: f32,
     /// None = automatic (system default output)
     pub output_device: Option<String>,
     /// "any" | "female" | "male" - used when a voice is chosen automatically.
     pub preferred_gender: String,
+    /// Per-voice hardware override ("auto" | "cpu"), keyed by voice/model id.
+    /// Absent key = "auto".
+    pub voice_hardware: std::collections::BTreeMap<String, String>,
 }
 
 impl Default for TtsSettings {
     fn default() -> Self {
         Self {
             speak_responses: false,
-            voice_en: "auto".into(),
-            voice_ar: "auto".into(),
-            voice_de: "auto".into(),
+            legacy_voice_en: "auto".into(),
+            legacy_voice_ar: "auto".into(),
+            legacy_voice_de: "auto".into(),
             speed: 1.0,
             volume: 1.0,
             output_device: None,
             preferred_gender: "any".into(),
+            voice_hardware: Default::default(),
         }
     }
 }
@@ -272,6 +328,10 @@ pub struct DictationSettings {
     /// "type" | "paste"
     pub insert_method: String,
     pub add_trailing_space: bool,
+    /// Last dragged position of the dictation overlay (physical pixels), or
+    /// None to auto-center it near the bottom of the screen.
+    pub overlay_x: Option<i32>,
+    pub overlay_y: Option<i32>,
 }
 
 impl Default for DictationSettings {
@@ -284,7 +344,22 @@ impl Default for DictationSettings {
             correction_model: None,
             insert_method: "type".into(),
             add_trailing_space: true,
+            overlay_x: None,
+            overlay_y: None,
         }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct SilmaSettings {
+    /// "auto" | "cpu" — forces the Arabic SILMA voice off the GPU.
+    pub hardware: String,
+}
+
+impl Default for SilmaSettings {
+    fn default() -> Self {
+        Self { hardware: "auto".into() }
     }
 }
 
@@ -297,6 +372,7 @@ pub struct Settings {
     pub stt: SttSettings,
     pub tts: TtsSettings,
     pub dictation: DictationSettings,
+    pub silma: SilmaSettings,
     pub search: SearchSettings,
     pub last_conversation_id: Option<String>,
     /// Schema version of the stored settings, used for one-time migrations.
@@ -333,13 +409,46 @@ impl Settings {
         if self.general.global_shortcut.trim().is_empty() {
             self.general.global_shortcut = "CommandOrControl+Space".into();
         }
-        let lang_ok = |s: &str| matches!(s, "auto" | "en" | "ar" | "de");
-        if !lang_ok(&self.language.response_language) {
+        // Sanitize the language entries themselves before anything below
+        // validates references into them.
+        let mut seen = std::collections::HashSet::new();
+        self.language.entries = std::mem::take(&mut self.language.entries)
+            .into_iter()
+            .filter_map(|mut e| {
+                e.code = e.code.trim().to_ascii_lowercase();
+                if e.code.is_empty() || !seen.insert(e.code.clone()) {
+                    return None;
+                }
+                e.display_name = e.display_name.trim().chars().take(40).collect();
+                if e.display_name.is_empty() {
+                    e.display_name = e.code.clone();
+                }
+                if !matches!(e.direction.as_str(), "ltr" | "rtl") {
+                    e.direction = "ltr".into();
+                }
+                e.stt_language = e.stt_language.trim().to_ascii_lowercase();
+                if e.stt_language.is_empty() {
+                    e.stt_language = e.code.clone();
+                }
+                e.tts_voice = e.tts_voice.trim().to_string();
+                if e.tts_voice.is_empty() {
+                    e.tts_voice = "auto".into();
+                }
+                Some(e)
+            })
+            .take(12)
+            .collect();
+        if self.language.entries.is_empty() {
+            self.language.entries = LanguageEntry::builtins();
+        }
+        let lang_ok = |s: &str, entries: &[LanguageEntry]| s == "auto" || entries.iter().any(|e| e.code == s);
+        if !lang_ok(&self.language.response_language, &self.language.entries) {
             self.language.response_language = "auto".into();
         }
-        if !lang_ok(&self.stt.language) {
+        if !lang_ok(&self.stt.language, &self.language.entries) {
             self.stt.language = "auto".into();
         }
+        self.language.arabic_tashkeel_instruction = self.language.arabic_tashkeel_instruction.trim().chars().take(500).collect();
         if !matches!(self.general.theme.as_str(), "system" | "light" | "dark") {
             self.general.theme = "system".into();
         }
@@ -356,6 +465,9 @@ impl Settings {
         self.general.font_scale = self.general.font_scale.clamp(0.8, 1.6);
         self.general.window.width = self.general.window.width.clamp(320, 4000);
         self.general.window.height = self.general.window.height.clamp(260, 4000);
+        if self.ai.provider != "lmstudio" {
+            self.ai.provider = "lmstudio".into();
+        }
         self.ai.temperature = self.ai.temperature.clamp(0.0, 2.0);
         self.ai.server_url = self.ai.server_url.trim().trim_end_matches('/').to_string();
         if self.ai.server_url.is_empty() {
@@ -376,6 +488,16 @@ impl Settings {
             .collect();
         self.tts.speed = self.tts.speed.clamp(0.5, 2.0);
         self.tts.volume = self.tts.volume.clamp(0.0, 1.0);
+        if !matches!(self.stt.hardware.as_str(), "auto" | "cpu") {
+            self.stt.hardware = "auto".into();
+        }
+        self.tts.voice_hardware = std::mem::take(&mut self.tts.voice_hardware)
+            .into_iter()
+            .filter(|(k, v)| !k.is_empty() && matches!(v.as_str(), "auto" | "cpu"))
+            .collect();
+        if !matches!(self.silma.hardware.as_str(), "auto" | "cpu") {
+            self.silma.hardware = "auto".into();
+        }
         self.stt.vad_threshold = self.stt.vad_threshold.clamp(0.1, 0.95);
         self.stt.silence_ms = self.stt.silence_ms.clamp(200, 5000);
         self.stt.extra_model_dirs = std::mem::take(&mut self.stt.extra_model_dirs)
@@ -436,6 +558,23 @@ impl SettingsStore {
                 // v3: system-audio isolation is on by default, so the microphone
                 // no longer transcribes what the speakers are playing.
                 s.stt.isolate_system_audio = true;
+            }
+            if s.version < 4 {
+                // v4: the fixed en/ar/de voice fields became a user-editable
+                // language list. `entries` already defaulted to the builtins
+                // (serde's container-level `default` fills missing fields), so
+                // just carry each legacy voice choice into its matching entry.
+                for (code, legacy) in [
+                    ("en", s.tts.legacy_voice_en.clone()),
+                    ("ar", s.tts.legacy_voice_ar.clone()),
+                    ("de", s.tts.legacy_voice_de.clone()),
+                ] {
+                    if legacy != "auto" {
+                        if let Some(e) = s.language.entries.iter_mut().find(|e| e.code == code) {
+                            e.tts_voice = legacy;
+                        }
+                    }
+                }
             }
             s.version = CURRENT_VERSION;
         })?;
@@ -529,6 +668,21 @@ mod tests {
         // A later explicit opt-out is respected.
         store.update(|s| s.stt.isolate_system_audio = false).unwrap();
         assert!(!SettingsStore::load(db).unwrap().get().stt.isolate_system_audio);
+    }
+
+    #[test]
+    fn migration_carries_legacy_voices_into_language_entries() {
+        let db = Arc::new(Db::open_in_memory().unwrap());
+        db.set_kv(KEY, r#"{"version":3,"tts":{"voiceEn":"kokoro-en-v0_19:1","voiceAr":"piper-ar_JO-kareem-medium:0"}}"#).unwrap();
+        let store = SettingsStore::load(db).unwrap();
+        let s = store.get();
+        assert_eq!(s.version, CURRENT_VERSION);
+        let en = s.language.entries.iter().find(|e| e.code == "en").unwrap();
+        assert_eq!(en.tts_voice, "kokoro-en-v0_19:1");
+        let ar = s.language.entries.iter().find(|e| e.code == "ar").unwrap();
+        assert_eq!(ar.tts_voice, "piper-ar_JO-kareem-medium:0");
+        let de = s.language.entries.iter().find(|e| e.code == "de").unwrap();
+        assert_eq!(de.tts_voice, "auto");
     }
 
     #[test]

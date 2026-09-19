@@ -149,7 +149,7 @@ export const useVoice = create<VoiceState>((set, get) => ({
             return;
           }
           set({ lastTranscript: text, partial: "" });
-          const autoSubmit = useSettings.getState().settings?.stt.autoSubmit ?? true;
+          const autoSubmit = useSettings.getState().settings?.stt.autoSubmit ?? false;
           if (ev.mode === "handsFree" || autoSubmit) {
             void chat.send(text, { spokenLanguage: ev.language, voice: true });
           } else {

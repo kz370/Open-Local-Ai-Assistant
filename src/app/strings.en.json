@@ -205,6 +205,7 @@
       "startWithOsHint": "Launch the assistant automatically when you sign in."
     },
     "ai": {
+      "provider": "Provider",
       "server": "LM Studio server",
       "serverHint": "Default: http://localhost:1234/v1. Works with any OpenAI-compatible server URL.",
       "apiKey": "API key",
@@ -266,6 +267,7 @@
       "testMic": "Test microphone",
       "stopTest": "Stop test",
       "autoSubmit": "Send automatically after transcription",
+      "autoSubmitHint": "Off: dictated text is added to the composer so you can review it before sending.",
       "pushToTalk": "Push-to-talk shortcut",
       "handsFree": "Hands-free conversation",
       "vadThreshold": "Speech detection sensitivity",
@@ -308,12 +310,26 @@
       "genderAny": "Any",
       "genderFemale": "Female",
       "genderMale": "Male",
-      "localHint": "Voices can also be loaded from your own folders (see Speech Recognition - Model folders)."
+      "localHint": "Voices can also be loaded from your own folders (see Speech Recognition - Model folders).",
+      "language": "Language",
+      "addLanguage": "Add language",
+      "removeLanguage": "Remove this language",
+      "newLanguage": "New language",
+      "languageCode": "Code (e.g. fr)",
+      "languageName": "Name",
+      "direction": "Direction",
+      "unsupportedLanguageHint": "Automatic detection and replies aren't available for this language yet — only its voice preference is used here."
     },
     "language": {
       "response": "Response language",
       "responseAuto": "Automatic — respond in the language you use",
-      "detectHint": "English, Arabic and German are detected automatically from typed and spoken messages."
+      "detectHint": "English, Arabic and German are detected automatically from typed and spoken messages.",
+      "arabicTashkeel": "Arabic diacritics (tashkeel)",
+      "arabicTashkeelEnabled": "Include tashkeel in Arabic replies",
+      "arabicTashkeelEnabledHint": "Off: Arabic replies are written without diacritics (the default). On: replies include full تشكيل.",
+      "arabicTashkeelInstruction": "Custom instruction",
+      "arabicTashkeelInstructionHint": "Replaces the default tashkeel instruction sent to the model. Leave blank to use the default.",
+      "arabicTashkeelPlaceholder": "Fully diacritize every word with complete تشكيل, applying إعراب rules precisely."
     },
     "dictation": {
       "intro": "Dictate text into any application, such as Notepad or your browser. Speech is recognized locally.",
@@ -330,7 +346,9 @@
       "type": "Typing",
       "paste": "Pasting (restores clipboard)",
       "trailingSpace": "Add a space after inserted text",
-      "requiresStt": "Dictation needs a local speech recognition model."
+      "requiresStt": "Dictation needs a local speech recognition model.",
+      "overlayPosition": "Overlay position",
+      "overlayPositionHint": "Drag the dictation overlay freely — hold Shift to move it horizontally only, Alt to move it vertically only."
     },
     "models": {
       "recommended": "Recommended",
@@ -494,6 +512,7 @@
       "title": "Natural Arabic voice (SILMA)",
       "intro": "SILMA speaks Arabic far more naturally than the built-in voices and adds the missing vowel marks (tashkeel) by itself. It can also speak English (choose “SILMA (English)” as the English voice); it does not speak German. It runs on PyTorch, so it is a one-time setup; after that the app starts and stops it automatically.",
       "state": "Status",
+      "hardwareHint": "Force SILMA off the GPU even when GPU acceleration is on. Takes effect on the next sentence spoken.",
       "notInstalled": "Not installed",
       "idle": "Installed · starts when Arabic is spoken",
       "starting": "Loading…",
@@ -577,7 +596,8 @@
     "error": "Dictation failed",
     "speakNow": "Speak now",
     "hint": "Release to insert • Esc cancels",
-    "hintToggle": "Press the shortcut again to insert • Esc cancels"
+    "hintToggle": "Press the shortcut again to insert • Esc cancels",
+    "resetPosition": "Reset overlay position"
   },
   "languages": {
     "en": "English",

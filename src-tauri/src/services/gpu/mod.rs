@@ -104,6 +104,16 @@ pub fn is_active() -> bool {
     GPU_ACTIVE.load(Ordering::Relaxed)
 }
 
+/// Like `provider()`, but honors a per-model "auto" | "cpu" override —
+/// `"cpu"` always wins, anything else falls back to the global setting.
+pub fn provider_for(pref: &str) -> &'static str {
+    if pref.eq_ignore_ascii_case("cpu") {
+        "cpu"
+    } else {
+        provider()
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GpuStatus {

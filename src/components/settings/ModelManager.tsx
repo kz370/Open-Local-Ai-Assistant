@@ -33,13 +33,14 @@ function langs(l: string[]) {
   return l.includes("*") ? t("settings.models.languagesAll") : l.map(languageName).join(", ");
 }
 
-export function ModelManager({ kinds, title }: { kinds: ("stt" | "vad" | "tts")[]; title: string }) {
+export function ModelManager({ kinds, title, languageFilter }: { kinds: ("stt" | "vad" | "tts")[]; title: string; languageFilter?: string }) {
   const { catalog, installed, progress, refresh } = useModelCatalog();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [error, setError] = useState<AppErrorPayload | null>(null);
 
-  const entries = useMemo(() => catalog.filter((c) => kinds.includes(c.kind)), [catalog, kinds]);
-  const custom = installed.filter((m) => m.source === "custom" && kinds.includes(m.kind));
+  const matchesLanguage = (languages: string[]) => !languageFilter || languages.includes("*") || languages.includes(languageFilter);
+  const entries = useMemo(() => catalog.filter((c) => kinds.includes(c.kind) && matchesLanguage(c.languages)), [catalog, kinds, languageFilter]); // eslint-disable-line react-hooks/exhaustive-deps
+  const custom = installed.filter((m) => m.source === "custom" && kinds.includes(m.kind) && matchesLanguage(m.languages));
 
   useEffect(() => {
     // Preselect recommended models that are missing and not already queued.
