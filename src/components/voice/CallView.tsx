@@ -32,8 +32,13 @@ export function CallView() {
     return () => clearInterval(id);
   }, []);
 
-  const lastAssistant = useMemo(() => [...messages].reverse().find((m) => m.role === "assistant" && m.content), [messages]);
-  const lastUser = useMemo(() => [...messages].reverse().find((m) => m.role === "user" && m.content), [messages]);
+  // A new call starts with a clean screen: messages from before it, and the
+  // previous call's transcript, are not this call's captions.
+  const [before] = useState(() => new Set(useChat.getState().messages.map((m) => m.id)));
+  useEffect(() => useVoice.setState({ lastTranscript: null, partial: "" }), []);
+  const callMessages = useMemo(() => messages.filter((m) => !before.has(m.id)), [messages, before]);
+  const lastAssistant = useMemo(() => [...callMessages].reverse().find((m) => m.role === "assistant" && m.content), [callMessages]);
+  const lastUser = useMemo(() => [...callMessages].reverse().find((m) => m.role === "user" && m.content), [callMessages]);
   const voiceNotice = useChat((s) => s.voiceNotice);
   const state = voice.speaking ? "speaking" : busy ? "thinking" : voice.phase === "transcribing" ? "transcribing" : "listening";
   // The assistant can be cut off whenever it is talking or about to talk.
