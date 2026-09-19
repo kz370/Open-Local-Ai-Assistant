@@ -877,22 +877,21 @@ html[data-route="chat"] #root {
 }
 
 /* ---------- Recording ---------- */
-.recording {
+/* Push-to-talk sits in the composer where the text goes: dot, waves, cancel, stop. */
+.recording-row {
   display: flex;
-  flex-direction: column;
   align-items: center;
   gap: 10px;
-  padding: 16px;
-  border-radius: 20px;
-  background: var(--composer-bg);
-  border: 1px solid var(--hairline);
-  box-shadow: var(--composer-shadow);
+  min-height: 38px;
+  padding: 0 0 0 8px;
 }
-.recording-state {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 600;
+.recording-row .voice-wave {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+}
+.recording-label {
+  color: var(--text-muted);
   font-size: var(--text-sm);
 }
 .rec-dot {
@@ -928,10 +927,6 @@ html[data-route="chat"] #root {
   border-radius: 3px;
   background: var(--brand-gradient, linear-gradient(180deg, #5eead4, #0d9488));
   transition: height 80ms linear;
-}
-.recording-actions {
-  display: flex;
-  gap: 8px;
 }
 .handsfree-bar {
   display: flex;
