@@ -57,6 +57,8 @@ export interface Settings {
     requestTimeoutSecs: number;
     showReasoning: boolean;
     modelAliases: Record<string, string>;
+    /** Model ids left out of the chat window's model picker. */
+    hiddenModels: string[];
     /** Pasted text longer than this becomes a text attachment. 0 disables it. */
     pasteAsFileChars: number;
   };

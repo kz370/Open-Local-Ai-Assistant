@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Check, ChevronDown, Cpu, RefreshCw, Search, Sparkles } from "lucide-react";
 import { ipc } from "../../app/ipc";
+import { providerLabel } from "../../app/providers";
 import { useSettings } from "../../app/settingsStore";
 import { formatBytes, modelLabel, t } from "../../app/strings";
 import type { ModelInfo } from "../../app/types";
@@ -68,7 +69,12 @@ export function ModelPicker({ autoModel }: { autoModel: string | null }) {
 
   // Matches the id, the display name and the user's short name.
   const q = query.trim().toLowerCase();
-  const shown = models?.filter((m) => !q || [m.id, m.displayName, aliases?.[m.id] ?? ""].some((v) => v.toLowerCase().includes(q)));
+  // Models hidden in settings stay out, except the one currently in use.
+  const hidden = settings?.ai.hiddenModels ?? [];
+  const provider = providerLabel(settings?.ai.provider);
+  const shown = models
+    ?.filter((m) => !hidden.includes(m.id) || m.id === manual)
+    .filter((m) => !q || [m.id, m.displayName, aliases?.[m.id] ?? ""].some((v) => v.toLowerCase().includes(q)));
 
   const onListKey = (e: React.KeyboardEvent) => {
     if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
@@ -126,16 +132,17 @@ export function ModelPicker({ autoModel }: { autoModel: string | null }) {
           <div className="picker-scroll">
             {models === null && <div className="picker-empty"><span className="spinner" /></div>}
             {models?.length === 0 && <div className="picker-empty">{t("chat.modelsEmpty")}</div>}
-            {!!models?.length && shown?.length === 0 && <div className="picker-empty">{t("chat.modelsNoMatch")}</div>}
+            {!!models?.length && shown?.length === 0 && <div className="picker-empty">{q ? t("chat.modelsNoMatch") : t("chat.modelsAllHidden")}</div>}
             {shown?.map((m) => (
               <button type="button" role="menuitemradio" aria-checked={manual === m.id} key={m.id} className="picker-item" onClick={() => choose(m.id)} title={m.id}>
                 <span className={`picker-dot${m.loaded ? " on" : ""}`} aria-hidden />
                 <span className="picker-text">
                   <span className="picker-name">{modelLabel(m.id, aliases, 34)}</span>
                   <span className="picker-sub">
-                    {[m.params, m.quantization, m.sizeBytes ? formatBytes(m.sizeBytes) : null, m.loaded ? t("settings.ai.loaded") : null].filter(Boolean).join(" · ")}
+                    {[provider, m.params, m.quantization, m.sizeBytes ? formatBytes(m.sizeBytes) : null, m.loaded ? t("settings.ai.loaded") : null].filter(Boolean).join(" · ")}
                   </span>
                 </span>
+                {m.vision && <span className="badge">{t("settings.ai.vision")}</span>}
                 {m.toolUse && <span className="badge accent">{t("settings.ai.toolUse")}</span>}
                 {manual === m.id && <Check size={15} aria-hidden className="picker-check" />}
               </button>

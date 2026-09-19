@@ -3,6 +3,8 @@
 //! Every field has a serde default so settings written by older versions keep
 //! loading after new fields are added.
 
+pub mod backup;
+
 use crate::database::Db;
 use crate::errors::AppResult;
 use serde::{Deserialize, Serialize};
@@ -138,6 +140,8 @@ pub struct AiSettings {
     pub show_reasoning: bool,
     /// User-defined short display names, keyed by LM Studio model id.
     pub model_aliases: std::collections::BTreeMap<String, String>,
+    /// Model ids left out of the chat window's model picker.
+    pub hidden_models: Vec<String>,
     /// Pasted text longer than this many characters is attached as a text file
     /// instead of filling the composer. 0 turns the behaviour off.
     #[serde(default = "default_paste_as_file_chars")]
@@ -161,6 +165,7 @@ impl Default for AiSettings {
             request_timeout_secs: 300,
             show_reasoning: false,
             model_aliases: Default::default(),
+            hidden_models: Vec::new(),
             paste_as_file_chars: default_paste_as_file_chars(),
         }
     }
@@ -545,6 +550,9 @@ impl Settings {
             .map(|(k, v)| (k, v.trim().chars().take(40).collect::<String>()))
             .filter(|(k, v)| !k.is_empty() && !v.is_empty())
             .collect();
+        self.ai.hidden_models.retain(|m| !m.trim().is_empty());
+        self.ai.hidden_models.sort();
+        self.ai.hidden_models.dedup();
         self.tts.speed = self.tts.speed.clamp(0.5, 2.0);
         self.tts.volume = self.tts.volume.clamp(0.0, 1.0);
         if !matches!(self.stt.hardware.as_str(), "auto" | "cpu") {

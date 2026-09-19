@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
-import { ipc } from "../../../app/ipc";
+import { Download, Upload } from "lucide-react";
+import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
+import { ipc, toAppError } from "../../../app/ipc";
 import { useSettings } from "../../../app/settingsStore";
 import { t } from "../../../app/strings";
 import type { LangSetting, Settings } from "../../../app/types";
@@ -50,7 +52,68 @@ export function GeneralSection() {
           <Switch id="sw-dev" label={t("settings.general.developerMode")} checked={g.developerMode} onChange={(v) => set((d) => void (d.general.developerMode = v))} />
         </Row>
       </Card>
+      <BackupCard />
     </>
+  );
+}
+
+const BACKUP_FILTER = [{ name: "Local Assistant backup", extensions: ["labackup"] }];
+
+/** Encrypted settings export/import. */
+function BackupCard() {
+  const update = useSettings((x) => x.update);
+  const [includeKeys, setIncludeKeys] = useState(false);
+  const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const doExport = async () => {
+    const date = new Date().toISOString().slice(0, 10);
+    const path = await saveDialog({ defaultPath: `local-assistant-settings-${date}.labackup`, filters: BACKUP_FILTER });
+    if (!path) return;
+    try {
+      await ipc.settingsExport(path, includeKeys);
+      setResult({ ok: true, text: t("settings.backup.exported") });
+    } catch (e) {
+      setResult({ ok: false, text: toAppError(e).detail });
+    }
+  };
+
+  const doImport = async () => {
+    const path = await openDialog({ multiple: false, filters: BACKUP_FILTER });
+    if (!path || Array.isArray(path)) return;
+    try {
+      const merged = await ipc.settingsImport(path);
+      // Saved like any edit, so shortcuts, provider, window and so on apply now.
+      await update((d) => void Object.assign(d, merged));
+      setResult({ ok: true, text: t("settings.backup.imported") });
+    } catch (e) {
+      setResult({ ok: false, text: toAppError(e).detail });
+    }
+  };
+
+  return (
+    <Card title={t("settings.backup.title")}>
+      <p className="row-hint" style={{ margin: "8px 0 4px" }}>
+        {t("settings.backup.intro")}
+      </p>
+      <Row label={t("settings.backup.includeKeys")} hint={t("settings.backup.includeKeysHint")} htmlFor="sw-bk-keys">
+        <Switch id="sw-bk-keys" label={t("settings.backup.includeKeys")} checked={includeKeys} onChange={setIncludeKeys} />
+      </Row>
+      <Row label={t("settings.backup.actions")}>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button className="btn btn-sm" onClick={() => void doExport()}>
+            <Download size={13} /> {t("settings.backup.export")}
+          </button>
+          <button className="btn btn-sm" onClick={() => void doImport()}>
+            <Upload size={13} /> {t("settings.backup.import")}
+          </button>
+        </div>
+      </Row>
+      {result && (
+        <div className={`notice ${result.ok ? "info" : "err"}`} role="status" style={{ marginTop: 8 }}>
+          {result.text}
+        </div>
+      )}
+    </Card>
   );
 }
 

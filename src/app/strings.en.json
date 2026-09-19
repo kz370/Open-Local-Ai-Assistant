@@ -79,6 +79,7 @@
     "modelsRefresh": "Refresh models",
     "modelsSearch": "Search models",
     "modelsNoMatch": "No model matches your search.",
+    "modelsAllHidden": "All models are hidden. Show them again in Settings → AI provider.",
     "voiceReplies": "Voice replies",
     "handsFreeShort": "Hands-free",
     "suggestion1": "Explain dependency injection in simple terms",
@@ -95,7 +96,8 @@
     "remove": "Remove {{name}}",
     "dropHere": "Drop files to attach them",
     "textChars": "{{chars}} characters of text",
-    "textTruncated": "{{chars}} characters of text (shortened)"
+    "textTruncated": "{{chars}} characters of text (shortened)",
+    "noVision": "{{name}} was not added: {{model}} cannot read images. Pick a model marked Vision."
   },
   "tools": {
     "searching": "Searching the web…",
@@ -195,6 +197,17 @@
       "shortcuts": "Keyboard Shortcuts",
       "diagnostics": "Diagnostics"
     },
+    "backup": {
+      "title": "Backup",
+      "intro": "Save all settings to an encrypted file that only Local Assistant can open, and load them again here or on another computer. Conversations and MCP servers are not included.",
+      "includeKeys": "Include API keys",
+      "includeKeysHint": "Off by default. The file is encrypted, but anyone who has it and this app can load the keys.",
+      "actions": "Settings file",
+      "export": "Export settings",
+      "import": "Import settings",
+      "exported": "Settings exported.",
+      "imported": "Settings imported and applied."
+    },
     "general": {
       "startWithOs": "Start with Windows",
       "startMinimized": "Start minimized to tray",
@@ -268,6 +281,8 @@
         "unknown_size": "unknown size"
       },
       "latency": "{{ms}} ms",
+      "showInChat": "Show in chat model list",
+      "hideInChat": "Hide from chat model list",
       "shortName": "Short name",
       "shortNameHint": "Shown in the chat instead of the full model name."
     },

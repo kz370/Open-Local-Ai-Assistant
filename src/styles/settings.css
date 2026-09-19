@@ -141,6 +141,16 @@
   padding: 10px 0;
   border-bottom: 1px solid var(--border);
 }
+/* Model rows: radio, text, short-name box, eye toggle. */
+.model-item:has(> .icon-btn) {
+  grid-template-columns: auto 1fr auto auto;
+}
+.model-item.hidden-model > div {
+  opacity: 0.5;
+}
+.model-provider {
+  color: var(--text-faint);
+}
 .model-item:last-child {
   border-bottom: 0;
 }

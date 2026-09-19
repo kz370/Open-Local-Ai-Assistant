@@ -107,6 +107,26 @@ pub async fn save_settings(app: AppHandle, state: State<'_, AppState>, settings:
     Ok(saved)
 }
 
+/// Writes an encrypted settings backup. API keys are left out unless
+/// `include_keys` is set.
+#[tauri::command]
+pub fn settings_export(state: State<'_, AppState>, path: String, include_keys: bool) -> CmdResult<()> {
+    let mut s = state.settings.get();
+    if !include_keys {
+        crate::settings::backup::strip_keys(&mut s);
+    }
+    std::fs::write(path, crate::settings::backup::encrypt(&s)?)?;
+    Ok(())
+}
+
+/// Reads a backup and returns it merged into the current settings. The UI
+/// saves the result through `save_settings`, so every change takes effect.
+#[tauri::command]
+pub fn settings_import(state: State<'_, AppState>, path: String) -> CmdResult<Settings> {
+    let imported = crate::settings::backup::decrypt(&std::fs::read(path)?)?;
+    Ok(crate::settings::backup::merge_import(&state.settings.get(), imported))
+}
+
 /// While the user records a shortcut, global shortcuts must not swallow the keys.
 #[tauri::command]
 pub fn shortcuts_capture(app: AppHandle, capturing: bool) {
