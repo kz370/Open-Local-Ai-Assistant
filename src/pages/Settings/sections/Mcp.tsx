@@ -246,10 +246,19 @@ export function McpSection() {
             onChange={(v) => setSettings((x) => void (x.search.enabled = v))}
           />
         </Row>
+        <Row label={t("settings.mcp.searxngEnabled")} htmlFor="sw-searxng">
+          <Switch
+            id="sw-searxng"
+            label={t("settings.mcp.searxngEnabled")}
+            checked={search?.searxngEnabled ?? true}
+            onChange={(v) => setSettings((x) => void (x.search.searxngEnabled = v))}
+          />
+        </Row>
         <Row label={t("settings.mcp.searxng")} hint={t("settings.mcp.searxngHint")} htmlFor="in-searxng">
           <input
             id="in-searxng"
             className="input"
+            disabled={!(search?.searxngEnabled ?? true)}
             placeholder="https://searx.example.org"
             value={search?.searxngUrl ?? ""}
             onChange={(e) => setSettings((x) => void (x.search.searxngUrl = e.target.value.trim()))}

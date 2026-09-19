@@ -33,6 +33,7 @@ const SETTINGS: Settings = {
     provider: "lmstudio",
     serverUrl: "http://localhost:1234/v1",
     apiKey: null,
+    providerProfiles: {},
     modelMode: "auto",
     model: null,
     temperature: 0.7,
@@ -59,7 +60,7 @@ const SETTINGS: Settings = {
   tts: { speakResponses: false, speed: 1, volume: 1, outputDevice: null, preferredGender: "any", voiceHardware: {} },
   dictation: { enabled: true, shortcut: "CommandOrControl+Alt+Space", mode: "hold", correctionEnabled: false, correctionModel: null, insertMethod: "type", addTrailingSpace: true, overlayX: null, overlayY: null },
   silma: { hardware: "auto" },
-  search: { enabled: true, maxResults: 5, searxngUrl: "" },
+  search: { enabled: true, maxResults: 5, searxngUrl: "", searxngEnabled: true },
   lastConversationId: null,
   version: 2,
 };

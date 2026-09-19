@@ -22,6 +22,10 @@ pub async fn save_settings(app: AppHandle, state: State<'_, AppState>, settings:
     let before = state.settings.get();
     let saved = state.settings.set(settings)?;
 
+    if before.ai.provider != saved.ai.provider {
+        state.lmstudio.set_provider(&saved.ai.provider);
+        state.resolver.invalidate().await;
+    }
     if before.ai.server_url != saved.ai.server_url {
         state.lmstudio.set_base_url(&saved.ai.server_url);
         state.resolver.invalidate().await;
@@ -178,13 +182,15 @@ pub async fn scan_capabilities(state: State<'_, AppState>) -> CmdResult<Capabili
 }
 
 #[tauri::command]
-pub async fn lmstudio_test(state: State<'_, AppState>, url: Option<String>, api_key: Option<String>) -> CmdResult<ConnectionStatus> {
+pub async fn lmstudio_test(state: State<'_, AppState>, url: Option<String>, api_key: Option<String>, provider: Option<String>) -> CmdResult<ConnectionStatus> {
+    let provider = provider.unwrap_or_else(|| state.settings.get().ai.provider);
     let url_changed = url.as_deref().is_some_and(|u| u.trim() != state.lmstudio.base_url());
     let key_changed = api_key != state.lmstudio.api_key();
     if !url_changed && !key_changed {
         return state.lmstudio.test_connection().await;
     }
     let probe = crate::services::ai::lmstudio::LmStudioService::new(url.as_deref().unwrap_or(&state.lmstudio.base_url()), 10);
+    probe.set_provider(&provider);
     probe.set_api_key(if key_changed { api_key } else { state.lmstudio.api_key() });
     probe.test_connection().await
 }
@@ -274,7 +280,7 @@ pub async fn privacy_status(state: State<'_, AppState>) -> CmdResult<PrivacyStat
     let statuses = state.mcp.statuses().await?;
     let internet_servers: Vec<String> = statuses.iter().filter(|s| s.config.enabled && s.internet).map(|s| s.config.name.clone()).collect();
     Ok(PrivacyStatus {
-        llm: "LM Studio".into(),
+        llm: crate::settings::provider_name(&state.settings.get().ai.provider).into(),
         llm_server: url,
         llm_is_local_address: local,
         stt_local: true,

@@ -3,6 +3,15 @@
 export type LangCode = "en" | "ar" | "de";
 export type LangSetting = "auto" | LangCode;
 
+export type ProviderId = "lmstudio" | "openrouter" | "groq" | "gemini" | "huggingface" | "cerebras";
+
+export interface ProviderProfile {
+  serverUrl: string;
+  apiKey: string | null;
+  model: string | null;
+  modelMode: "auto" | "manual" | "";
+}
+
 export interface WindowGeometry {
   x: number;
   y: number;
@@ -33,9 +42,11 @@ export interface Settings {
     bubbleY: number | null;
   };
   ai: {
-    provider: "lmstudio";
+    provider: ProviderId;
     serverUrl: string;
     apiKey: string | null;
+    /** URL / key / model remembered for providers that are not currently selected. */
+    providerProfiles: Record<string, ProviderProfile>;
     modelMode: "auto" | "manual";
     model: string | null;
     temperature: number;
@@ -99,6 +110,7 @@ export interface Settings {
     enabled: boolean;
     maxResults: number;
     searxngUrl: string;
+    searxngEnabled: boolean;
   };
   lastConversationId: string | null;
   version: number;

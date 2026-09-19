@@ -2,10 +2,20 @@ import { useCallback, useEffect, useState } from "react";
 import { Eye, EyeOff, RefreshCw } from "lucide-react";
 import { ipc, toAppError } from "../../../app/ipc";
 import { formatBytes, modelLabel, t } from "../../../app/strings";
-import type { AppErrorPayload, ConnectionStatus, ModelInfo, ModelSelection } from "../../../app/types";
+import type { AppErrorPayload, ConnectionStatus, ModelInfo, ModelSelection, ProviderId } from "../../../app/types";
 import { ErrorNotice, Switch } from "../../../components/common/controls";
 import { Card, Row, SectionHeader } from "../../../components/settings/layout";
 import { useS } from "./Basic";
+
+/** Selectable providers; `url` is the OpenAI-compatible base URL preset (mirrors `PROVIDERS` in settings/mod.rs). */
+const PROVIDERS: { id: ProviderId; label: string; url: string }[] = [
+  { id: "lmstudio", label: "LM Studio", url: "http://localhost:1234/v1" },
+  { id: "openrouter", label: "OpenRouter", url: "https://openrouter.ai/api/v1" },
+  { id: "groq", label: "Groq", url: "https://api.groq.com/openai/v1" },
+  { id: "gemini", label: "Google Gemini API", url: "https://generativelanguage.googleapis.com/v1beta/openai" },
+  { id: "huggingface", label: "Hugging Face", url: "https://router.huggingface.co/v1" },
+  { id: "cerebras", label: "Cerebras", url: "https://api.cerebras.ai/v1" },
+];
 
 export function useLmModels() {
   const [models, setModels] = useState<ModelInfo[]>([]);
@@ -41,7 +51,22 @@ export function AiSection() {
   const [status, setStatus] = useState<ConnectionStatus | null>(null);
   const [testError, setTestError] = useState<AppErrorPayload | null>(null);
   const [testing, setTesting] = useState(false);
+  const [modelFilter, setModelFilter] = useState("");
   const { models, auto, error, loading, refresh } = useLmModels();
+  const provider = PROVIDERS.find((p) => p.id === s.ai.provider) ?? PROVIDERS[0];
+  const hosted = provider.id !== "lmstudio";
+
+  const switchProvider = (next: ProviderId) =>
+    set((d) => {
+      if (next === d.ai.provider) return;
+      d.ai.providerProfiles[d.ai.provider] = { serverUrl: d.ai.serverUrl, apiKey: d.ai.apiKey, model: d.ai.model, modelMode: d.ai.modelMode };
+      const saved = d.ai.providerProfiles[next];
+      d.ai.provider = next;
+      d.ai.serverUrl = saved?.serverUrl || PROVIDERS.find((p) => p.id === next)!.url;
+      d.ai.apiKey = saved?.apiKey ?? null;
+      d.ai.model = saved?.model ?? null;
+      d.ai.modelMode = next === "lmstudio" ? saved?.modelMode || "auto" : "manual";
+    });
 
   useEffect(() => setUrl(s.ai.serverUrl), [s.ai.serverUrl]);
   useEffect(() => setApiKey(s.ai.apiKey ?? ""), [s.ai.apiKey]);
@@ -50,7 +75,7 @@ export function AiSection() {
     setTesting(true);
     setTestError(null);
     try {
-      setStatus(await ipc.lmstudioTest(url, apiKey || undefined));
+      setStatus(await ipc.lmstudioTest(url, apiKey || undefined, s.ai.provider));
     } catch (e) {
       setStatus(null);
       setTestError(toAppError(e));
@@ -62,21 +87,28 @@ export function AiSection() {
   useEffect(() => {
     void test();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [s.ai.serverUrl, s.ai.apiKey]);
+  }, [s.ai.serverUrl, s.ai.apiKey, s.ai.provider]);
 
-  const chatModels = models.filter((m) => m.kind !== "embedding");
+  useEffect(() => setModelFilter(""), [s.ai.provider]);
+
+  const needle = modelFilter.trim().toLowerCase();
+  const chatModels = models.filter((m) => m.kind !== "embedding" && (!needle || m.id.toLowerCase().includes(needle) || (s.ai.modelAliases[m.id] ?? "").toLowerCase().includes(needle)));
   const numberOrNull = (v: string) => (v.trim() === "" ? null : Math.max(1, Math.round(Number(v)) || 0) || null);
 
   return (
     <>
       <SectionHeader title={t("settings.sections.ai")} />
       <Card title={t("settings.ai.provider")}>
-        <Row label={t("settings.ai.provider")}>
-          <select id="sel-provider" className="select" value={s.ai.provider} disabled>
-            <option value="lmstudio">LM Studio</option>
+        <Row label={t("settings.ai.provider")} hint={hosted ? t("settings.ai.hostedNotice", { provider: provider.label }) : undefined} htmlFor="sel-provider">
+          <select id="sel-provider" className="select" value={s.ai.provider} onChange={(e) => switchProvider(e.target.value as ProviderId)}>
+            {PROVIDERS.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.label}
+              </option>
+            ))}
           </select>
         </Row>
-        <Row label={t("settings.ai.server")} hint={t("settings.ai.serverHint")} htmlFor="lm-url">
+        <Row label={hosted ? t("settings.ai.serverHosted") : t("settings.ai.server")} hint={hosted ? t("settings.ai.serverHostedHint") : t("settings.ai.serverHint")} htmlFor="lm-url">
           <input
             id="lm-url"
             className="input mono"
@@ -87,14 +119,14 @@ export function AiSection() {
             onKeyDown={(e) => e.key === "Enter" && set((d) => void (d.ai.serverUrl = url))}
           />
         </Row>
-        <Row label={t("settings.ai.apiKey")} hint={t("settings.ai.apiKeyHint")} htmlFor="lm-key">
+        <Row label={t("settings.ai.apiKey")} hint={hosted ? t("settings.ai.apiKeyHostedHint", { provider: provider.label }) : t("settings.ai.apiKeyHint")} htmlFor="lm-key">
           <input
             id="lm-key"
             className="input mono"
             type={showKey ? "text" : "password"}
             autoComplete="off"
             spellCheck={false}
-            placeholder={t("settings.ai.apiKeyPlaceholder")}
+            placeholder={hosted ? t("settings.ai.apiKeyRequired") : t("settings.ai.apiKeyPlaceholder")}
             value={apiKey}
             onChange={(e) => setApiKey(e.target.value)}
             onBlur={() => (apiKey.trim() || null) !== s.ai.apiKey && set((d) => void (d.ai.apiKey = apiKey.trim() || null))}
@@ -138,25 +170,32 @@ export function AiSection() {
             <ErrorNotice error={error} />
           </div>
         )}
+        {hosted && models.length > 8 && (
+          <div style={{ padding: "10px 0" }}>
+            <input className="input" aria-label={t("settings.ai.filterModels")} placeholder={t("settings.ai.filterModels")} value={modelFilter} onChange={(e) => setModelFilter(e.target.value)} />
+          </div>
+        )}
         <div className="model-list" role="radiogroup" aria-label={t("settings.ai.model")}>
-          <label className="model-item">
-            <input type="radio" name="model" checked={s.ai.modelMode === "auto"} onChange={() => set((d) => void (d.ai.modelMode = "auto"))} />
-            <div>
-              <div className="model-name">{t("settings.ai.automatic")}</div>
-              {auto && (
-                <div className="model-meta">
-                  <span>{t("settings.ai.autoPicked", { model: modelLabel(auto.modelId, s.ai.modelAliases, 48) })}</span>
-                  {auto.reasons.map((r) => (
-                    <span key={r} className="badge">
-                      {t(`settings.ai.reasons.${r}`)}
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-            <span />
-          </label>
-          {chatModels.length === 0 && !loading && <p className="row-hint">{t("settings.ai.noModels")}</p>}
+          {!hosted && (
+            <label className="model-item">
+              <input type="radio" name="model" checked={s.ai.modelMode === "auto"} onChange={() => set((d) => void (d.ai.modelMode = "auto"))} />
+              <div>
+                <div className="model-name">{t("settings.ai.automatic")}</div>
+                {auto && (
+                  <div className="model-meta">
+                    <span>{t("settings.ai.autoPicked", { model: modelLabel(auto.modelId, s.ai.modelAliases, 48) })}</span>
+                    {auto.reasons.map((r) => (
+                      <span key={r} className="badge">
+                        {t(`settings.ai.reasons.${r}`)}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <span />
+            </label>
+          )}
+          {chatModels.length === 0 && !loading && <p className="row-hint">{hosted ? t("settings.ai.noModelsHosted") : t("settings.ai.noModels")}</p>}
           {chatModels.map((m) => (
             <label className="model-item" key={m.id}>
               <input

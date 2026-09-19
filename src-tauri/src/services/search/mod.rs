@@ -116,8 +116,9 @@ impl WebSearch {
         }
         // A SearXNG instance the user runs or trusts always wins: it answers
         // JSON and never shows a captcha.
-        let instance = self.settings.get().search.searxng_url.trim().to_string();
-        if !instance.is_empty() {
+        let search = self.settings.get().search;
+        let instance = search.searxng_url.trim().to_string();
+        if search.searxng_enabled && !instance.is_empty() {
             match self.search_searxng(&instance, query).await {
                 Ok(results) if !results.is_empty() => {
                     self.remember(query, &results);

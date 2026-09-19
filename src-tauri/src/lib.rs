@@ -43,6 +43,7 @@ fn init_state(app: &AppHandle) -> Result<AppState, Box<dyn std::error::Error>> {
     tracing::info!(cpu = %hardware.cpu_name, cores = hardware.physical_cores, ram_gb = hardware.total_ram_bytes / (1 << 30), gpus = hardware.gpus.len(), "hardware detected");
 
     let lmstudio = Arc::new(LmStudioService::new(&s.ai.server_url, s.ai.request_timeout_secs));
+    lmstudio.set_provider(&s.ai.provider);
     lmstudio.set_api_key(s.ai.api_key.clone());
     let resolver = Arc::new(ModelResolver::with_hardware(lmstudio.clone(), hardware.clone()));
     let models = Arc::new(ModelStore::new(paths.models_dir.clone()));
