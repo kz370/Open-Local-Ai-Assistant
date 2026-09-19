@@ -22,10 +22,32 @@ pub fn level(samples: &[f32]) -> f32 {
 /// Number of bands in [`spectrum`].
 pub const SPECTRUM_BANDS: usize = 24;
 
+/// Analysis window length of [`spectrum`].
+const N: usize = 512;
+
+static HANN: std::sync::LazyLock<Vec<f32>> =
+    std::sync::LazyLock::new(|| (0..N).map(|i| 0.5 - 0.5 * (std::f32::consts::TAU * i as f32 / N as f32).cos()).collect());
+
+/// Cosine and sine of every (bin, sample) pair, built once: the meter runs in
+/// the microphone callback, where trigonometry per sample would be wasteful.
+fn twiddles(top_bin: usize) -> &'static (Vec<f32>, Vec<f32>) {
+    static TABLES: std::sync::OnceLock<(Vec<f32>, Vec<f32>)> = std::sync::OnceLock::new();
+    TABLES.get_or_init(|| {
+        let (mut cos, mut sin) = (Vec::with_capacity((top_bin + 1) * N), Vec::with_capacity((top_bin + 1) * N));
+        for k in 0..=top_bin {
+            for i in 0..N {
+                let a = std::f32::consts::TAU * k as f32 * i as f32 / N as f32;
+                cos.push(a.cos());
+                sin.push(a.sin());
+            }
+        }
+        (cos, sin)
+    })
+}
+
 /// Voice spectrum for the meter: `SPECTRUM_BANDS` log-spaced bands between
 /// 80 Hz and 4 kHz (16 kHz input), each mapped to 0..1 like [`level`].
 pub fn spectrum(samples: &[f32]) -> Vec<f32> {
-    const N: usize = 512;
     const LOW_HZ: f32 = 80.0;
     const HIGH_HZ: f32 = 4000.0;
     if samples.len() < N {
@@ -35,15 +57,15 @@ pub fn spectrum(samples: &[f32]) -> Vec<f32> {
     let frame = &samples[samples.len() - N..];
     let bin_hz = STT_SAMPLE_RATE as f32 / N as f32;
     let top_bin = (HIGH_HZ / bin_hz) as usize;
-    let window: Vec<f32> = (0..N).map(|i| frame[i] * (0.5 - 0.5 * (std::f32::consts::TAU * i as f32 / N as f32).cos())).collect();
+    let tables = twiddles(top_bin);
+    let window: Vec<f32> = (0..N).map(|i| frame[i] * HANN[i]).collect();
     let power: Vec<f32> = (0..=top_bin)
         .map(|k| {
-            let step = std::f32::consts::TAU * k as f32 / N as f32;
+            let (cos, sin) = (&tables.0[k * N..(k + 1) * N], &tables.1[k * N..(k + 1) * N]);
             let (mut re, mut im) = (0.0f32, 0.0f32);
-            for (i, x) in window.iter().enumerate() {
-                let a = step * i as f32;
-                re += x * a.cos();
-                im -= x * a.sin();
+            for i in 0..N {
+                re += window[i] * cos[i];
+                im -= window[i] * sin[i];
             }
             // Amplitude normalised for the Hann window (sum = N/2).
             let mag = (re * re + im * im).sqrt() * 4.0 / N as f32;
@@ -72,6 +94,20 @@ pub fn spectrum(samples: &[f32]) -> Vec<f32> {
 #[cfg(test)]
 mod tests {
     use super::{level, spectrum, SPECTRUM_BANDS, STT_SAMPLE_RATE};
+
+    /// `cargo test spectrum_cost -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn spectrum_cost() {
+        let audio: Vec<f32> = (0..800).map(|i| (i as f32 * 0.05).sin() * 0.2).collect();
+        spectrum(&audio);
+        let started = std::time::Instant::now();
+        for _ in 0..200 {
+            spectrum(&audio);
+        }
+        // 200 calls = 10 seconds of microphone input at 20 updates per second.
+        println!("{:.2} ms per update", started.elapsed().as_secs_f32() * 1000.0 / 200.0);
+    }
 
     #[test]
     fn spectrum_follows_pitch() {
