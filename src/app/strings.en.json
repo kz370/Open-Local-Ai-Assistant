@@ -77,6 +77,8 @@
     "modelPicker": "Choose model",
     "modelsEmpty": "No models found. Start LM Studio and load a model.",
     "modelsRefresh": "Refresh models",
+    "modelsSearch": "Search models",
+    "modelsNoMatch": "No model matches your search.",
     "voiceReplies": "Voice replies",
     "handsFreeShort": "Hands-free",
     "suggestion1": "Explain dependency injection in simple terms",

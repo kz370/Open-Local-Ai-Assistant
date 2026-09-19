@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Check, ChevronDown, Cpu, RefreshCw, Sparkles } from "lucide-react";
+import { Check, ChevronDown, Cpu, RefreshCw, Search, Sparkles } from "lucide-react";
 import { ipc } from "../../app/ipc";
 import { useSettings } from "../../app/settingsStore";
 import { formatBytes, modelLabel, t } from "../../app/strings";
@@ -12,6 +12,8 @@ export function ModelPicker({ autoModel }: { autoModel: string | null }) {
   const [open, setOpen] = useState(false);
   const [models, setModels] = useState<ModelInfo[] | null>(null);
   const [loading, setLoading] = useState(false);
+  const [query, setQuery] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -32,6 +34,7 @@ export function ModelPicker({ autoModel }: { autoModel: string | null }) {
 
   useEffect(() => {
     if (!open) return;
+    setQuery("");
     void load(false);
     const onDown = (e: MouseEvent) => {
       if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
@@ -44,7 +47,7 @@ export function ModelPicker({ autoModel }: { autoModel: string | null }) {
     };
     window.addEventListener("mousedown", onDown);
     window.addEventListener("keydown", onKey, true);
-    setTimeout(() => listRef.current?.querySelector<HTMLElement>("[aria-checked='true'], [role='menuitemradio']")?.focus(), 0);
+    setTimeout(() => searchRef.current?.focus(), 0);
     return () => {
       window.removeEventListener("mousedown", onDown);
       window.removeEventListener("keydown", onKey, true);
@@ -62,6 +65,10 @@ export function ModelPicker({ autoModel }: { autoModel: string | null }) {
     });
     setOpen(false);
   };
+
+  // Matches the id, the display name and the user's short name.
+  const q = query.trim().toLowerCase();
+  const shown = models?.filter((m) => !q || [m.id, m.displayName, aliases?.[m.id] ?? ""].some((v) => v.toLowerCase().includes(q)));
 
   const onListKey = (e: React.KeyboardEvent) => {
     if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
@@ -86,6 +93,26 @@ export function ModelPicker({ autoModel }: { autoModel: string | null }) {
               <RefreshCw size={13} className={loading ? "spin" : ""} />
             </button>
           </div>
+          <div className="picker-search">
+            <Search size={13} aria-hidden />
+            <input
+              ref={searchRef}
+              type="search"
+              placeholder={t("chat.modelsSearch")}
+              aria-label={t("chat.modelsSearch")}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => {
+                // Enter picks the first match, so type-and-Enter works.
+                if (e.key === "Enter" && shown?.length) {
+                  e.preventDefault();
+                  choose(shown[0].id);
+                }
+              }}
+              spellCheck={false}
+            />
+          </div>
+          {!q && (
           <button type="button" role="menuitemradio" aria-checked={!manual} className="picker-item" onClick={() => choose(null)}>
             <Sparkles size={15} aria-hidden className="picker-icon" />
             <span className="picker-text">
@@ -94,11 +121,13 @@ export function ModelPicker({ autoModel }: { autoModel: string | null }) {
             </span>
             {!manual && <Check size={15} aria-hidden className="picker-check" />}
           </button>
-          <div className="picker-sep" />
+          )}
+          {!q && <div className="picker-sep" />}
           <div className="picker-scroll">
             {models === null && <div className="picker-empty"><span className="spinner" /></div>}
             {models?.length === 0 && <div className="picker-empty">{t("chat.modelsEmpty")}</div>}
-            {models?.map((m) => (
+            {!!models?.length && shown?.length === 0 && <div className="picker-empty">{t("chat.modelsNoMatch")}</div>}
+            {shown?.map((m) => (
               <button type="button" role="menuitemradio" aria-checked={manual === m.id} key={m.id} className="picker-item" onClick={() => choose(m.id)} title={m.id}>
                 <span className={`picker-dot${m.loaded ? " on" : ""}`} aria-hidden />
                 <span className="picker-text">
