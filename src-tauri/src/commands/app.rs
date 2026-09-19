@@ -269,6 +269,8 @@ pub struct PrivacyStatus {
     pub llm: String,
     pub llm_server: String,
     pub llm_is_local_address: bool,
+    /// A hosted provider (anything but LM Studio): messages leave the computer.
+    pub llm_is_cloud: bool,
     pub stt_local: bool,
     pub tts_local: bool,
     pub conversations_local: bool,
@@ -287,6 +289,7 @@ pub async fn privacy_status(state: State<'_, AppState>) -> CmdResult<PrivacyStat
     let internet_servers: Vec<String> = statuses.iter().filter(|s| s.config.enabled && s.internet).map(|s| s.config.name.clone()).collect();
     Ok(PrivacyStatus {
         llm: crate::settings::provider_name(&state.settings.get().ai.provider).into(),
+        llm_is_cloud: state.settings.get().ai.provider != "lmstudio",
         llm_server: url,
         llm_is_local_address: local,
         stt_local: true,

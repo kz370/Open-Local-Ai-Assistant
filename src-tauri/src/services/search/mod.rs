@@ -159,11 +159,16 @@ impl WebSearch {
         for engine in engine_order(&search) {
             let outcome = match engine {
                 Engine::Searxng => self.search_searxng_any(&search, query).await,
-                Engine::DuckDuckGo => self.search_duckduckgo(query).await.map(|r| (r, "DuckDuckGo".to_string())),
+                Engine::DuckDuckGo => self.search_duckduckgo(query).await.map(|r| (r, engine.name().to_string())),
             };
             match outcome {
+                // Say when this was the fallback, so a test in settings does
+                // not look like the "try first" choice was ignored.
+                Ok((results, label)) if !errors.is_empty() => {
+                    return Ok((results, format!("{label}, used as fallback because {}", errors.join("; "))));
+                }
                 Ok(found) => return Ok(found),
-                Err(e) => errors.push(format!("{}: {e}", engine.name())),
+                Err(e) => errors.push(format!("{} failed: {e}", engine.name())),
             }
         }
         if errors.is_empty() {
@@ -468,7 +473,7 @@ impl Engine {
     fn name(self) -> &'static str {
         match self {
             Engine::Searxng => "SearXNG",
-            Engine::DuckDuckGo => "DuckDuckGo",
+            Engine::DuckDuckGo => "Built-in search (DuckDuckGo)",
         }
     }
 }

@@ -54,3 +54,22 @@ async fn searches_a_public_instance_from_searx_space() {
     println!("{engine}: {} results", results.len());
     assert!(!results.is_empty());
 }
+
+/// With DuckDuckGo picked as primary it answers first; SearXNG is only the
+/// fallback.
+#[tokio::test]
+#[ignore]
+async fn primary_engine_goes_first() {
+    let db = Arc::new(Db::open_in_memory().unwrap());
+    let settings = Arc::new(SettingsStore::load(db).unwrap());
+    settings
+        .update(|s| {
+            s.search.primary = "duckduckgo".into();
+            s.search.searxng_url = "https://searxng.site".into();
+        })
+        .unwrap();
+    let search = WebSearch::new(settings);
+    let (results, engine) = search.search_uncached("rust programming language").await.expect("search failed");
+    println!("{engine}: {} results", results.len());
+    assert!(engine == "Built-in search (DuckDuckGo)", "answered by {engine}");
+}
