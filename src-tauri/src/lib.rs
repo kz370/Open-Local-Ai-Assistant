@@ -68,6 +68,7 @@ fn init_state(app: &AppHandle) -> Result<AppState, Box<dyn std::error::Error>> {
             let _ = handle.emit("silma://status", status);
         }),
     ));
+    silma.set_force_cpu(s.silma.hardware == "cpu");
     tts.set_silma(silma.clone());
 
     let handle = app.clone();
@@ -112,6 +113,7 @@ fn init_state(app: &AppHandle) -> Result<AppState, Box<dyn std::error::Error>> {
         model_loading: Mutex::new(Default::default()),
         dictation_busy: AtomicBool::new(false),
         dictation_cancel: AtomicBool::new(false),
+        dictation_live_typer: Default::default(),
         shortcut_errors: Mutex::new(Vec::new()),
     })
 }
@@ -126,6 +128,10 @@ fn on_voice_event(app: &AppHandle, ev: VoiceEvent) {
             tauri::async_runtime::spawn(async move { run_dictation(app, text).await });
         }
         VoiceEvent::State { mode: ListenMode::Dictation, state, .. } => {
+            if state == "listening" {
+                // A new session must not inherit live-typed text from the last one.
+                app.state::<AppState>().dictation_live_typer.reset();
+            }
             // A stop arriving after Esc-cancel must not resurrect the overlay
             // as idle; report cancelled instead (flag stays for run_dictation).
             if state == "idle" && app.state::<AppState>().dictation_cancel.load(Ordering::Relaxed) {
@@ -134,7 +140,19 @@ fn on_voice_event(app: &AppHandle, ev: VoiceEvent) {
                 let _ = app.emit("dictation://state", serde_json::json!({ "state": state }));
             }
         }
+        VoiceEvent::Partial { mode: ListenMode::Dictation, text } => {
+            let state = app.state::<AppState>();
+            if state.settings.get().dictation.insert_method == "type" {
+                state.dictation_live_typer.set_target(app.clone(), text.clone());
+            }
+        }
         VoiceEvent::Error { mode: ListenMode::Dictation, code, detail } => {
+            let typer_app = app.clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                if let Err(e) = typer_app.state::<AppState>().dictation_live_typer.retract() {
+                    tracing::warn!(error = %e, "could not retract live-typed dictation text after an error");
+                }
+            });
             let _ = app.emit("dictation://state", serde_json::json!({ "state": "error", "error": { "code": code, "detail": detail } }));
             hide_overlay_later(app);
         }
@@ -167,11 +185,23 @@ fn hide_overlay_later(app: &AppHandle) {
     });
 }
 
+/// Erases whatever dictation has live-typed so far, on a blocking thread.
+async fn retract_live_typed(app: &AppHandle) {
+    let app = app.clone();
+    let _ = tokio::task::spawn_blocking(move || {
+        if let Err(e) = app.state::<AppState>().dictation_live_typer.retract() {
+            tracing::warn!(error = %e, "could not retract live-typed dictation text");
+        }
+    })
+    .await;
+}
+
 async fn run_dictation(app: AppHandle, raw: String) {
     let state = app.state::<AppState>();
     state.dictation_busy.store(true, Ordering::Relaxed);
     // Esc/X cancel wins over any pending transcript or correction.
     if state.dictation_cancel.swap(false, Ordering::Relaxed) {
+        retract_live_typed(&app).await;
         let _ = app.emit("dictation://state", serde_json::json!({ "state": "cancelled" }));
         state.dictation_busy.store(false, Ordering::Relaxed);
         return;
@@ -182,6 +212,7 @@ async fn run_dictation(app: AppHandle, raw: String) {
     let mut corrected = false;
     let mut correction_error = None;
     if raw.is_empty() {
+        retract_live_typed(&app).await;
         let _ = app.emit("dictation://state", serde_json::json!({ "state": "empty" }));
     } else {
         if settings.correction_enabled {
@@ -204,13 +235,19 @@ async fn run_dictation(app: AppHandle, raw: String) {
         }
         // Cancel may have landed during the (slow) correction call.
         if state.dictation_cancel.swap(false, Ordering::Relaxed) {
+            retract_live_typed(&app).await;
             let _ = app.emit("dictation://state", serde_json::json!({ "state": "cancelled" }));
             state.dictation_busy.store(false, Ordering::Relaxed);
             return;
         }
         let final_text = dictation::finalize_text(&text, &settings);
-        let s2 = settings.clone();
-        let insert = tokio::task::spawn_blocking(move || dictation::insert_text(&final_text, &s2)).await;
+        let insert = if settings.insert_method == "type" {
+            let app2 = app.clone();
+            tokio::task::spawn_blocking(move || app2.state::<AppState>().dictation_live_typer.finish(&final_text)).await
+        } else {
+            let s2 = settings.clone();
+            tokio::task::spawn_blocking(move || dictation::insert_text(&final_text, &s2)).await
+        };
         match insert {
             Ok(Ok(())) => {
                 let result = dictation::DictationResult { raw: raw.clone(), inserted: text.clone(), corrected, correction_error: correction_error.map(|e| e.to_string()) };
@@ -355,6 +392,7 @@ pub fn run() {
             commands::voice::voice_start,
             commands::voice::voice_stop,
             commands::voice::dictation_cancel,
+            commands::voice::dictation_reset_overlay_position,
             commands::voice::voice_status,
             commands::voice::voice_set_muted,
             commands::voice::voice_muted,

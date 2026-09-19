@@ -212,13 +212,9 @@ impl TtsService {
     }
 
     fn voice_for(&self, lang: Lang) -> Option<VoiceInfo> {
-        let s = self.settings.get().tts;
-        let pref = match lang {
-            Lang::En => s.voice_en,
-            Lang::Ar => s.voice_ar,
-            Lang::De => s.voice_de,
-        };
-        select_voice(&self.voices(), lang, &pref, &s.preferred_gender)
+        let s = self.settings.get();
+        let pref = s.language.entries.iter().find(|e| e.code == lang.code()).map(|e| e.tts_voice.clone()).unwrap_or_else(|| "auto".into());
+        select_voice(&self.voices(), lang, &pref, &s.tts.preferred_gender)
     }
 
     pub fn apply_settings(&self) {
@@ -242,7 +238,8 @@ impl TtsService {
         let data_dir = dir.join("espeak-ng-data");
         let mut config = sherpa_onnx::OfflineTtsConfig::default();
         config.model.num_threads = threads;
-        config.model.provider = Some(crate::services::gpu::provider().into());
+        let hw_pref = self.settings.get().tts.voice_hardware.get(model_id).cloned().unwrap_or_else(|| "auto".into());
+        config.model.provider = Some(crate::services::gpu::provider_for(&hw_pref).into());
         config.max_num_sentences = 1;
         match model.engine {
             Engine::Kokoro => {

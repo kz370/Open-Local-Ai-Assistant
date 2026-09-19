@@ -14,6 +14,11 @@ pub struct PromptContext<'a> {
     pub voice_mode: bool,
     pub assistant_name: &'a str,
     pub custom_prompt: &'a str,
+    /// When Arabic is active: ask for full tashkeel (diacritics) instead of
+    /// the default "write without diacritics" instruction.
+    pub tashkeel_enabled: bool,
+    /// Replaces the default tashkeel-enabled instruction when non-empty.
+    pub tashkeel_instruction: &'a str,
 }
 
 pub fn build_system_prompt(ctx: &PromptContext) -> String {
@@ -55,10 +60,21 @@ pub fn build_system_prompt(ctx: &PromptContext) -> String {
              - Spell همزة القطع/الوصل, ة vs ه, ى vs ي and ا/آ/أ/إ correctly.\n\
              - No dialect (عامية), no Franco-Arabic, no unneeded foreign words, no English word order calqued into Arabic.\n\
              - Build each sentence as a complete, well-formed جملة اسمية or فعلية; prefer short clear sentences over \
-               long ones you cannot keep grammatical.\n\
-             - Write plain Arabic without diacritics (no تشكيل / حركات), unless the user's custom instructions below \
-               explicitly ask for them.\n",
+               long ones you cannot keep grammatical.\n",
         );
+        if ctx.tashkeel_enabled {
+            let instr = ctx.tashkeel_instruction.trim();
+            if instr.is_empty() {
+                p.push_str("- Fully diacritize every word with complete تشكيل (حركات), applying إعراب rules precisely.\n");
+            } else {
+                p.push_str(&format!("- {instr}\n"));
+            }
+        } else {
+            p.push_str(
+                "- Write plain Arabic without diacritics (no تشكيل / حركات), unless the user's custom instructions below \
+                   explicitly ask for them.\n",
+            );
+        }
     }
     p.push_str("\n## Style\n");
     if ctx.voice_mode {
@@ -134,6 +150,8 @@ mod tests {
             voice_mode: false,
             assistant_name: "Local Assistant",
             custom_prompt: "Be brief.",
+            tashkeel_enabled: false,
+            tashkeel_instruction: "",
         }
     }
 
@@ -162,6 +180,24 @@ mod tests {
         let forced_ar = PromptContext { voice_mode: true, ..ctx(&[], Some(Lang::Ar), Some(Lang::En), false) };
         assert!(build_system_prompt(&forced_ar).contains("فصحى"));
         assert!(!build_system_prompt(&ctx(&[], None, Some(Lang::De), false)).contains("فصحى"));
+    }
+
+    #[test]
+    fn tashkeel_toggle() {
+        let disabled = PromptContext { voice_mode: true, ..ctx(&[], None, Some(Lang::Ar), false) };
+        let prompt = build_system_prompt(&disabled);
+        assert!(prompt.contains("without diacritics"));
+        assert!(!prompt.contains("Fully diacritize"));
+
+        let enabled_default = PromptContext { tashkeel_enabled: true, ..ctx(&[], None, Some(Lang::Ar), false) };
+        let prompt = build_system_prompt(&enabled_default);
+        assert!(prompt.contains("Fully diacritize"));
+        assert!(!prompt.contains("without diacritics"));
+
+        let custom = PromptContext { tashkeel_enabled: true, tashkeel_instruction: "Add تشكيل only on ambiguous words.", ..ctx(&[], None, Some(Lang::Ar), false) };
+        let prompt = build_system_prompt(&custom);
+        assert!(prompt.contains("Add تشكيل only on ambiguous words."));
+        assert!(!prompt.contains("Fully diacritize"));
     }
 
     #[test]

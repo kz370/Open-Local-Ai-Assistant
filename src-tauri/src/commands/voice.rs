@@ -46,6 +46,13 @@ pub fn dictation_cancel(app: AppHandle) {
     crate::desktop::window::cancel_dictation(&app);
 }
 
+/// Clears the dictation overlay's dragged position, reverting it to the
+/// default centered-near-the-bottom placement.
+#[tauri::command]
+pub fn dictation_reset_overlay_position(app: AppHandle) {
+    crate::desktop::window::reset_overlay_position(&app);
+}
+
 #[tauri::command]
 pub fn voice_status(state: State<'_, AppState>) -> Option<ListenMode> {
     state.voice.active_mode()
@@ -314,7 +321,11 @@ pub async fn silma_install(app: AppHandle, state: State<'_, AppState>) -> CmdRes
         state.downloads.lock().unwrap_or_else(|p| p.into_inner()).remove(SILMA_DOWNLOAD);
         if result.is_ok() {
             // Setting it up is what the user asked for: make it the Arabic voice.
-            match state.settings.update(|s| s.tts.voice_ar = crate::services::tts::voices::SILMA_VOICE_ID.into()) {
+            match state.settings.update(|s| {
+                if let Some(e) = s.language.entries.iter_mut().find(|e| e.code == "ar") {
+                    e.tts_voice = crate::services::tts::voices::SILMA_VOICE_ID.into();
+                }
+            }) {
                 Ok(saved) => {
                     let _ = app2.emit("settings://changed", &saved);
                 }

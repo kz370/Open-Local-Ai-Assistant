@@ -33,6 +33,7 @@ export interface Settings {
     bubbleY: number | null;
   };
   ai: {
+    provider: "lmstudio";
     serverUrl: string;
     apiKey: string | null;
     modelMode: "auto" | "manual";
@@ -48,14 +49,19 @@ export interface Settings {
     /** Pasted text longer than this becomes a text attachment. 0 disables it. */
     pasteAsFileChars: number;
   };
-  language: { responseLanguage: LangSetting };
+  language: {
+    responseLanguage: string;
+    entries: LanguageEntry[];
+    arabicTashkeelEnabled: boolean;
+    arabicTashkeelInstruction: string;
+  };
   stt: {
     model: string;
-    language: LangSetting;
+    language: string;
     microphone: string | null;
     micOnly: boolean;
     isolateSystemAudio: boolean;
-    hardware: string;
+    hardware: "auto" | "cpu";
     autoSubmit: boolean;
     handsFree: boolean;
     pushToTalk: boolean;
@@ -68,13 +74,12 @@ export interface Settings {
   };
   tts: {
     speakResponses: boolean;
-    voiceEn: string;
-    voiceAr: string;
-    voiceDe: string;
     speed: number;
     volume: number;
     outputDevice: string | null;
     preferredGender: "any" | "female" | "male";
+    /** Per-voice hardware override ("auto" | "cpu"), keyed by voice/model id. */
+    voiceHardware: Record<string, string>;
   };
   dictation: {
     enabled: boolean;
@@ -84,6 +89,11 @@ export interface Settings {
     correctionModel: string | null;
     insertMethod: "type" | "paste";
     addTrailingSpace: boolean;
+    overlayX: number | null;
+    overlayY: number | null;
+  };
+  silma: {
+    hardware: "auto" | "cpu";
   };
   search: {
     enabled: boolean;
@@ -92,6 +102,15 @@ export interface Settings {
   };
   lastConversationId: string | null;
   version: number;
+}
+
+export interface LanguageEntry {
+  code: string;
+  displayName: string;
+  direction: "ltr" | "rtl";
+  sttLanguage: string;
+  ttsVoice: string;
+  builtIn: boolean;
 }
 
 export interface AppErrorPayload {

@@ -7,8 +7,12 @@ use crate::errors::{AppError, AppResult};
 use crate::services::ai::{AiService, ChatMessage, ChatRequest, StreamChunk};
 use crate::services::chat::think::ThinkFilter;
 use crate::settings::DictationSettings;
+use crate::state::AppState;
 use serde::Serialize;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
+use tauri::{AppHandle, Manager};
 use tokio_util::sync::CancellationToken;
 
 #[derive(Debug, Clone, Serialize)]
@@ -88,20 +92,154 @@ fn modifiers_down() -> bool {
     false
 }
 
-/// Types text into the focused application. Blocking.
-pub fn insert_text(text: &str, settings: &DictationSettings) -> AppResult<()> {
-    use enigo::{Direction, Enigo, Key, Keyboard, Settings};
-    if text.is_empty() {
-        return Ok(());
-    }
-    // The hotkey's modifiers may still be held; typing now would trigger shortcuts.
+/// Waits out the hotkey's modifiers (still held right as recording stops;
+/// typing now would risk triggering shortcuts instead of literal characters),
+/// then returns a fresh keyboard handle. Only for a one-shot action right
+/// after a session ends — never call this per live partial, since in
+/// hold-to-talk mode the modifier is legitimately held for the whole session.
+fn keyboard_settled() -> AppResult<enigo::Enigo> {
+    use enigo::{Enigo, Settings};
     let wait = Instant::now();
     while modifiers_down() && wait.elapsed() < Duration::from_secs(3) {
         std::thread::sleep(Duration::from_millis(30));
     }
     std::thread::sleep(Duration::from_millis(60));
+    Enigo::new(&Settings::default()).map_err(|e| AppError::Other(format!("keyboard input unavailable: {e}")))
+}
 
-    let mut enigo = Enigo::new(&Settings::default()).map_err(|e| AppError::Other(format!("keyboard input unavailable: {e}")))?;
+fn backspace(enigo: &mut enigo::Enigo, n: usize) -> AppResult<()> {
+    use enigo::{Direction, Key, Keyboard};
+    for _ in 0..n {
+        enigo.key(Key::Backspace, Direction::Click).map_err(|e| AppError::Other(format!("backspace failed: {e}")))?;
+    }
+    Ok(())
+}
+
+fn common_prefix_len(a: &[char], b: &[char]) -> usize {
+    a.iter().zip(b.iter()).take_while(|(x, y)| x == y).count()
+}
+
+/// Backspaces the non-common suffix of `prev` and types the non-common suffix
+/// of `next`. No-op when equal.
+fn reconcile(mut enigo: enigo::Enigo, prev: &str, next: &str) -> AppResult<()> {
+    use enigo::Keyboard;
+    let (p, n): (Vec<char>, Vec<char>) = (prev.chars().collect(), next.chars().collect());
+    let common = common_prefix_len(&p, &n);
+    backspace(&mut enigo, p.len() - common)?;
+    let suffix: String = n[common..].iter().collect();
+    if !suffix.is_empty() {
+        enigo.text(&suffix).map_err(|e| AppError::Other(format!("typing failed: {e}")))?;
+    }
+    Ok(())
+}
+
+/// Reconciles on-screen text from `prev` to `next` without waiting for the
+/// hotkey's modifiers to settle — used for live partials while the shortcut
+/// may legitimately still be held (hold-to-talk).
+fn apply_delta_raw(prev: &str, next: &str) -> AppResult<()> {
+    if prev == next {
+        return Ok(());
+    }
+    let enigo = enigo::Enigo::new(&enigo::Settings::default()).map_err(|e| AppError::Other(format!("keyboard input unavailable: {e}")))?;
+    reconcile(enigo, prev, next)
+}
+
+/// Same reconciliation, but waits for the hotkey's modifiers to settle first
+/// — used once at finalize (session has ended), never per-partial.
+fn apply_delta_settled(prev: &str, next: &str) -> AppResult<()> {
+    if prev == next {
+        return Ok(());
+    }
+    reconcile(keyboard_settled()?, prev, next)
+}
+
+/// Tracks what dictation has typed into the focused app so far, so partials
+/// can be shown live and reconciled to the final (possibly corrected) result
+/// once the session ends. Only used when `insert_method == "type"` — "paste"
+/// stays a single atomic clipboard paste at the end, never fed through here.
+#[derive(Default)]
+pub struct LiveTyper {
+    current: Mutex<String>,
+    target: Mutex<Option<String>>,
+    busy: AtomicBool,
+}
+
+impl LiveTyper {
+    /// Text currently on screen, best-effort (may lag briefly behind an
+    /// in-flight typing operation).
+    pub fn snapshot(&self) -> String {
+        self.current.lock().unwrap_or_else(|p| p.into_inner()).clone()
+    }
+
+    /// Clears tracked state without touching the target application. Call at
+    /// the start of a new session so it doesn't inherit stale text.
+    pub fn reset(&self) {
+        *self.current.lock().unwrap_or_else(|p| p.into_inner()) = String::new();
+        *self.target.lock().unwrap_or_else(|p| p.into_inner()) = None;
+    }
+
+    /// Queues `text` as the newest partial to type. If a worker is already
+    /// draining the queue it picks this up (or a later value) instead of a
+    /// second typing operation racing against it — at most one is ever in
+    /// flight. A benign race can drop a partial that arrives just as the
+    /// worker is about to go idle; harmless, since `finish`/`retract` always
+    /// act on the real on-screen text (`current`), never on what is left in
+    /// `target`.
+    pub fn set_target(&self, app: AppHandle, text: String) {
+        *self.target.lock().unwrap_or_else(|p| p.into_inner()) = Some(text);
+        if self.busy.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        std::thread::spawn(move || {
+            let typer = &app.state::<AppState>().dictation_live_typer;
+            loop {
+                let next = typer.target.lock().unwrap_or_else(|p| p.into_inner()).take();
+                let Some(next) = next else { break };
+                let prev = typer.snapshot();
+                if prev != next {
+                    if let Err(e) = apply_delta_raw(&prev, &next) {
+                        tracing::warn!(error = %e, "live-typing dictation partial failed");
+                    }
+                    *typer.current.lock().unwrap_or_else(|p| p.into_inner()) = next;
+                }
+            }
+            typer.busy.store(false, Ordering::SeqCst);
+        });
+    }
+
+    /// Waits for any in-flight partial to land, then reconciles the on-screen
+    /// text to `final_text` and clears tracked state. Handles both "no
+    /// correction" (final ≈ current, a tiny diff) and "correction on"
+    /// (backspaces the raw text, types the corrected one).
+    pub fn finish(&self, final_text: &str) -> AppResult<()> {
+        while self.busy.load(Ordering::SeqCst) {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        let prev = self.snapshot();
+        let res = apply_delta_settled(&prev, final_text);
+        self.reset();
+        res
+    }
+
+    /// Erases whatever is currently typed (cancel/error path).
+    pub fn retract(&self) -> AppResult<()> {
+        while self.busy.load(Ordering::SeqCst) {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        let prev = self.snapshot();
+        let res = if prev.is_empty() { Ok(()) } else { backspace(&mut keyboard_settled()?, prev.chars().count()) };
+        self.reset();
+        res
+    }
+}
+
+/// Types text into the focused application. Blocking.
+pub fn insert_text(text: &str, settings: &DictationSettings) -> AppResult<()> {
+    use enigo::{Direction, Key, Keyboard};
+    if text.is_empty() {
+        return Ok(());
+    }
+    let mut enigo = keyboard_settled()?;
     if settings.insert_method == "paste" {
         let mut clipboard = arboard::Clipboard::new().map_err(|e| AppError::Other(format!("clipboard unavailable: {e}")))?;
         let previous = clipboard.get_text().ok();

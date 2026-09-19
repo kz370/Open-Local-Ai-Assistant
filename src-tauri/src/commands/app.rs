@@ -41,11 +41,24 @@ pub async fn save_settings(app: AppHandle, state: State<'_, AppState>, settings:
         || before.stt.language != saved.stt.language
         || before.stt.extra_model_dirs != saved.stt.extra_model_dirs
         || before.stt.silence_ms != saved.stt.silence_ms
+        || before.stt.hardware != saved.stt.hardware
     {
         state.stt.unload();
     }
-    // Picking SILMA for a language loads it now rather than on the first sentence.
-    let voices_changed = before.tts.voice_ar != saved.tts.voice_ar || before.tts.voice_en != saved.tts.voice_en;
+    if before.tts.voice_hardware != saved.tts.voice_hardware {
+        // Blunt but simple: a hardware-placement change is rare, so just drop
+        // every loaded voice and let the next sentence reload with the new
+        // provider, rather than tracking which specific voice changed.
+        for id in state.tts.loaded_models() {
+            state.tts.unload_model(&id);
+        }
+    }
+    if before.silma.hardware != saved.silma.hardware {
+        state.silma.set_force_cpu(saved.silma.hardware == "cpu");
+        state.silma.stop();
+    }
+    // Picking a voice for a language loads SILMA now rather than on the first sentence.
+    let voices_changed = before.language.entries != saved.language.entries;
     if voices_changed && state.silma.is_installed() && state.tts.uses_silma() {
         if let Err(e) = state.silma.start() {
             tracing::warn!(error = %e, "SILMA could not start");

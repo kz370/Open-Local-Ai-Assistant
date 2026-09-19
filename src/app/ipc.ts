@@ -104,6 +104,7 @@ export const ipc = {
   voiceStart: (mode: ListenMode) => invoke<void>("voice_start", { mode }),
   voiceStop: (discard: boolean) => invoke<ListenMode | null>("voice_stop", { discard }),
   dictationCancel: () => invoke<void>("dictation_cancel"),
+  dictationResetOverlayPosition: () => invoke<void>("dictation_reset_overlay_position"),
   voiceStatus: () => invoke<ListenMode | null>("voice_status"),
   voiceSetMuted: (muted: boolean) => invoke<boolean>("voice_set_muted", { muted }),
   voiceMuted: () => invoke<boolean>("voice_muted"),

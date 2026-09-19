@@ -92,7 +92,15 @@ impl VoiceSessions {
     }
 
     pub fn start(&self, mode: ListenMode) -> AppResult<()> {
-        let settings = self.settings.get();
+        let mut settings = self.settings.get();
+        // Resolve the language-entry's STT hint (usually == code, but lets a
+        // user-added language differ) at this single choke point, which every
+        // session-start path (push-to-talk, hands-free, dictation, test) goes
+        // through — nothing downstream needs to know about `entries`.
+        let stt_lang = settings.language.entries.iter().find(|e| e.code == settings.stt.language).map(|e| e.stt_language.clone());
+        if let Some(l) = stt_lang {
+            settings.stt.language = l;
+        }
         if mode != ListenMode::Test && !self.stt.is_ready(&settings.stt) {
             return Err(AppError::Stt("no local speech recognition model is installed".into()));
         }

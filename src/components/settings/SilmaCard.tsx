@@ -3,6 +3,7 @@ import { Download, Trash2, Volume2 } from "lucide-react";
 import { ipc, on, toAppError } from "../../app/ipc";
 import { formatBytes, t } from "../../app/strings";
 import type { AppErrorPayload, SilmaProgress, SilmaStatus } from "../../app/types";
+import { useS } from "../../pages/Settings/sections/Basic";
 import { Dialog, ErrorNotice } from "../common/controls";
 import { Card, Row } from "./layout";
 
@@ -14,6 +15,7 @@ const BUSY_STAGES = ["runtime", "packages", "weights", "prepare"];
  * and stops it on its own.
  */
 export function SilmaCard() {
+  const [s, set] = useS();
   const [status, setStatus] = useState<SilmaStatus | null>(null);
   const [progress, setProgress] = useState<SilmaProgress | null>(null);
   const [error, setError] = useState<AppErrorPayload | null>(null);
@@ -102,6 +104,14 @@ export function SilmaCard() {
       <Row label={t("settings.silma.state")}>
         <span className={`badge${status?.state === "ready" ? " ok" : status?.state === "failed" ? " err" : ""}`}>{stateLabel}</span>
       </Row>
+      {status?.installed && status.gpu && (
+        <Row label={t("settings.speech.hardware")} hint={t("settings.silma.hardwareHint")} htmlFor="sel-silma-hw">
+          <select id="sel-silma-hw" className="select" value={s.silma.hardware} onChange={(e) => set((d) => void (d.silma.hardware = e.target.value as "auto" | "cpu"))}>
+            <option value="auto">{t("app.automatic")}</option>
+            <option value="cpu">{t("settings.speech.cpu")}</option>
+          </select>
+        </Row>
+      )}
       {status?.installed && <p className="row-hint">{t("settings.silma.installed", { size: formatBytes(status.sizeBytes) })}</p>}
       {status?.state === "failed" && status.error && <p className="row-hint">{status.error}</p>}
       {busy && (

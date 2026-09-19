@@ -70,7 +70,12 @@ export function AiSection() {
   return (
     <>
       <SectionHeader title={t("settings.sections.ai")} />
-      <Card title="LM Studio">
+      <Card title={t("settings.ai.provider")}>
+        <Row label={t("settings.ai.provider")}>
+          <select id="sel-provider" className="select" value={s.ai.provider} disabled>
+            <option value="lmstudio">LM Studio</option>
+          </select>
+        </Row>
         <Row label={t("settings.ai.server")} hint={t("settings.ai.serverHint")} htmlFor="lm-url">
           <input
             id="lm-url"

@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
-import { FolderOpen, FolderPlus, Play, Square, Trash2 } from "lucide-react";
+import { FolderOpen, FolderPlus, Plus, Play, Square, Trash2 } from "lucide-react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { ipc, on, toAppError } from "../../../app/ipc";
 import { formatBytes, t } from "../../../app/strings";
-import type { AppErrorPayload, AppInfo, AudioDevice, IncompatibleModel, InstalledModel, LangCode, LangSetting, VoiceEvent, VoiceInfo } from "../../../app/types";
+import type { AppErrorPayload, AppInfo, AudioDevice, GpuStatus, IncompatibleModel, InstalledModel, LangSetting, LanguageEntry, VoiceEvent, VoiceInfo } from "../../../app/types";
 import { ErrorNotice, Segmented, Switch } from "../../../components/common/controls";
 import { GpuCard } from "../../../components/settings/GpuCard";
 import { Card, Row, SectionHeader } from "../../../components/settings/layout";
@@ -196,12 +196,26 @@ function ModelFolders({ installed }: { installed: InstalledModel[] }) {
   );
 }
 
-const LANGS: LangCode[] = ["en", "ar", "de"];
+function useGpuStatus() {
+  const [status, setStatus] = useState<GpuStatus | null>(null);
+  useEffect(() => {
+    const refresh = () => void ipc.gpuStatus().then(setStatus);
+    refresh();
+    const sub = on("gpu://changed", refresh);
+    return () => void sub.then((u) => u());
+  }, []);
+  return status;
+}
+
+function languageLabel(e: LanguageEntry) {
+  return e.builtIn ? t(`languages.${e.code}`) : e.displayName;
+}
 
 export function SpeechSection() {
   const [s, set] = useS();
   const devices = useDevices(s.stt.micOnly);
   const installed = useInstalled();
+  const gpu = useGpuStatus();
   const sttModels = installed.filter((m) => m.kind === "stt");
   return (
     <>
@@ -226,9 +240,9 @@ export function SpeechSection() {
         <Row label={t("settings.speech.language")} htmlFor="sel-stt-lang">
           <select id="sel-stt-lang" className="select" value={s.stt.language} onChange={(e) => set((d) => void (d.stt.language = e.target.value as LangSetting))}>
             <option value="auto">{t("app.automatic")}</option>
-            {LANGS.map((l) => (
-              <option key={l} value={l}>
-                {t(`languages.${l}`)}
+            {s.language.entries.map((e) => (
+              <option key={e.code} value={e.code}>
+                {languageLabel(e)}
               </option>
             ))}
           </select>
@@ -253,11 +267,18 @@ export function SpeechSection() {
           <Switch id="sw-isolate" label={t("settings.speech.isolateSystemAudio")} checked={s.stt.isolateSystemAudio} onChange={(v) => set((d) => void (d.stt.isolateSystemAudio = v))} />
         </Row>
         <Row label={t("settings.speech.hardware")}>
-          <span className="badge">
-            {t("app.automatic")} · {t("settings.speech.cpu")}
-          </span>
+          {gpu?.supported ? (
+            <select id="sel-stt-hw" className="select" value={s.stt.hardware} onChange={(e) => set((d) => void (d.stt.hardware = e.target.value as "auto" | "cpu"))}>
+              <option value="auto">{t("app.automatic")}</option>
+              <option value="cpu">{t("settings.speech.cpu")}</option>
+            </select>
+          ) : (
+            <span className="badge">
+              {t("app.automatic")} · {t("settings.speech.cpu")}
+            </span>
+          )}
         </Row>
-        <Row label={t("settings.speech.autoSubmit")} htmlFor="sw-auto">
+        <Row label={t("settings.speech.autoSubmit")} hint={t("settings.speech.autoSubmitHint")} htmlFor="sw-auto">
           <Switch id="sw-auto" label={t("settings.speech.autoSubmit")} checked={s.stt.autoSubmit} onChange={(v) => set((d) => void (d.stt.autoSubmit = v))} />
         </Row>
         <Row label={t("settings.speech.pushToTalk")} htmlFor="sw-ptt">
@@ -306,8 +327,39 @@ export function VoiceSection() {
   const [s, set] = useS();
   const devices = useDevices(s.stt.micOnly);
   const voices = useVoices();
+  const gpu = useGpuStatus();
   const [error, setError] = useState<AppErrorPayload | null>(null);
-  const key = (l: LangCode) => (l === "en" ? "voiceEn" : l === "ar" ? "voiceAr" : "voiceDe") as "voiceEn" | "voiceAr" | "voiceDe";
+  const [activeLang, setActiveLang] = useState(s.language.entries[0]?.code ?? "en");
+  const [newLang, setNewLang] = useState<{ code: string; name: string; direction: "ltr" | "rtl" } | null>(null);
+
+  useEffect(() => {
+    if (!s.language.entries.some((e) => e.code === activeLang) && s.language.entries[0]) {
+      setActiveLang(s.language.entries[0].code);
+    }
+  }, [s.language.entries, activeLang]);
+
+  const entry = s.language.entries.find((e) => e.code === activeLang) ?? s.language.entries[0];
+  const list = voices.filter((v) => v.language === entry?.code);
+
+  const updateEntry = (code: string, patch: Partial<LanguageEntry>) =>
+    set((d) => {
+      const target = d.language.entries.find((e) => e.code === code);
+      if (target) Object.assign(target, patch);
+    });
+
+  const addLanguage = () => {
+    if (!newLang) return;
+    const code = newLang.code.trim().toLowerCase();
+    if (!code || s.language.entries.some((e) => e.code === code)) return;
+    set((d) => void d.language.entries.push({ code, displayName: newLang.name.trim() || code, direction: newLang.direction, sttLanguage: code, ttsVoice: "auto", builtIn: false }));
+    setActiveLang(code);
+    setNewLang(null);
+  };
+
+  const removeLanguage = (code: string) => {
+    if (s.language.entries.length <= 1) return;
+    set((d) => void (d.language.entries = d.language.entries.filter((e) => e.code !== code)));
+  };
 
   return (
     <>
@@ -333,32 +385,80 @@ export function VoiceSection() {
             onChange={(v) => set((d) => void (d.tts.preferredGender = v))}
           />
         </Row>
-        {LANGS.map((l) => {
-          const list = voices.filter((v) => v.language === l);
-          return (
-            <Row key={l} label={t("settings.voice.voiceFor", { language: t(`languages.${l}`) })} htmlFor={`sel-voice-${l}`}>
-              <select id={`sel-voice-${l}`} className="select" value={s.tts[key(l)]} onChange={(e) => set((d) => void (d.tts[key(l)] = e.target.value))} disabled={!list.length} style={{ maxWidth: 300 }}>
-                <option value="auto">{list.length ? t("app.automatic") : t("settings.voice.none")}</option>
-                {list.map((v) => (
-                  <option key={v.id} value={v.id}>
-                    {v.name}
-                    {v.gender && !v.name.toLowerCase().includes(v.gender) ? ` — ${t(`settings.voice.gender${v.gender === "female" ? "Female" : "Male"}`)}` : ""}
-                  </option>
-                ))}
-              </select>
-              <button
-                className="btn btn-sm"
-                disabled={!list.length}
-                onClick={() => {
-                  setError(null);
-                  void ipc.ttsTest(l).catch((e) => setError(toAppError(e)));
-                }}
+        <Row label={t("settings.voice.language")}>
+          <Segmented label={t("settings.voice.language")} value={activeLang} options={s.language.entries.map((e) => ({ value: e.code, label: languageLabel(e) }))} onChange={setActiveLang} />
+          <button className="btn btn-sm" onClick={() => setNewLang({ code: "", name: "", direction: "ltr" })}>
+            <Plus size={12} /> {t("settings.voice.addLanguage")}
+          </button>
+          {entry && !entry.builtIn && (
+            <button className="icon-btn danger" aria-label={t("settings.voice.removeLanguage")} title={t("settings.voice.removeLanguage")} onClick={() => removeLanguage(entry.code)}>
+              <Trash2 size={14} />
+            </button>
+          )}
+        </Row>
+        {newLang && (
+          <Row label={t("settings.voice.newLanguage")}>
+            <input className="input" placeholder={t("settings.voice.languageCode")} value={newLang.code} onChange={(e) => setNewLang({ ...newLang, code: e.target.value })} style={{ maxWidth: 90 }} />
+            <input className="input" placeholder={t("settings.voice.languageName")} value={newLang.name} onChange={(e) => setNewLang({ ...newLang, name: e.target.value })} style={{ maxWidth: 160 }} />
+            <Segmented
+              label={t("settings.voice.direction")}
+              value={newLang.direction}
+              options={[
+                { value: "ltr" as const, label: "LTR" },
+                { value: "rtl" as const, label: "RTL" },
+              ]}
+              onChange={(v) => setNewLang({ ...newLang, direction: v })}
+            />
+            <button className="btn btn-sm btn-primary" onClick={addLanguage}>
+              {t("app.add")}
+            </button>
+            <button className="btn btn-sm" onClick={() => setNewLang(null)}>
+              {t("app.cancel")}
+            </button>
+          </Row>
+        )}
+        {entry && !entry.builtIn && <p className="row-hint">{t("settings.voice.unsupportedLanguageHint")}</p>}
+        {entry && (
+          <Row label={t("settings.voice.voiceFor", { language: languageLabel(entry) })} htmlFor="sel-voice">
+            <select id="sel-voice" className="select" value={entry.ttsVoice} onChange={(e) => updateEntry(entry.code, { ttsVoice: e.target.value })} disabled={!list.length} style={{ maxWidth: 260 }}>
+              <option value="auto">{list.length ? t("app.automatic") : t("settings.voice.none")}</option>
+              {list.map((v) => (
+                <option key={v.id} value={v.id}>
+                  {v.name}
+                  {v.gender && !v.name.toLowerCase().includes(v.gender) ? ` — ${t(`settings.voice.gender${v.gender === "female" ? "Female" : "Male"}`)}` : ""}
+                </option>
+              ))}
+            </select>
+            {gpu?.supported && entry.ttsVoice !== "auto" && (
+              <select
+                className="select"
+                aria-label={t("settings.speech.hardware")}
+                title={t("settings.speech.hardware")}
+                value={s.tts.voiceHardware[entry.ttsVoice] ?? "auto"}
+                onChange={(e) =>
+                  set((d) => {
+                    if (e.target.value === "auto") delete d.tts.voiceHardware[entry.ttsVoice];
+                    else d.tts.voiceHardware[entry.ttsVoice] = e.target.value;
+                  })
+                }
+                style={{ maxWidth: 110 }}
               >
-                <Play size={12} /> {t("settings.voice.testVoice")}
-              </button>
-            </Row>
-          );
-        })}
+                <option value="auto">{t("app.automatic")}</option>
+                <option value="cpu">{t("settings.speech.cpu")}</option>
+              </select>
+            )}
+            <button
+              className="btn btn-sm"
+              disabled={!list.length}
+              onClick={() => {
+                setError(null);
+                void ipc.ttsTest(entry.code).catch((e) => setError(toAppError(e)));
+              }}
+            >
+              <Play size={12} /> {t("settings.voice.testVoice")}
+            </button>
+          </Row>
+        )}
         <Row label={t("settings.voice.speed")} htmlFor="rng-speed">
           <input id="rng-speed" type="range" min={0.5} max={2} step={0.05} value={s.tts.speed} onChange={(e) => set((d) => void (d.tts.speed = Number(e.target.value)))} style={{ maxWidth: 260 }} />
           <span className="range-value">{s.tts.speed.toFixed(2)}x</span>
@@ -386,7 +486,7 @@ export function VoiceSection() {
           </div>
         )}
       </Card>
-      <ModelManager kinds={["tts"]} title={t("settings.voice.models")} />
+      <ModelManager kinds={["tts"]} title={t("settings.voice.models")} languageFilter={entry?.code} />
       <p className="settings-intro">{t("settings.voice.localHint")}</p>
     </>
   );

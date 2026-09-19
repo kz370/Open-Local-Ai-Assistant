@@ -264,6 +264,8 @@ impl ChatEngine {
             voice_mode: speak,
             assistant_name: &settings.general.assistant_name,
             custom_prompt: &settings.ai.system_prompt,
+            tashkeel_enabled: settings.language.arabic_tashkeel_enabled,
+            tashkeel_instruction: &settings.language.arabic_tashkeel_instruction,
         });
         if needs_fresh_info(&text) {
             system.push_str("\n## Note for this turn\n");

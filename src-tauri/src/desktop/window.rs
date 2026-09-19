@@ -522,7 +522,7 @@ pub fn create_overlay(app: &AppHandle) -> tauri::Result<WebviewWindow> {
     if let Some(w) = app.get_webview_window(OVERLAY) {
         return Ok(w);
     }
-    WebviewWindowBuilder::new(app, OVERLAY, WebviewUrl::App("index.html#/overlay".into()))
+    let w = WebviewWindowBuilder::new(app, OVERLAY, WebviewUrl::App("index.html#/overlay".into()))
         .title("Dictation")
         .inner_size(440.0, 128.0)
         .decorations(false)
@@ -534,20 +534,66 @@ pub fn create_overlay(app: &AppHandle) -> tauri::Result<WebviewWindow> {
         .focusable(false)
         .focused(false)
         .visible(false)
-        .build()
+        .build()?;
+    // Suppress before attaching the listener: window construction itself can
+    // fire a Moved event at some OS-default position, which must not get
+    // persisted as if the user had dragged it there.
+    suppress_persistence();
+    let h = app.clone();
+    w.on_window_event(move |e| {
+        if let tauri::WindowEvent::Moved(pos) = e {
+            if now_ms() < SUPPRESS_UNTIL.load(Ordering::Relaxed) {
+                return;
+            }
+            let (x, y) = (pos.x, pos.y);
+            let _ = h.state::<AppState>().settings.update(|s| {
+                s.dictation.overlay_x = Some(x);
+                s.dictation.overlay_y = Some(y);
+            });
+        }
+    });
+    Ok(w)
 }
 
-/// Shows the dictation overlay near the bottom center without taking focus.
+/// Top-left for the overlay's default centered-near-the-bottom placement.
+fn default_overlay_position(w: &WebviewWindow) -> Option<(i32, i32)> {
+    let m = w.primary_monitor().ok().flatten()?;
+    let area = m.work_area();
+    let size = w.outer_size().unwrap_or(PhysicalSize::new(440, 128));
+    let x = area.position.x + (area.size.width as i32 - size.width as i32) / 2;
+    let y = area.position.y + area.size.height as i32 - size.height as i32 - 40;
+    Some((x, y))
+}
+
+/// Shows the dictation overlay at its last dragged spot, or centered near the
+/// bottom without taking focus if it was never dragged (or that spot's
+/// monitor is no longer connected).
 pub fn show_overlay(app: &AppHandle) {
     let Ok(w) = create_overlay(app) else { return };
-    if let Ok(Some(m)) = w.primary_monitor() {
-        let area = m.work_area();
-        let size = w.outer_size().unwrap_or(PhysicalSize::new(440, 128));
-        let x = area.position.x + (area.size.width as i32 - size.width as i32) / 2;
-        let y = area.position.y + area.size.height as i32 - size.height as i32 - 40;
+    let saved = app.state::<AppState>().settings.get().dictation;
+    suppress_persistence();
+    let pos = match (saved.overlay_x, saved.overlay_y) {
+        (Some(x), Some(y)) if on_any_monitor(&w, x, y) => Some((x, y)),
+        _ => default_overlay_position(&w),
+    };
+    if let Some((x, y)) = pos {
         let _ = w.set_position(PhysicalPosition::new(x, y));
     }
     let _ = w.show();
+}
+
+/// Clears the dragged overlay position and moves it back to the default spot
+/// immediately (even while hidden).
+pub fn reset_overlay_position(app: &AppHandle) {
+    let _ = app.state::<AppState>().settings.update(|s| {
+        s.dictation.overlay_x = None;
+        s.dictation.overlay_y = None;
+    });
+    let Ok(w) = create_overlay(app) else { return };
+    suppress_persistence();
+    if let Some((x, y)) = default_overlay_position(&w) {
+        let _ = w.set_position(PhysicalPosition::new(x, y));
+    }
 }
 
 pub fn hide_overlay(app: &AppHandle) {
