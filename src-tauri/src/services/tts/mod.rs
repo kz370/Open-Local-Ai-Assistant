@@ -4,6 +4,7 @@
 //! Streaming: assistant text -> SentenceBuffer -> per-sentence language
 //! detection -> voice selection -> synthesis worker -> playback queue.
 
+pub mod cache;
 pub mod orpheus;
 pub mod sentence_buffer;
 pub mod speech_text;
@@ -178,6 +179,17 @@ impl TtsService {
         let _ = self.orpheus.set(orpheus);
     }
 
+    /// How much generated speech is stored on disk.
+    pub fn cache_info(&self) -> cache::CacheInfo {
+        self.orpheus.get().map(|o| o.cache_info()).unwrap_or_default()
+    }
+
+    pub fn clear_cache(&self) {
+        if let Some(o) = self.orpheus.get() {
+            o.clear_cache();
+        }
+    }
+
     pub fn voices(&self) -> Vec<VoiceInfo> {
         let mut voices = list_voices(&self.store.installed());
         if self.silma.get().is_some_and(|s| s.is_installed()) {
@@ -311,7 +323,8 @@ impl TtsService {
         if voice.engine == Engine::Orpheus {
             let orpheus = self.orpheus.get().ok_or_else(|| AppError::Tts("Orpheus is not available".into()))?;
             let name = voice.id.rsplit(':').next().unwrap_or("tara");
-            match orpheus.synthesize(&voice.model_id, name, text) {
+            let cache_bytes = (self.settings.get().tts.cache_mb as u64) << 20;
+            match orpheus.synthesize(&voice.model_id, name, text, cache_bytes) {
                 Ok(audio) => return Ok(audio),
                 Err(e) => {
                     // LM Studio down or the model missing: keep talking with a local voice.
@@ -365,14 +378,22 @@ impl TtsService {
         Ok(())
     }
 
-    fn queue_sentence(&self, tag: &str, sentence: String, fallback: Option<Lang>) -> Lang {
-        let lang = detect(&sentence)
+    fn sentence_lang(&self, sentence: &str, fallback: Option<Lang>) -> Lang {
+        detect(sentence)
             .filter(|d| d.confidence >= 0.5 || fallback.is_none())
             .map(|d| d.lang)
             .or(fallback)
-            .unwrap_or(Lang::En);
+            .unwrap_or(Lang::En)
+    }
+
+    fn send_job(&self, tag: &str, text: String, lang: Lang) {
         let generation = self.generation.load(Ordering::SeqCst);
-        let _ = self.jobs.send(Job { generation, tag: tag.into(), text: sentence, lang });
+        let _ = self.jobs.send(Job { generation, tag: tag.into(), text, lang });
+    }
+
+    fn queue_sentence(&self, tag: &str, sentence: String, fallback: Option<Lang>) -> Lang {
+        let lang = self.sentence_lang(&sentence, fallback);
+        self.send_job(tag, sentence, lang);
         lang
     }
 
@@ -439,22 +460,38 @@ impl SpeechSink for TtsService {
     }
 
     fn push_text(&self, turn_id: &str, text: &str) {
+        // "Speak after the reply" collects sentences here and queues them in finish().
+        let hold = self.settings.get().tts.speak_after_reply;
         let mut turns = self.turns.lock().unwrap_or_else(|p| p.into_inner());
         let Some(state) = turns.get_mut(turn_id) else { return };
         for sentence in state.buffer.push(text) {
-            let lang = self.queue_sentence(turn_id, sentence.clone(), state.last_lang);
+            let lang = if hold {
+                self.sentence_lang(&sentence, state.last_lang)
+            } else {
+                self.queue_sentence(turn_id, sentence.clone(), state.last_lang)
+            };
             state.last_lang = Some(lang);
             state.spoken.push((sentence, lang));
         }
     }
 
     fn finish(&self, turn_id: &str) {
+        let hold = self.settings.get().tts.speak_after_reply;
         let mut turns = self.turns.lock().unwrap_or_else(|p| p.into_inner());
         let Some(mut state) = turns.remove(turn_id) else { return };
         for sentence in state.buffer.flush() {
-            let lang = self.queue_sentence(turn_id, sentence.clone(), state.last_lang);
+            let lang = self.sentence_lang(&sentence, state.last_lang);
             state.last_lang = Some(lang);
+            if !hold {
+                self.send_job(turn_id, sentence.clone(), lang);
+            }
             state.spoken.push((sentence, lang));
+        }
+        if hold {
+            // Nothing was queued while the reply streamed; speak all of it now.
+            for (sentence, lang) in &state.spoken {
+                self.send_job(turn_id, sentence.clone(), *lang);
+            }
         }
         *self.last_turn.lock().unwrap_or_else(|p| p.into_inner()) = Some(state.spoken);
     }

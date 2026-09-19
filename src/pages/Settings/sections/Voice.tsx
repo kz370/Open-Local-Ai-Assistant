@@ -327,6 +327,22 @@ function useVoices(reloadKey: string) {
   return voices;
 }
 
+interface CacheInfo {
+  files: number;
+  bytes: number;
+}
+const EMPTY_CACHE: CacheInfo = { files: 0, bytes: 0 };
+
+/** Size of the saved-audio cache, refreshed after clearing it. */
+function useCacheInfo(): [CacheInfo, (v?: CacheInfo) => void] {
+  const [info, setInfo] = useState<CacheInfo>(EMPTY_CACHE);
+  const update = (v?: CacheInfo) => setInfo(v ?? EMPTY_CACHE);
+  useEffect(() => {
+    void ipc.ttsCacheInfo().then(update).catch(() => update());
+  }, []);
+  return [info, update];
+}
+
 function useLmModels() {
   const [models, setModels] = useState<ModelInfo[]>([]);
   useEffect(() => {
@@ -343,6 +359,7 @@ export function VoiceSection() {
   const devices = useDevices(s.stt.micOnly);
   const voices = useVoices(JSON.stringify(s.tts.orpheusModels));
   const lmModels = useLmModels();
+  const [cache, setCache] = useCacheInfo();
   const gpu = useGpuStatus();
   const [error, setError] = useState<AppErrorPayload | null>(null);
   const [activeLang, setActiveLang] = useState(s.language.entries[0]?.code ?? "en");
@@ -388,6 +405,23 @@ export function VoiceSection() {
         </Row>
         <Row label={t("settings.voice.speakResponses")} htmlFor="sw-speak">
           <Switch id="sw-speak" label={t("settings.voice.speakResponses")} checked={s.tts.speakResponses} onChange={(v) => set((d) => void (d.tts.speakResponses = v))} />
+        </Row>
+        <Row label={t("settings.voice.cache")} hint={t("settings.voice.cacheHint")} htmlFor="sel-cache">
+          <select id="sel-cache" className="select" value={s.tts.cacheMb} onChange={(e) => set((d) => void (d.tts.cacheMb = Number(e.target.value)))} style={{ maxWidth: 150 }}>
+            <option value={0}>{t("settings.voice.cacheOff")}</option>
+            {[200, 500, 1000, 2000, 5000].map((mb) => (
+              <option key={mb} value={mb}>
+                {formatBytes(mb * 1024 * 1024)}
+              </option>
+            ))}
+          </select>
+          <span className="row-hint" style={{ margin: 0 }}>{t("settings.voice.cacheUsage", { size: formatBytes(cache.bytes), count: cache.files })}</span>
+          <button className="btn btn-sm" disabled={!cache.files} onClick={() => void ipc.ttsCacheClear().then(setCache).catch(() => setCache())}>
+            <Trash2 size={12} /> {t("settings.voice.cacheClear")}
+          </button>
+        </Row>
+        <Row label={t("settings.voice.speakAfterReply")} hint={t("settings.voice.speakAfterReplyHint")} htmlFor="sw-after-reply">
+          <Switch id="sw-after-reply" label={t("settings.voice.speakAfterReply")} checked={s.tts.speakAfterReply} onChange={(v) => set((d) => void (d.tts.speakAfterReply = v))} />
         </Row>
         <Row label={t("settings.voice.gender")} hint={t("settings.voice.genderHint")}>
           <Segmented

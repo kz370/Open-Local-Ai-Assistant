@@ -132,6 +132,19 @@ pub fn tts_replay_last(state: State<'_, AppState>) -> bool {
     state.tts.replay_last()
 }
 
+/// How much generated speech is saved on disk.
+#[tauri::command]
+pub fn tts_cache_info(state: State<'_, AppState>) -> crate::services::tts::cache::CacheInfo {
+    state.tts.cache_info()
+}
+
+/// Deletes every saved clip.
+#[tauri::command]
+pub fn tts_cache_clear(state: State<'_, AppState>) -> crate::services::tts::cache::CacheInfo {
+    state.tts.clear_cache();
+    state.tts.cache_info()
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CatalogEntry {

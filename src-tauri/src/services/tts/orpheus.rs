@@ -8,6 +8,7 @@
 use crate::errors::{AppError, AppResult};
 use crate::services::ai::lmstudio::LmStudioService;
 use crate::services::models::{find_file, ModelStore};
+use super::cache::{self, AudioCache, CacheInfo};
 use regex::Regex;
 use serde_json::json;
 use std::path::PathBuf;
@@ -66,11 +67,22 @@ pub struct Orpheus {
     lmstudio: Arc<LmStudioService>,
     store: Arc<ModelStore>,
     decoder: Mutex<Option<ort::session::Session>>,
+    cache: AudioCache,
 }
 
 impl Orpheus {
-    pub fn new(lmstudio: Arc<LmStudioService>, store: Arc<ModelStore>) -> Self {
-        Self { lmstudio, store, decoder: Mutex::new(None) }
+    pub fn new(lmstudio: Arc<LmStudioService>, store: Arc<ModelStore>, cache_dir: PathBuf) -> Self {
+        Self { lmstudio, store, decoder: Mutex::new(None), cache: AudioCache::new(cache_dir) }
+    }
+
+    /// How much speech is kept on disk.
+    pub fn cache_info(&self) -> CacheInfo {
+        self.cache.info()
+    }
+
+    /// Forgets every saved clip; they are generated again when next spoken.
+    pub fn clear_cache(&self) {
+        self.cache.clear();
     }
 
     pub fn decoder_installed(&self) -> bool {
@@ -104,7 +116,16 @@ impl Orpheus {
     }
 
     /// Speaks `text` with `voice` through the LM Studio `model`. Blocking.
-    pub fn synthesize(&self, model: &str, voice: &str, text: &str) -> AppResult<(Vec<f32>, u32)> {
+    /// Re-uses a saved clip when there is one, and keeps the cache under
+    /// `cache_bytes` (0 = do not save anything).
+    pub fn synthesize(&self, model: &str, voice: &str, text: &str, cache_bytes: u64) -> AppResult<(Vec<f32>, u32)> {
+        let key = cache::key(model, voice, text);
+        if cache_bytes > 0 {
+            if let Some(audio) = self.cache.get(&key) {
+                tracing::debug!(model, "orpheus sentence from cache");
+                return Ok(audio);
+            }
+        }
         let started = std::time::Instant::now();
         let prompt = format!("<|audio|>{voice}: {text}<|eot_id|>");
         // About 85 tokens per second of speech; leave room for slow talkers.
@@ -128,6 +149,9 @@ impl Orpheus {
         }
         let samples = self.decode(codes)?;
         tracing::debug!(model, frames = samples.len() / 2048, generated_ms, total_ms = started.elapsed().as_millis() as u64, "orpheus sentence");
+        if let Err(e) = self.cache.put(&key, &samples, SAMPLE_RATE, cache_bytes) {
+            tracing::warn!(error = %e, "could not save spoken audio");
+        }
         Ok((samples, SAMPLE_RATE))
     }
 
@@ -227,6 +251,20 @@ mod tests {
         let audio = decode_with(&mut session, codes).unwrap();
         println!("{} samples in {} ms", audio.len(), started.elapsed().as_millis());
         assert_eq!(audio.len(), frames as usize * 2048);
+    }
+
+    /// `SNAC_ONNX=... cargo test snac_chunk_cost -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn snac_chunk_cost() {
+        let mut session = load_session(std::path::Path::new(&std::env::var("SNAC_ONNX").expect("SNAC_ONNX"))).unwrap();
+        for frames in [4i64, 8, 14, 26, 50] {
+            let codes = [(0..frames).map(|i| i * 37 % 4096).collect(), (0..frames * 2).map(|i| i * 91 % 4096).collect(), (0..frames * 4).map(|i| i * 13 % 4096).collect()];
+            let started = std::time::Instant::now();
+            let audio = decode_with(&mut session, codes).unwrap();
+            let ms = started.elapsed().as_secs_f32() * 1000.0;
+            println!("{frames:>3} frames ({:.2}s audio): {ms:.0} ms", audio.len() as f32 / SAMPLE_RATE as f32);
+        }
     }
 
     /// Full round trip through a running LM Studio; writes `ORPHEUS_WAV`:
