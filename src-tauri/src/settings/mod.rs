@@ -18,10 +18,8 @@ pub const DEFAULT_LMSTUDIO_URL: &str = "http://localhost:1234/v1";
 pub const PROVIDERS: &[(&str, &str, &str)] = &[
     ("lmstudio", "LM Studio", DEFAULT_LMSTUDIO_URL),
     ("openrouter", "OpenRouter", "https://openrouter.ai/api/v1"),
-    ("groq", "Groq", "https://api.groq.com/openai/v1"),
     ("gemini", "Google Gemini API", "https://generativelanguage.googleapis.com/v1beta/openai"),
     ("huggingface", "Hugging Face", "https://router.huggingface.co/v1"),
-    ("cerebras", "Cerebras", "https://api.cerebras.ai/v1"),
 ];
 
 pub fn provider_name(id: &str) -> &'static str {
@@ -118,8 +116,8 @@ pub struct ProviderProfile {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", default)]
 pub struct AiSettings {
-    /// One of the ids in [`PROVIDERS`]: "lmstudio" | "openrouter" | "groq" |
-    /// "gemini" | "huggingface" | "cerebras".
+    /// One of the ids in [`PROVIDERS`]: "lmstudio" | "openrouter" | "gemini" |
+    /// "huggingface".
     pub provider: String,
     pub server_url: String,
     /// Bearer token sent as `Authorization: Bearer <key>`. LM Studio itself
@@ -710,11 +708,11 @@ mod tests {
     #[test]
     fn sanitize_keeps_known_providers_and_forces_manual_for_hosted() {
         let mut s = Settings::default();
-        s.ai.provider = "groq".into();
+        s.ai.provider = "openrouter".into();
         s.ai.server_url = String::new();
         s.sanitize();
-        assert_eq!(s.ai.provider, "groq");
-        assert_eq!(s.ai.server_url, "https://api.groq.com/openai/v1");
+        assert_eq!(s.ai.provider, "openrouter");
+        assert_eq!(s.ai.server_url, "https://openrouter.ai/api/v1");
         assert_eq!(s.ai.model_mode, "manual");
         s.ai.provider = "nope".into();
         s.sanitize();

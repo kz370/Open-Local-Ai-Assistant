@@ -1,5 +1,5 @@
 //! LM Studio client over its local HTTP APIs, also used for hosted
-//! OpenAI-compatible providers (OpenRouter, Groq, Gemini, Hugging Face, Cerebras).
+//! OpenAI-compatible providers (OpenRouter, Gemini, Hugging Face).
 //!
 //! * Chat: OpenAI-compatible `POST {base}/chat/completions` (streaming, tools).
 //! * Discovery: native `GET /api/v1/models` (size, quantization, loaded state,

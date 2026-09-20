@@ -3,7 +3,7 @@
 export type LangCode = "en" | "ar" | "de";
 export type LangSetting = "auto" | LangCode;
 
-export type ProviderId = "lmstudio" | "openrouter" | "groq" | "gemini" | "huggingface" | "cerebras";
+export type ProviderId = "lmstudio" | "openrouter" | "gemini" | "huggingface";
 
 export interface ProviderProfile {
   serverUrl: string;
