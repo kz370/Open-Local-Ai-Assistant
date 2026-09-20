@@ -118,9 +118,9 @@ mod tests {
     fn strips_every_key() {
         let mut s = Settings::default();
         s.ai.api_key = Some("a".into());
-        s.ai.provider_profiles.insert("groq".into(), super::super::ProviderProfile { api_key: Some("b".into()), ..Default::default() });
+        s.ai.provider_profiles.insert("openrouter".into(), super::super::ProviderProfile { api_key: Some("b".into()), ..Default::default() });
         strip_keys(&mut s);
-        assert!(s.ai.api_key.is_none() && s.ai.provider_profiles["groq"].api_key.is_none());
+        assert!(s.ai.api_key.is_none() && s.ai.provider_profiles["openrouter"].api_key.is_none());
     }
 
     #[test]
@@ -128,16 +128,16 @@ mod tests {
         let mut current = Settings::default();
         current.general.first_run_complete = true;
         current.general.window.x = 1234;
-        current.ai.provider = "groq".into();
-        current.ai.api_key = Some("groq-key".into());
+        current.ai.provider = "openrouter".into();
+        current.ai.api_key = Some("openrouter-key".into());
         let mut imported = Settings::default();
-        imported.ai.provider = "groq".into();
+        imported.ai.provider = "openrouter".into();
         imported.general.assistant_name = "Imported".into();
         imported.general.window.x = 5;
         let merged = merge_import(&current, imported);
         assert_eq!(merged.general.assistant_name, "Imported");
         assert_eq!(merged.general.window.x, 1234);
         assert!(merged.general.first_run_complete);
-        assert_eq!(merged.ai.api_key.as_deref(), Some("groq-key"));
+        assert_eq!(merged.ai.api_key.as_deref(), Some("openrouter-key"));
     }
 }
