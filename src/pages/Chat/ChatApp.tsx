@@ -5,6 +5,7 @@ import { History, Maximize2, Minimize2, Minus, Pin, PinOff, Settings2, SquarePen
 import { attachPaths } from "../../app/attach";
 import { useChat } from "../../app/chatStore";
 import { ipc, on } from "../../app/ipc";
+import { providerLabel } from "../../app/providers";
 import { useSettings } from "../../app/settingsStore";
 import { modelLabel, t } from "../../app/strings";
 import type { DictationStateEvent } from "../../app/types";
@@ -318,7 +319,11 @@ export function ChatApp() {
       {lm === "unavailable" && (
         <div className="banner" role="alert">
           <div>
-            <strong>{t("status.lmUnavailableTitle")}</strong> {t("status.lmUnavailableBody")}
+            <strong>{t("status.lmUnavailableTitle", { provider: providerLabel(provider) })}</strong>{" "}
+            {t(
+              provider && provider !== "lmstudio" ? (needsKey ? "status.lmUnavailableBodyKey" : "status.lmUnavailableBodyHosted") : "status.lmUnavailableBodyLocal",
+              { provider: providerLabel(provider) },
+            )}
           </div>
           <div className="banner-actions">
             <button className="btn btn-sm" onClick={() => void checkLm()}>

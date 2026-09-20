@@ -130,8 +130,10 @@
     }
   },
   "status": {
-    "lmUnavailableTitle": "LM Studio is unavailable.",
-    "lmUnavailableBody": "Please start the LM Studio local server.",
+    "lmUnavailableTitle": "{{provider}} is unavailable.",
+    "lmUnavailableBodyLocal": "Please start the LM Studio local server.",
+    "lmUnavailableBodyKey": "Add an API key for {{provider}} in Settings.",
+    "lmUnavailableBodyHosted": "Check your API key and network connection for {{provider}}.",
     "connected": "Connected",
     "disconnected": "Not connected",
     "checking": "Checking…",
@@ -142,9 +144,9 @@
     "notInstalled": "Not installed"
   },
   "errors": {
-    "lmstudio_unavailable": "Unable to connect to LM Studio. Make sure the LM Studio local server is running.",
-    "lmstudio_error": "LM Studio reported a problem with this request.",
-    "no_model": "No usable model was found in LM Studio. Download or load a model in LM Studio.",
+    "lmstudio_unavailable": "Unable to connect to {{provider}}. If this is LM Studio, make sure its local server is running; for a hosted provider, check your API key and network connection.",
+    "lmstudio_error": "{{provider}} reported a problem with this request.",
+    "no_model": "No usable model was found for {{provider}}. Download or load a model, or pick one in Settings.",
     "timeout": "The request took too long and was stopped.",
     "database": "Local storage error.",
     "stt_unavailable": "Local speech recognition unavailable.",

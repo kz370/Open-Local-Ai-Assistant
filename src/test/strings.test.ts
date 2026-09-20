@@ -18,7 +18,9 @@ describe("strings", () => {
   });
 
   it("maps backend error codes to friendly messages", () => {
-    expect(errorMessage("lmstudio_unavailable")).toBe("Unable to connect to LM Studio. Make sure the LM Studio local server is running.");
+    expect(errorMessage("lmstudio_unavailable", { provider: "LM Studio" })).toBe(
+      "Unable to connect to LM Studio. If this is LM Studio, make sure its local server is running; for a hosted provider, check your API key and network connection.",
+    );
     expect(errorMessage("something_new")).toBe(t("errors.other"));
   });
 

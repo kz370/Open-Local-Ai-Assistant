@@ -23,8 +23,8 @@ export function hasString(key: string): boolean {
   return lookup(en as Dict, key) !== undefined;
 }
 
-export function errorMessage(code: string): string {
-  return hasString(`errors.${code}`) ? t(`errors.${code}`) : t("errors.other");
+export function errorMessage(code: string, vars?: Record<string, string | number>): string {
+  return hasString(`errors.${code}`) ? t(`errors.${code}`, vars) : t("errors.other");
 }
 
 export function formatBytes(bytes: number): string {

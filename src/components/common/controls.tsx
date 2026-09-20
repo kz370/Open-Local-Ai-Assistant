@@ -1,5 +1,7 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { providerLabel } from "../../app/providers";
+import { useSettings } from "../../app/settingsStore";
 import { errorMessage, t } from "../../app/strings";
 import type { AppErrorPayload } from "../../app/types";
 
@@ -58,10 +60,11 @@ export function Dialog(props: { title: string; children: ReactNode; actions: Rea
 }
 
 export function ErrorNotice(props: { error: AppErrorPayload; actions?: ReactNode }) {
+  const provider = useSettings((s) => s.settings?.ai.provider);
   return (
     <div className="notice err" role="alert">
       <div style={{ flex: 1 }}>
-        <div>{errorMessage(props.error.code)}</div>
+        <div>{errorMessage(props.error.code, { provider: providerLabel(provider) })}</div>
         {props.error.detail && (
           <details className="tech">
             <summary>{t("errors.details")}</summary>
