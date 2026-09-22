@@ -2,12 +2,21 @@
 
 A small, fast, local-first desktop AI assistant. It lives in a floating window (bottom-right by default), runs in the system tray, and opens with a global shortcut. You can type or talk to it in **English, Arabic or German**, and it can answer out loud with natural local voices.
 
+<!--
+  Screenshots: none checked in yet. To add some, run the app, capture the
+  chat window, the hands-free call screen and the Settings pages, save them
+  under docs/screenshots/, and reference them here, e.g.:
+  ![Chat window](docs/screenshots/chat.png)
+-->
+
 - **LLM:** LM Studio only (its local OpenAI-compatible server). No other LLM backend, no cloud fallback.
 - **Windows:** a small floating bubble sits on your desktop. Click it (or press `Ctrl+Space`) to open the chat. `−` puts the chat back into the bubble, `X` closes it to the tray, and the app quits only from the tray menu. Only one instance runs at a time.
 - **Speech recognition:** any sherpa-onnx compatible local model — Whisper, NeMo/Parakeet/Nemotron transducers (including streaming ones that show text live), NeMo CTC, SenseVoice, Moonshine and Paraformer — via [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx).
 - **Text-to-speech:** local neural voices. Kitten nano (31 MB) is the small, natural-sounding English default; Kokoro and the German/Arabic Piper voices are one click away, and you can prefer male or female voices.
 - **Natural Arabic voice (SILMA):** optional one-click setup in Settings → Text-to-Speech. SILMA TTS v1 runs on PyTorch in a private Python environment inside the app data folder (about 6 GB download, 5.6 GB on disk with the NVIDIA build) and adds tashkeel by itself. It can also be picked as the English voice (it does not speak German). The app starts and stops it automatically; nothing else has to be installed or run.
 - **Models in memory:** a settings page shows which models are loaded right now (speech recognition, each voice, SILMA, the LM Studio chat model) with Load / Unload buttons, and an option to load them all in the background when the app starts.
+- **GPU acceleration:** an optional CUDA pack (Settings → System) speeds up the local speech models on an NVIDIA GPU; on by default once installed, with an automatic fallback to the CPU.
+- **Hands-free calls:** a phone-call style screen with live captions, the spoken word highlighted as it's read, and pause/mute/end controls — for talking to the assistant without touching the keyboard.
 - **Tools:** generic MCP (Model Context Protocol) client with explicit per-tool permissions. Built-in web search uses SearXNG (your own instance or a public one from searx.space) with DuckDuckGo as the fallback.
 - **Dictation:** a global hotkey (`Ctrl+Alt+Space`) types what you say into any application. A small window shows the text live while you speak, with optional grammar cleanup by a small LM Studio model you pick.
 - **Privacy:** conversations, settings and logs stay on disk locally. There is no telemetry. Logs contain no conversation content unless you turn that on.
@@ -70,6 +79,7 @@ src-tauri/src/
   services/mcp/              MCP manager (stdio + streamable HTTP), permission policy, source extraction
   services/models/           voice model catalog, discovery, consented downloads
   services/dictation.rs      correction with a small LM Studio model, text insertion
+  services/gpu/              optional CUDA pack for the speech models (download, install, activate)
   capabilities/              LocalCapabilityManager (scan of everything available locally)
   database/                  SQLite (conversations, messages + FTS5, settings, MCP config)
   desktop/                   tray, floating window placement and persistence, global shortcuts
@@ -77,13 +87,16 @@ src-tauri/src/
 
 ### Key behaviours
 
-- **Model selection:** loaded models win. Otherwise the app scores models by whether they fit in VRAM (or RAM on machines without a GPU), how practical their parameter count is, whether they support tool use, their context size and their quantization. It does not simply pick the largest model. You can always choose a model manually.
+- **Model selection:** loaded models win. Otherwise the app scores models by whether they fit in VRAM (or RAM on machines without a GPU), how practical their parameter count is, whether they support tool use, their context size and their quantization. It does not simply pick the largest model. You can always choose a model manually. If you loaded the model in LM Studio yourself (for example with speculative decoding / a draft model attached), the app leaves it as is; it only loads a model itself when none is loaded yet.
 - **Current information:** the system prompt tells the model to use a web-search tool for "latest / current / today…" questions. If no search tool is enabled, the model must say it cannot verify current information. Sources shown in the UI come only from URLs the tools actually returned.
+- **Stable system prompt:** the system prompt is identical from one turn to the next — the clock, the per-message language and the freshness hint are appended to the latest user message instead of the top of the prompt. This keeps LM Studio's own prompt cache valid, so it only has to read your new message each turn instead of re-reading the whole conversation.
 - **Tool security:** search, fetch and read tools are allowed by default. Tools that write data, and tools that can't be classified, always ask for confirmation. Command-execution tools are disabled by default, and they can never be set to run without confirmation. MCP servers are never installed or enabled automatically.
-- **Streaming speech:** LLM tokens are buffered into complete sentences. Code blocks are skipped, and decimals, abbreviations and URLs don't end a sentence. Each sentence is spoken as soon as it is complete, in a voice that matches its detected language.
-- **Voice acceleration:** this build runs the voice models on the CPU.
+- **Streaming speech:** LLM tokens are buffered into complete sentences. Code blocks are skipped, and decimals, abbreviations and URLs don't end a sentence. Each sentence is spoken as soon as it is complete, in a voice that matches its detected language. In the chat window, replies spoken automatically show pause/stop controls; clicking "Read aloud" shows a spinner until playback actually starts.
+- **Hands-free call screen:** shows the whole reply with the word being spoken highlighted (not a single scrolling line), and Stop / Pause / Mute / End controls. Pausing keeps the rest of the answer queued and starts listening again, so speaking up takes over. A glow-and-dots "Thinking…" / "Transcribing…" state covers the moments the model or the speech engine is working.
+- **GPU acceleration:** an optional CUDA pack accelerates the local speech models (STT and TTS) on an NVIDIA GPU; it is on by default once installed (Settings → System), and falls back to the CPU automatically if a GPU start fails. The tiny voice-activity detector always runs on the CPU regardless (a GPU round-trip costs more than the calculation itself). SILMA (the Arabic voice) is not preloaded at startup when the AI provider is LM Studio, since it and a loaded chat model competing for the same VRAM is a common cause of slowdowns; it starts on the first Arabic sentence instead.
 - **Live dictation:** streaming models show words as you speak; with Whisper-style models each finished sentence appears as soon as the pause detector closes it.
 - **Model names:** give any LM Studio model a short name in Settings → AI, and the chat's model picker and header use it instead of the full id.
+- **Generation stats:** each reply can show its speed (tokens/second), token count and context window usage underneath it (Settings → AI → "Show speed and context per reply", on by default). Saved per message, so it also shows on replies you loaded from history.
 
 ## Tests
 
