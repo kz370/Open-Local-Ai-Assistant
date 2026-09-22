@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { ipc, newId, toAppError } from "./ipc";
-import type { ActivityRecord, AppErrorPayload, Attachment, ChatEvent, Message, Source, ToolCategory } from "./types";
+import type { ActivityRecord, AppErrorPayload, Attachment, ChatEvent, Message, MessageStats, Source, ToolCategory } from "./types";
 
 export type ToolStatus = "running" | "awaiting" | "done" | "failed" | "denied";
 
@@ -28,6 +28,7 @@ export interface UiMessage {
   streaming: boolean;
   error?: AppErrorPayload;
   model?: string;
+  stats?: MessageStats | null;
   createdAt: string;
 }
 
@@ -95,6 +96,7 @@ export function messageToUi(m: Message): UiMessage {
     sources: m.sources ?? [],
     tools: (m.toolActivity ?? []).map(activityToUi),
     streaming: false,
+    stats: m.stats ?? null,
     createdAt: m.createdAt,
   };
 }
@@ -105,6 +107,28 @@ export const useChat = create<ChatState>((set, get) => {
   const patchAssistant = (turnId: string, fn: (m: UiMessage) => UiMessage) => {
     if (get().turnId !== turnId) return;
     set((s) => ({ messages: s.messages.map((m) => (m.id === PENDING_ID ? fn(m) : m)) }));
+  };
+
+  // Stream deltas arrive per token. Rendering each one re-parses the whole
+  // Markdown message and relayouts the list, which pegs the WebView (and the
+  // GPU the model runs on), so text is applied in batches instead.
+  const STREAM_FLUSH_MS = 50;
+  let streamBuf: { turnId: string; content: string; reasoning: string } | null = null;
+  let streamTimer: ReturnType<typeof setTimeout> | null = null;
+  const flushStream = () => {
+    if (streamTimer) clearTimeout(streamTimer);
+    streamTimer = null;
+    const buf = streamBuf;
+    streamBuf = null;
+    if (buf && (buf.content || buf.reasoning)) {
+      patchAssistant(buf.turnId, (m) => ({ ...m, content: m.content + buf.content, reasoning: m.reasoning + buf.reasoning }));
+    }
+  };
+  const bufferStream = (turnId: string, kind: "content" | "reasoning", text: string) => {
+    if (streamBuf && streamBuf.turnId !== turnId) flushStream();
+    streamBuf ??= { turnId, content: "", reasoning: "" };
+    streamBuf[kind] += text;
+    streamTimer ??= setTimeout(flushStream, STREAM_FLUSH_MS);
   };
 
   const startTurn = async (text: string, attachments: Attachment[], opts?: SendOpts) => {
@@ -250,6 +274,12 @@ export const useChat = create<ChatState>((set, get) => {
     },
 
     handleEvent: (ev) => {
+      if (ev.type === "delta" || ev.type === "reasoning") {
+        bufferStream(ev.turnId, ev.type === "delta" ? "content" : "reasoning", ev.text);
+        return;
+      }
+      // Anything else lands after the text streamed before it.
+      flushStream();
       switch (ev.type) {
         case "started":
           if (get().turnId !== ev.turnId) return;
@@ -259,12 +289,6 @@ export const useChat = create<ChatState>((set, get) => {
               m.id === `local-${ev.turnId}` ? messageToUi(ev.userMessage) : m.id === PENDING_ID ? { ...m, model: ev.model, language: ev.language } : m,
             ),
           }));
-          break;
-        case "delta":
-          patchAssistant(ev.turnId, (m) => ({ ...m, content: m.content + ev.text }));
-          break;
-        case "reasoning":
-          patchAssistant(ev.turnId, (m) => ({ ...m, reasoning: m.reasoning + ev.text }));
           break;
         case "toolAwaitingConfirmation": {
           const activity: UiToolActivity = { callId: ev.callId, serverName: ev.serverName, toolName: ev.toolName, category: ev.category, args: ev.args, status: "awaiting" };

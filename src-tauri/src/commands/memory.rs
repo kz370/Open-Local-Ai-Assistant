@@ -217,7 +217,11 @@ pub async fn load(app: &AppHandle, key: &str) -> CmdResult<()> {
 /// Everything the assistant needs, in the background.
 pub fn load_all(app: &AppHandle) {
     let state = app.state::<AppState>();
-    if state.silma.is_installed() && state.tts.uses_silma() {
+    // SILMA holds a few GB of VRAM. Next to a local LM Studio model on the same
+    // card that pushes the chat model out of video memory and slows it to a
+    // crawl, so it then starts on the first Arabic sentence instead.
+    let local_llm = state.settings.get().ai.provider == "lmstudio";
+    if !local_llm && state.silma.is_installed() && state.tts.uses_silma() {
         if let Err(e) = state.silma.start() {
             tracing::warn!(error = %e, "SILMA could not start");
         }

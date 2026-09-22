@@ -179,6 +179,7 @@ mod tests {
                 tool_activity: None,
                 tool_calls: None,
                 attachments: None,
+                stats: None,
                 tool_call_id: None,
                 created_at: now(),
             })

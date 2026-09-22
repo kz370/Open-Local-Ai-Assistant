@@ -136,6 +136,8 @@ pub struct AiSettings {
     pub streaming: bool,
     pub request_timeout_secs: u64,
     pub show_reasoning: bool,
+    /// Show generation speed and context use under each reply.
+    pub show_stats: bool,
     /// User-defined short display names, keyed by LM Studio model id.
     pub model_aliases: std::collections::BTreeMap<String, String>,
     /// Model ids left out of the chat window's model picker.
@@ -165,6 +167,7 @@ impl Default for AiSettings {
             streaming: true,
             request_timeout_secs: 300,
             show_reasoning: false,
+            show_stats: true,
             model_aliases: Default::default(),
             hidden_models: Vec::new(),
             paste_as_file_chars: default_paste_as_file_chars(),

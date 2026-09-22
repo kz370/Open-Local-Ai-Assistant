@@ -35,7 +35,7 @@
   --card: rgba(255, 255, 255, 0.75);
   --card-hover: rgba(15, 23, 20, 0.05);
   --popover: #ffffff;
-  --header-bg: rgba(250, 251, 250, 0.72);
+  --header-bg: rgba(250, 251, 250, 0.94);
   --composer-bg: #ffffff;
   --composer-shadow: 0 8px 28px rgba(15, 35, 30, 0.08), 0 1px 3px rgba(15, 35, 30, 0.06);
   --focus-ring: rgba(13, 148, 136, 0.14);
@@ -82,7 +82,7 @@
   --card: rgba(255, 255, 255, 0.035);
   --card-hover: rgba(255, 255, 255, 0.06);
   --popover: #171d1c;
-  --header-bg: rgba(14, 19, 18, 0.6);
+  --header-bg: rgba(14, 19, 18, 0.92);
   --composer-bg: #161c1b;
   --composer-shadow: 0 10px 30px rgba(0, 0, 0, 0.35), 0 1px 0 rgba(255, 255, 255, 0.03) inset;
   --focus-ring: rgba(45, 212, 191, 0.12);

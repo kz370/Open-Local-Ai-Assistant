@@ -43,6 +43,7 @@ const SETTINGS: Settings = {
     streaming: true,
     requestTimeoutSecs: 300,
     showReasoning: false,
+    showStats: true,
     modelAliases: { "qwen/qwen3.5-9b": "Qwen 9B" },
     hiddenModels: [], freeModelsOnly: false,
     pasteAsFileChars: 2000,

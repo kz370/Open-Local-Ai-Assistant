@@ -56,6 +56,7 @@ export interface Settings {
     streaming: boolean;
     requestTimeoutSecs: number;
     showReasoning: boolean;
+    showStats: boolean;
     modelAliases: Record<string, string>;
     /** Model ids left out of the chat window's model picker. */
     hiddenModels: string[];
@@ -231,7 +232,17 @@ export interface Message {
   sources?: Source[] | null;
   toolActivity?: ActivityRecord[] | null;
   attachments?: Attachment[] | null;
+  stats?: MessageStats | null;
   createdAt: string;
+}
+
+/** Generation stats of an assistant reply. */
+export interface MessageStats {
+  completionTokens: number;
+  tokensPerSecond?: number | null;
+  firstTokenMs?: number | null;
+  contextUsed?: number | null;
+  contextLength?: number | null;
 }
 
 export interface SearchHit {

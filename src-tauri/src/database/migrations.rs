@@ -77,6 +77,10 @@ const MIGRATIONS: &[&str] = &[
     r#"
     ALTER TABLE messages ADD COLUMN attachments_json TEXT;
     "#,
+    // 3: generation stats of assistant replies
+    r#"
+    ALTER TABLE messages ADD COLUMN stats_json TEXT;
+    "#,
 ];
 
 pub fn run(conn: &Connection) -> rusqlite::Result<()> {

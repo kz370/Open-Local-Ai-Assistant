@@ -365,11 +365,16 @@ impl AiService for LmStudioService {
         if let Some(mt) = req.max_tokens {
             body["max_tokens"] = json!(mt);
         }
+        if req.stream {
+            // Token counts arrive in a final chunk, for the speed/context stats.
+            body["stream_options"] = json!({ "include_usage": true });
+        }
         if !req.tools.is_empty() {
             body["tools"] = json!(req.tools);
             body["tool_choice"] = json!("auto");
         }
 
+        let sent_at = Instant::now();
         let send = self
             .authed(self.http().post(format!("{}/chat/completions", self.base_url())))
             .json(&body)
@@ -409,6 +414,8 @@ impl AiService for LmStudioService {
                 out.tool_calls = serde_json::from_value(calls.clone()).unwrap_or_default();
             }
             out.finish_reason = v["choices"][0]["finish_reason"].as_str().map(str::to_string);
+            read_usage(&v, &mut out);
+            out.generation_ms = Some(sent_at.elapsed().as_millis() as u64);
             return Ok(out);
         }
 
@@ -416,6 +423,7 @@ impl AiService for LmStudioService {
         let mut decoder = SseDecoder::default();
         let mut tools = ToolCallAccumulator::default();
         let mut done = false;
+        let mut first_token: Option<Instant> = None;
 
         while !done {
             let chunk = tokio::select! {
@@ -440,16 +448,21 @@ impl AiService for LmStudioService {
                     let msg = err["message"].as_str().or(err.as_str()).unwrap_or("stream error");
                     return Err(AppError::LmStudio(msg.to_string()));
                 }
+                read_usage(&v, &mut out);
                 let Some(choice) = v["choices"].get(0) else { continue };
                 let delta = &choice["delta"];
                 if let Some(r) = delta["reasoning_content"].as_str().or(delta["reasoning"].as_str()) {
                     if !r.is_empty() {
+                        first_token.get_or_insert_with(Instant::now);
+                        out.chunks += 1;
                         out.reasoning.push_str(r);
                         on_chunk(StreamChunk::Reasoning(r.to_string()));
                     }
                 }
                 if let Some(c) = delta["content"].as_str() {
                     if !c.is_empty() {
+                        first_token.get_or_insert_with(Instant::now);
+                        out.chunks += 1;
                         out.content.push_str(c);
                         on_chunk(StreamChunk::Content(c.to_string()));
                     }
@@ -465,7 +478,22 @@ impl AiService for LmStudioService {
             }
         }
         out.tool_calls = tools.finish();
+        if let Some(t) = first_token {
+            out.first_token_ms = Some(t.duration_since(sent_at).as_millis() as u64);
+            out.generation_ms = Some(t.elapsed().as_millis() as u64);
+        }
         Ok(out)
+    }
+}
+
+/// Takes the OpenAI `usage` block, when a response or chunk carries one.
+fn read_usage(v: &Value, out: &mut ChatCompletion) {
+    let usage = &v["usage"];
+    if let Some(p) = as_u32(usage.get("prompt_tokens")) {
+        out.prompt_tokens = Some(p);
+    }
+    if let Some(c) = as_u32(usage.get("completion_tokens")) {
+        out.completion_tokens = Some(c);
     }
 }
 
@@ -633,6 +661,7 @@ mod tests {
             json!({"choices":[{"delta":{"tool_calls":[{"index":0,"id":"a","type":"function","function":{"name":"web_search","arguments":""}}]}}]}),
             json!({"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"query\":\"php\"}"}}]}}]}),
             json!({"choices":[{"delta":{},"finish_reason":"tool_calls"}]}),
+            json!({"choices":[],"usage":{"prompt_tokens":12,"completion_tokens":7,"total_tokens":19}}),
         ]);
         let mock = Mock { stream_body: Arc::new(body), ..Default::default() };
         let url = serve(mock.clone()).await;
@@ -655,6 +684,10 @@ mod tests {
         let sent = mock.last_body.lock().unwrap().clone().unwrap();
         assert_eq!(sent["tools"][0]["function"]["name"], "web_search");
         assert_eq!(sent["max_tokens"], 100);
+        assert_eq!(sent["stream_options"]["include_usage"], true);
+        assert_eq!((out.prompt_tokens, out.completion_tokens), (Some(12), Some(7)));
+        assert_eq!(out.chunks, 3);
+        assert!(out.first_token_ms.is_some() && out.generation_ms.is_some());
     }
 
     #[tokio::test]

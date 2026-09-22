@@ -172,6 +172,16 @@ pub struct ChatCompletion {
     pub reasoning: String,
     pub tool_calls: Vec<ToolCall>,
     pub finish_reason: Option<String>,
+    /// Token counts reported by the server, when it reports them.
+    pub prompt_tokens: Option<u32>,
+    pub completion_tokens: Option<u32>,
+    /// Streamed content/reasoning chunks; roughly one token each, used when
+    /// the server reports no usage.
+    pub chunks: u32,
+    /// From sending the request to the first streamed token.
+    pub first_token_ms: Option<u64>,
+    /// From the first streamed token to the end of the reply.
+    pub generation_ms: Option<u64>,
 }
 
 #[async_trait]

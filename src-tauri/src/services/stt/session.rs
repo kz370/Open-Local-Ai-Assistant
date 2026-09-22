@@ -250,7 +250,9 @@ fn create_vad(path: &std::path::Path, settings: &SttSettings) -> Option<sherpa_o
         },
         sample_rate: 16_000,
         num_threads: 1,
-        provider: Some(crate::services::gpu::provider().into()),
+        // Always CPU: Silero is tiny and runs every 32 ms, so on CUDA each call
+        // is mostly launch/sync overhead that competes with the chat model.
+        provider: Some("cpu".into()),
         ..Default::default()
     };
     sherpa_onnx::VoiceActivityDetector::create(&config, 60.0)
