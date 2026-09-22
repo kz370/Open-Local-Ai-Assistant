@@ -29,6 +29,8 @@ export interface UiMessage {
   error?: AppErrorPayload;
   model?: string;
   stats?: MessageStats | null;
+  /** Turn that produced this reply; spoken replies are tagged with it. */
+  turnId?: string;
   createdAt: string;
 }
 
@@ -142,7 +144,7 @@ export const useChat = create<ChatState>((set, get) => {
       messages: [
         ...s.messages.filter((m) => m.id !== PENDING_ID),
         { id: `local-${turnId}`, role: "user", content: text, attachments, language: opts?.spokenLanguage ?? null, reasoning: "", sources: [], tools: [], streaming: false, createdAt: now },
-        { id: PENDING_ID, role: "assistant", content: "", attachments: [], language: null, reasoning: "", sources: [], tools: [], streaming: true, createdAt: now },
+        { id: PENDING_ID, role: "assistant", content: "", attachments: [], language: null, reasoning: "", sources: [], tools: [], streaming: true, turnId, createdAt: now },
       ],
     }));
     try {
@@ -324,7 +326,7 @@ export const useChat = create<ChatState>((set, get) => {
               if (m.id !== PENDING_ID) return m;
               const done = messageToUi(ev.message);
               // Keep live tool details (args/results) gathered during streaming.
-              return { ...done, tools: m.tools.length ? m.tools : done.tools, model: m.model };
+              return { ...done, tools: m.tools.length ? m.tools : done.tools, model: m.model, turnId: m.turnId };
             }),
           }));
           sendNextQueued();
@@ -341,7 +343,7 @@ export const useChat = create<ChatState>((set, get) => {
               if (m.id !== PENDING_ID) return [m];
               if (ev.partialMessage) {
                 const partial = messageToUi(ev.partialMessage);
-                return [{ ...partial, tools: m.tools, error: cancelled ? undefined : err }];
+                return [{ ...partial, tools: m.tools, turnId: m.turnId, error: cancelled ? undefined : err }];
               }
               if (cancelled && !m.content) return [];
               return [{ ...m, id: `failed-${ev.turnId}`, streaming: false, error: cancelled ? undefined : err }];

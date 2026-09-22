@@ -33,7 +33,9 @@ export const MessageBubble = memo(function MessageBubble({ message: m, developer
   const assistantName = useSettings((s) => s.settings?.general.assistantName) || t("chat.assistant");
   const speakingTag = useVoice((s) => s.speakingTag);
   const paused = useVoice((s) => s.paused);
-  const isThisPlaying = speakingTag === m.id;
+  // "Read aloud" is tagged with the message id; replies spoken automatically
+  // while they stream are tagged with their turn id.
+  const isThisPlaying = speakingTag !== null && (speakingTag === m.id || speakingTag === m.turnId);
   const dir = textDir(m.content, m.language);
   const lang = m.language ?? undefined;
 
@@ -109,8 +111,8 @@ export const MessageBubble = memo(function MessageBubble({ message: m, developer
         />
       )}
       {showStats && !m.streaming && m.stats && <StatsLine stats={m.stats} />}
-      {!m.streaming && m.content && (
-        <div className="msg-actions">
+      {((!m.streaming && m.content) || isThisPlaying) && (
+        <div className={`msg-actions${isThisPlaying ? " playing" : ""}`}>
           <button
             className="icon-btn"
             aria-label={copied ? t("app.copied") : t("chat.copyMessage")}

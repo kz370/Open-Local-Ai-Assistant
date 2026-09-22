@@ -1,25 +1,49 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Mic, MicOff, PhoneOff, Play, Square } from "lucide-react";
 import { useChat } from "../../app/chatStore";
 import { ipc } from "../../app/ipc";
 import { useSettings } from "../../app/settingsStore";
 import { t } from "../../app/strings";
-import { useVoice } from "../../app/voiceStore";
+import { useVoice, type SpokenSentence } from "../../app/voiceStore";
 import { BrandMark } from "../common/BrandMark";
 import { textDir } from "../common/controls";
 import { LevelMeter } from "./LevelMeter";
-import { SpeechTicker } from "./SpeechTicker";
+import { SpokenText } from "./SpokenText";
 
 function elapsed(startedAt: number): string {
   const s = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
 
+/** How long the last sentence stays up after playback goes idle once the
+ *  reply has finished generating (the remaining sentences may still be
+ *  synthesizing). */
+const HOLD_AFTER_REPLY_MS = 2500;
+
+/** The last spoken sentence, kept while playback waits for the next one. */
+function useHeldSentence(spoken: SpokenSentence | null, turnId: string | null, userTalking: boolean): SpokenSentence | null {
+  const busy = turnId !== null;
+  const last = useRef<SpokenSentence | null>(null);
+  const [expired, setExpired] = useState(false);
+  if (spoken) last.current = spoken;
+  useEffect(() => {
+    setExpired(false);
+    if (spoken || busy) return;
+    const id = setTimeout(() => setExpired(true), HOLD_AFTER_REPLY_MS);
+    return () => clearTimeout(id);
+  }, [spoken, busy]);
+  if (spoken || userTalking || expired) return null;
+  // A new turn must not show the previous turn's last sentence while it thinks.
+  if (busy && last.current?.tag !== turnId) return null;
+  return last.current;
+}
+
 /** Phone-call style screen for hands-free conversation. */
 export function CallView() {
   const voice = useVoice();
   const messages = useChat((s) => s.messages);
-  const busy = useChat((s) => s.turnId !== null);
+  const turnId = useChat((s) => s.turnId);
+  const busy = turnId !== null;
   const [startedAt] = useState(() => Date.now());
   const micName = useVoice((s) => s.device);
   const silent = useVoice((s) => s.levels.every((v) => v < 0.03));
@@ -37,14 +61,27 @@ export function CallView() {
   const [before] = useState(() => new Set(useChat.getState().messages.map((m) => m.id)));
   useEffect(() => useVoice.setState({ lastTranscript: null, partial: "" }), []);
   const callMessages = useMemo(() => messages.filter((m) => !before.has(m.id)), [messages, before]);
-  const lastAssistant = useMemo(() => [...callMessages].reverse().find((m) => m.role === "assistant" && m.content), [callMessages]);
   const lastUser = useMemo(() => [...callMessages].reverse().find((m) => m.role === "user" && m.content), [callMessages]);
   const voiceNotice = useChat((s) => s.voiceNotice);
-  const state = voice.speaking ? "speaking" : busy ? "thinking" : voice.phase === "transcribing" ? "transcribing" : "listening";
+  // Playback goes idle between sentences whenever the next one is not ready
+  // yet (the model is still writing it, or it is still being synthesized).
+  // Keep the last sentence on screen through that gap instead of flashing the
+  // whole reply, until this turn ends or the user starts talking.
+  const held = useHeldSentence(voice.spoken, turnId, !!voice.partial || voice.phase === "transcribing");
+  const sentence = voice.spoken ?? held;
+  const state = voice.speaking || sentence ? "speaking" : busy ? "thinking" : voice.phase === "transcribing" ? "transcribing" : "listening";
   // The assistant can be cut off whenever it is talking or about to talk.
   const canInterrupt = voice.speaking || voice.paused || busy;
+  // The reply being spoken (its sentences are tagged with its turn), or the
+  // one being written right now.
+  const reply = useMemo(
+    () => [...callMessages].reverse().find((m) => m.role === "assistant" && m.content && (m.turnId === (sentence?.tag ?? turnId) || !m.turnId)),
+    [callMessages, sentence?.tag, turnId],
+  );
+  const showReply = !!reply && (state === "speaking" || (busy && reply.turnId === turnId));
   const label = voice.muted ? t("call.muted") : t(`call.${state}`);
-  const caption = voice.partial || (state === "speaking" || state === "thinking" ? lastAssistant?.content ?? "" : voice.lastTranscript ?? "");
+  // The reply itself is shown by SpokenText; never dump it here in full.
+  const caption = voice.partial || (voice.lastTranscript ?? "");
 
   return (
     <div className={`call ${state}`} role="region" aria-label={t("call.title")}>
@@ -59,8 +96,8 @@ export function CallView() {
         {label}
       </div>
       <LevelMeter levels={voice.levels} max={44} label={t("voice.level")} />
-      {voice.spoken && state === "speaking" ? (
-        <SpeechTicker sentence={voice.spoken} paused={voice.paused} />
+      {showReply && reply ? (
+        <SpokenText text={reply.content} sentence={sentence && sentence.tag === reply.turnId ? sentence : null} paused={voice.paused} />
       ) : (
         <div className="call-caption" dir={caption ? textDir(caption) : "auto"} lang={caption && textDir(caption) === "rtl" ? "ar" : undefined}>
           {caption || t("call.saySomething")}

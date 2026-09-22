@@ -8,7 +8,7 @@ import { MessageBubble } from "../components/chat/MessageBubble";
 import { Composer } from "../components/chat/Composer";
 import { CallView } from "../components/voice/CallView";
 import { useVoice } from "../app/voiceStore";
-import { SpeechTicker } from "../components/voice/SpeechTicker";
+import { SpokenText } from "../components/voice/SpokenText";
 import { textDir } from "../components/common/controls";
 import { acceleratorFromEvent, prettyAccelerator } from "../components/settings/ShortcutInput";
 
@@ -26,24 +26,36 @@ describe("text direction", () => {
   });
 });
 
-describe("SpeechTicker", () => {
-  it("highlights the word being spoken and moves on as playback advances", async () => {
-    const sentence = { tag: "t1", text: "one two three four", durationMs: 1000, startedAt: performance.now() };
-    const { rerender } = render(<SpeechTicker sentence={sentence} paused={false} />);
-    const words = () => Array.from(document.querySelectorAll(".ticker-word"));
-    expect(words().map((w) => w.textContent)).toEqual(["one", "two", "three", "four"]);
-    await waitFor(() => expect(document.querySelector(".ticker-word.on")?.textContent).toBe("one"));
+describe("SpokenText", () => {
+  const on = () => document.querySelector(".spoken-word.on")?.textContent;
 
-    // Pretend playback is three quarters through: the third word is spoken.
-    rerender(<SpeechTicker sentence={{ ...sentence, startedAt: performance.now() - 700 }} paused={false} />);
-    await waitFor(() => expect(document.querySelector(".ticker-word.on")?.textContent).toBe("three"));
+  it("shows the whole reply and highlights the word being spoken", async () => {
+    const reply = "Hello there. **One** two three four. Goodbye now.";
+    const sentence = { tag: "t1", text: "One two three four.", durationMs: 1000, startedAt: performance.now() };
+    const { rerender } = render(<SpokenText text={reply} sentence={sentence} paused={false} />);
+    // Markdown is not shown, the rest of the reply is.
+    expect(document.querySelector(".spoken-text")?.textContent).toBe("Hello there. One two three four. Goodbye now.");
+    await waitFor(() => expect(on()).toBe("One"));
+    expect(document.querySelectorAll(".spoken-word.done")).toHaveLength(2); // "Hello there." came before
+
+    // Three quarters through the sentence: the third word is spoken.
+    rerender(<SpokenText text={reply} sentence={{ ...sentence, startedAt: performance.now() - 700 }} paused={false} />);
+    await waitFor(() => expect(on()).toBe("three"));
   });
 
-  it("stops moving while speech is paused", async () => {
+  it("finds a spoken sentence despite added diacritics", async () => {
+    const sentence = { tag: "t1", text: "مَرْحَبًا بِكَ", durationMs: 1000, startedAt: performance.now() };
+    render(<SpokenText text="أهلا. مرحبا بك" sentence={sentence} paused={false} />);
+    await waitFor(() => expect(on()).toBe("مرحبا"));
+  });
+
+  it("holds the highlight while speech is paused or between sentences", async () => {
     const sentence = { tag: "t1", text: "alpha beta gamma", durationMs: 600, startedAt: performance.now() - 590 };
-    render(<SpeechTicker sentence={sentence} paused={true} />);
+    const { rerender } = render(<SpokenText text="alpha beta gamma delta" sentence={sentence} paused={true} />);
     await new Promise((r) => setTimeout(r, 50));
-    expect(document.querySelector(".ticker-word.on")?.textContent).toBe("alpha");
+    expect(on()).toBe("gamma");
+    rerender(<SpokenText text="alpha beta gamma delta" sentence={null} paused={false} />);
+    expect(on()).toBe("gamma");
   });
 });
 
