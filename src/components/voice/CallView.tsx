@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Mic, MicOff, PhoneOff, Play, Square } from "lucide-react";
+import { Mic, MicOff, Pause, PhoneOff, Play, Square } from "lucide-react";
 import { useChat } from "../../app/chatStore";
 import { ipc } from "../../app/ipc";
 import { useSettings } from "../../app/settingsStore";
@@ -137,18 +137,24 @@ export function CallView() {
       <div className="call-actions">
         <button
           className="call-btn"
-          aria-label={voice.paused ? t("chat.resume") : t("call.interrupt")}
-          title={voice.paused ? t("chat.resume") : t("call.interrupt")}
+          aria-label={t("call.interrupt")}
+          title={t("call.interrupt")}
           disabled={!canInterrupt}
-          onClick={() => {
-            if (voice.paused) {
-              void ipc.ttsSetPaused(false);
-            } else {
-              voice.interrupt();
-            }
-          }}
+          onClick={() => voice.interrupt()}
         >
-          {voice.paused ? <Play size={20} /> : <Square size={17} fill="currentColor" />}
+          <Square size={17} fill="currentColor" />
+        </button>
+        {/* Pause keeps the rest of the answer queued; while paused the
+            microphone listens again, so speaking up still takes over. */}
+        <button
+          className={`call-btn${voice.paused ? " muted" : ""}`}
+          aria-label={voice.paused ? t("chat.resume") : t("chat.pause")}
+          title={voice.paused ? t("chat.resume") : t("chat.pause")}
+          aria-pressed={voice.paused}
+          disabled={!voice.speaking && !voice.paused}
+          onClick={() => void ipc.ttsSetPaused(!voice.paused)}
+        >
+          {voice.paused ? <Play size={20} /> : <Pause size={20} />}
         </button>
         <button className="call-btn end" aria-label={t("call.end")} title={t("call.end")} onClick={() => void voice.toggleHandsFree()}>
           <PhoneOff size={22} />
