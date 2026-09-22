@@ -62,6 +62,7 @@
     "thinking": "Thinking…",
     "showReasoning": "Show reasoning",
     "hideReasoning": "Hide reasoning",
+    "preparingSpeech": "Preparing speech… (click to cancel)",
     "stats": {
       "speed": "{{n}} tok/s",
       "tokens": "{{n}} tokens",

@@ -1,4 +1,4 @@
-import { memo, useState } from "react";
+import { memo, useEffect, useState } from "react";
 import { Check, Copy, Pause, Play, RefreshCw, Square, Volume2 } from "lucide-react";
 import type { UiMessage } from "../../app/chatStore";
 import type { MessageStats } from "../../app/types";
@@ -36,6 +36,18 @@ export const MessageBubble = memo(function MessageBubble({ message: m, developer
   // "Read aloud" is tagged with the message id; replies spoken automatically
   // while they stream are tagged with their turn id.
   const isThisPlaying = speakingTag !== null && (speakingTag === m.id || speakingTag === m.turnId);
+  // Synthesis takes a moment (longer when the voice model still has to load),
+  // so "read aloud" shows it is working until the audio starts.
+  const [preparing, setPreparing] = useState(false);
+  useEffect(() => {
+    if (!preparing) return;
+    if (isThisPlaying) {
+      setPreparing(false);
+      return;
+    }
+    const id = setTimeout(() => setPreparing(false), PREPARE_TIMEOUT_MS);
+    return () => clearTimeout(id);
+  }, [preparing, isThisPlaying]);
   const dir = textDir(m.content, m.language);
   const lang = m.language ?? undefined;
 
@@ -112,7 +124,7 @@ export const MessageBubble = memo(function MessageBubble({ message: m, developer
       )}
       {showStats && !m.streaming && m.stats && <StatsLine stats={m.stats} />}
       {((!m.streaming && m.content) || isThisPlaying) && (
-        <div className={`msg-actions${isThisPlaying ? " playing" : ""}`}>
+        <div className={`msg-actions${isThisPlaying || preparing ? " playing" : ""}`}>
           <button
             className="icon-btn"
             aria-label={copied ? t("app.copied") : t("chat.copyMessage")}
@@ -139,8 +151,28 @@ export const MessageBubble = memo(function MessageBubble({ message: m, developer
                 <Square size={12} fill="currentColor" />
               </button>
             </>
+          ) : preparing ? (
+            <button
+              className="icon-btn active"
+              aria-label={t("chat.preparingSpeech")}
+              title={t("chat.preparingSpeech")}
+              onClick={() => {
+                setPreparing(false);
+                void ipc.ttsStop();
+              }}
+            >
+              <span className="spinner" aria-hidden />
+            </button>
           ) : (
-            <button className="icon-btn" aria-label={t("chat.speak")} title={t("chat.speak")} onClick={() => void ipc.ttsSpeak(m.content, m.language, m.id)}>
+            <button
+              className="icon-btn"
+              aria-label={t("chat.speak")}
+              title={t("chat.speak")}
+              onClick={() => {
+                setPreparing(true);
+                ipc.ttsSpeak(m.content, m.language, m.id).catch(() => setPreparing(false));
+              }}
+            >
               <Volume2 size={14} />
             </button>
           )}
@@ -150,6 +182,9 @@ export const MessageBubble = memo(function MessageBubble({ message: m, developer
     </div>
   );
 });
+
+/** Gives up on the spinner if playback never starts (voice unavailable). */
+const PREPARE_TIMEOUT_MS = 90_000;
 
 const fmt = new Intl.NumberFormat("en");
 

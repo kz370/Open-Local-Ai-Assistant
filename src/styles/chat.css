@@ -1210,10 +1210,49 @@ html.launcher-window #root {
   border-color: color-mix(in srgb, var(--accent) 70%, transparent);
   animation: ripple 1.1s infinite var(--ease);
 }
+/* Thinking: a slow glow breathing behind the icon. Opacity and scale only,
+   so it runs on the compositor and keeps going while the page is busy. */
 .call-pulse.thinking,
 .call-pulse.transcribing {
-  border-color: var(--hairline);
-  animation: pulse 1.4s infinite var(--ease);
+  inset: -30px;
+  border: none;
+  background: radial-gradient(circle, color-mix(in srgb, var(--accent) 45%, transparent) 0%, transparent 68%);
+  animation: think-glow 2.6s ease-in-out infinite;
+  will-change: transform, opacity;
+}
+@keyframes think-glow {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.9);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.08);
+  }
+}
+.thinking-dots {
+  display: inline-flex;
+  gap: 3px;
+  margin-inline-start: 4px;
+  vertical-align: middle;
+}
+.thinking-dots i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: typing 1.2s infinite var(--ease);
+}
+.thinking-dots i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.thinking-dots i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+/* Keeps the layout still when the level bars give way to the thinking glow. */
+.call-meter-gap {
+  height: 44px;
 }
 .call-state {
   font-size: var(--text-lg);
