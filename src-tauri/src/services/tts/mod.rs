@@ -299,7 +299,9 @@ impl TtsService {
         if samples.is_empty() {
             return Ok(());
         }
-        if self.cancelled.lock().unwrap_or_else(|p| p.into_inner()).contains(&job.tag) {
+        if job.generation != self.generation.load(Ordering::SeqCst)
+            || self.cancelled.lock().unwrap_or_else(|p| p.into_inner()).contains(&job.tag)
+        {
             return Ok(());
         }
         (self.emit)(TtsEvent::Speaking { tag: job.tag.clone() });
