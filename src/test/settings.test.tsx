@@ -28,6 +28,7 @@ const SETTINGS: Settings = {
     logConversationContent: false,
     bubbleX: null,
     bubbleY: null,
+    suggestedPrompts: [],
   },
   ai: {
     provider: "lmstudio",

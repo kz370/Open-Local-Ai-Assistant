@@ -367,9 +367,9 @@ export function ChatApp() {
               <h1>{t("chat.emptyTitle")}</h1>
               <p>{t("chat.emptyHint")}</p>
               <div className="suggestions">
-                {SUGGESTIONS.map((k) => (
-                  <button key={k} className="suggestion" dir="auto" onClick={() => void send(t(k))} disabled={lm !== "connected"}>
-                    {t(k)}
+                {(settings?.general.suggestedPrompts.length ? settings.general.suggestedPrompts : SUGGESTIONS.map((k) => t(k))).map((text, i) => (
+                  <button key={i} className="suggestion" dir="auto" onClick={() => void send(text)} disabled={lm !== "connected"}>
+                    {text}
                   </button>
                 ))}
               </div>

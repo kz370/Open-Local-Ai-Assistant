@@ -75,6 +75,9 @@ pub struct GeneralSettings {
     /// Saved position of the floating bubble (physical pixels).
     pub bubble_x: Option<i32>,
     pub bubble_y: Option<i32>,
+    /// Custom starter prompts shown on the empty chat screen. Empty means
+    /// "use the built-in defaults" so existing installs are unaffected.
+    pub suggested_prompts: Vec<String>,
 }
 
 impl Default for GeneralSettings {
@@ -99,6 +102,7 @@ impl Default for GeneralSettings {
             log_conversation_content: false,
             bubble_x: None,
             bubble_y: None,
+            suggested_prompts: Vec::new(),
         }
     }
 }
