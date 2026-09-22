@@ -94,8 +94,8 @@ html[data-route="chat"] #root {
   height: 56px;
   padding: 0 8px 0 14px;
   flex: none;
+  /* No backdrop blur: it re-blurs the scrolling list on every streamed batch. */
   background: var(--header-bg);
-  backdrop-filter: blur(14px);
   border-bottom: 1px solid var(--hairline);
 }
 .header-drag {
@@ -406,6 +406,12 @@ html[data-route="chat"] #root {
   padding: 0;
 }
 
+.msg-stats {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  margin-top: 2px;
+}
 .msg-actions {
   display: flex;
   gap: 2px;

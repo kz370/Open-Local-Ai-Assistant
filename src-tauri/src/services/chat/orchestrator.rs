@@ -28,6 +28,45 @@ const TOOL_RESULT_LIMIT: usize = 16_000;
 const CONFIRM_TIMEOUT: Duration = Duration::from_secs(180);
 const TOOL_TIMEOUT: Duration = Duration::from_secs(90);
 
+/// Speed and context use of one reply, summed over its tool rounds.
+#[derive(Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ReplyStats {
+    completion_tokens: u32,
+    #[serde(skip)]
+    generation_ms: u64,
+    tokens_per_second: Option<f32>,
+    first_token_ms: Option<u64>,
+    /// Tokens the last round occupied in the context window (prompt + reply).
+    context_used: Option<u32>,
+    context_length: Option<u32>,
+}
+
+impl ReplyStats {
+    fn add(&mut self, c: &crate::services::ai::ChatCompletion) {
+        let tokens = c.completion_tokens.unwrap_or(c.chunks);
+        self.completion_tokens += tokens;
+        self.generation_ms += c.generation_ms.unwrap_or(0);
+        if self.first_token_ms.is_none() {
+            self.first_token_ms = c.first_token_ms;
+        }
+        if let Some(p) = c.prompt_tokens {
+            self.context_used = Some(p + tokens);
+        }
+    }
+
+    fn finish(mut self) -> Option<Value> {
+        if self.completion_tokens == 0 {
+            return None;
+        }
+        // Below ~50 ms the rate is noise (a single chunk, a cached reply).
+        if self.generation_ms >= 50 {
+            self.tokens_per_second = Some(self.completion_tokens as f32 * 1000.0 / self.generation_ms as f32);
+        }
+        serde_json::to_value(&self).ok()
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SendInput {
@@ -192,6 +231,7 @@ impl ChatEngine {
             tool_calls: None,
             tool_call_id: None,
             attachments: if attachments.is_empty() { None } else { Some(serde_json::to_value(&attachments)?) },
+            stats: None,
             created_at: now(),
         };
         self.db.insert_message(&user_message)?;
@@ -303,6 +343,13 @@ impl ChatEngine {
         let mut full_reasoning = String::new();
         let mut sources: Vec<Source> = Vec::new();
         let mut activity: Vec<ActivityRecord> = Vec::new();
+        let mut stats = ReplyStats {
+            context_length: settings
+                .ai
+                .context_length
+                .or(model.info.as_ref().and_then(|i| i.loaded_context_length.or(i.max_context_length))),
+            ..Default::default()
+        };
 
         for round in 0..=MAX_TOOL_ROUNDS {
             let last_round = round == MAX_TOOL_ROUNDS;
@@ -360,7 +407,10 @@ impl ChatEngine {
             }
 
             let completion = match result {
-                Ok(c) => c,
+                Ok(c) => {
+                    stats.add(&c);
+                    c
+                }
                 Err(e) => {
                     if speak {
                         self.speech.cancel(&turn_id);
@@ -411,6 +461,7 @@ impl ChatEngine {
                 tool_calls: Some(serde_json::to_value(&calls)?),
                 tool_call_id: None,
                 attachments: None,
+                stats: None,
                 created_at: now(),
             })?;
 
@@ -443,6 +494,7 @@ impl ChatEngine {
                     tool_calls: None,
                     tool_call_id: Some(call.id.clone()),
                     attachments: None,
+                    stats: None,
                     created_at: now(),
                 })?;
             }
@@ -459,7 +511,8 @@ impl ChatEngine {
             self.speech.finish(&turn_id);
         }
 
-        let final_message = self.assistant_message(&conversation.id, full_content.trim(), &full_reasoning, &sources, &activity, response_lang)?;
+        let mut final_message = self.assistant_message(&conversation.id, full_content.trim(), &full_reasoning, &sources, &activity, response_lang)?;
+        final_message.stats = stats.finish();
         self.db.insert_message(&final_message)?;
         self.db.touch_conversation(&conversation.id, None, None)?;
         emit(ChatEvent::Done { turn_id, message: final_message });
@@ -488,6 +541,7 @@ impl ChatEngine {
             tool_calls: None,
             tool_call_id: None,
             attachments: None,
+            stats: None,
             created_at: now(),
         })
     }
@@ -931,7 +985,7 @@ step two").unwrap();
     fn history_trimming_starts_with_user() {
         let mk = |role: &str, content: String| Message {
             id: new_id(), conversation_id: "c".into(), role: role.into(), content, language: None, reasoning: None,
-            sources: None, tool_activity: None, tool_calls: None, tool_call_id: None, attachments: None, created_at: now(),
+            sources: None, tool_activity: None, tool_calls: None, tool_call_id: None, attachments: None, stats: None, created_at: now(),
         };
         let mut hist = Vec::new();
         for i in 0..50 {

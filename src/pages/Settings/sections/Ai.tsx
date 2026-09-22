@@ -322,6 +322,9 @@ export function AiSection() {
         <Row label={t("settings.ai.showReasoning")} htmlFor="sw-reason">
           <Switch id="sw-reason" label={t("settings.ai.showReasoning")} checked={s.ai.showReasoning} onChange={(v) => set((d) => void (d.ai.showReasoning = v))} />
         </Row>
+        <Row label={t("settings.ai.showStats")} htmlFor="sw-stats">
+          <Switch id="sw-stats" label={t("settings.ai.showStats")} checked={s.ai.showStats} onChange={(v) => set((d) => void (d.ai.showStats = v))} />
+        </Row>
         <Row label={t("settings.ai.systemPrompt")} hint={t("settings.ai.systemPromptHint")} htmlFor="ta-sys" stack>
           <textarea id="ta-sys" className="textarea" rows={4} dir="auto" defaultValue={s.ai.systemPrompt} onBlur={(e) => set((d) => void (d.ai.systemPrompt = e.target.value))} />
         </Row>

@@ -148,15 +148,21 @@ pub fn default_data_dir() -> Option<PathBuf> {
     Some(PathBuf::from(base).join("com.localassistant.app"))
 }
 
-/// Whether the user turned GPU acceleration on. It lives in a file rather than
-/// in the settings database because it is read before the database is opened.
+/// Whether GPU acceleration is on. It is on by default; only switching it off
+/// (or a failed GPU start) leaves a "disabled" file behind. It lives in a file
+/// rather than in the settings database because it is read before the
+/// database is opened.
 pub fn is_enabled(data_dir: &Path) -> bool {
-    pack_dir(data_dir).with_file_name("enabled").exists()
+    !disabled_file(data_dir).exists()
+}
+
+fn disabled_file(data_dir: &Path) -> PathBuf {
+    pack_dir(data_dir).with_file_name("disabled")
 }
 
 pub fn set_enabled(data_dir: &Path, enabled: bool) -> AppResult<()> {
-    let flag = pack_dir(data_dir).with_file_name("enabled");
-    if enabled {
+    let flag = disabled_file(data_dir);
+    if !enabled {
         if let Some(parent) = flag.parent() {
             std::fs::create_dir_all(parent)?;
         }

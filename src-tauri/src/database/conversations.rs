@@ -39,6 +39,9 @@ pub struct Message {
     /// [`crate::services::attachments`].
     #[serde(default)]
     pub attachments: Option<serde_json::Value>,
+    /// Generation stats of an assistant reply (speed, tokens, context use).
+    #[serde(default)]
+    pub stats: Option<serde_json::Value>,
     pub created_at: String,
 }
 
@@ -86,11 +89,12 @@ fn msg_from_row(r: &Row) -> rusqlite::Result<Message> {
         tool_call_id: r.get(9)?,
         attachments: json_col(r.get(10)?),
         created_at: r.get(11)?,
+        stats: json_col(r.get(12)?),
     })
 }
 
 const CONV_COLS: &str = "id, title, created_at, updated_at, model, language";
-const MSG_COLS: &str = "id, conversation_id, role, content, language, reasoning, sources_json, tool_activity_json, tool_calls_json, tool_call_id, attachments_json, created_at";
+const MSG_COLS: &str = "id, conversation_id, role, content, language, reasoning, sources_json, tool_activity_json, tool_calls_json, tool_call_id, attachments_json, created_at, stats_json";
 
 impl Db {
     pub fn create_conversation(&self, title: &str, model: Option<&str>) -> AppResult<Conversation> {
@@ -174,7 +178,7 @@ impl Db {
     pub fn insert_message(&self, m: &Message) -> AppResult<()> {
         let to_s = |v: &Option<serde_json::Value>| v.as_ref().map(|v| v.to_string());
         self.conn().execute(
-            &format!("INSERT INTO messages ({MSG_COLS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)"),
+            &format!("INSERT INTO messages ({MSG_COLS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)"),
             params![
                 m.id,
                 m.conversation_id,
@@ -187,7 +191,8 @@ impl Db {
                 to_s(&m.tool_calls),
                 m.tool_call_id,
                 to_s(&m.attachments),
-                m.created_at
+                m.created_at,
+                to_s(&m.stats)
             ],
         )?;
         Ok(())
@@ -278,6 +283,7 @@ mod tests {
             tool_calls: None,
             tool_call_id: None,
             attachments: None,
+            stats: None,
             created_at: now(),
         }
     }

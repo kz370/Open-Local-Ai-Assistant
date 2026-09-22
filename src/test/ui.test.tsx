@@ -125,6 +125,8 @@ describe("chat store", () => {
     h({ type: "toolFinished", turnId, callId: "k", ok: true, durationMs: 5, resultPreview: "", sources: [{ url: "https://php.net" }], denied: false });
     h({ type: "delta", turnId, text: "PHP " });
     h({ type: "delta", turnId, text: "8.5" });
+    // Deltas are applied in batches.
+    await new Promise((r) => setTimeout(r, 80));
     let s = useChat.getState();
     expect(s.conversationId).toBe("c1");
     expect(s.messages[1].content).toBe("PHP 8.5");

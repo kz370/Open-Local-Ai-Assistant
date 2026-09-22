@@ -62,6 +62,13 @@
     "thinking": "Thinking…",
     "showReasoning": "Show reasoning",
     "hideReasoning": "Hide reasoning",
+    "stats": {
+      "speed": "{{n}} tok/s",
+      "tokens": "{{n}} tokens",
+      "context": "{{used}} ctx",
+      "contextOf": "{{used}} / {{max}} ctx ({{pct}}%)",
+      "firstToken": "First token after {{ms}} ms"
+    },
     "sources": "Sources",
     "model": "Model: {{model}}",
     "stopped": "Stopped.",
@@ -273,6 +280,7 @@
       "systemPromptHint": "Added to the built-in system prompt.",
       "streaming": "Stream responses",
       "showReasoning": "Show model reasoning",
+      "showStats": "Show speed and context per reply",
       "timeout": "Request timeout (seconds)",
       "pasteAsFile": "Paste as file above",
       "pasteAsFileHint": "Pasted text longer than this many characters is attached as a text file instead of filling the message box. Leave empty to turn this off.",

@@ -22,6 +22,9 @@ type LmState = "checking" | "connected" | "unavailable";
 
 const SUGGESTIONS = ["chat.suggestion1", "chat.suggestion2", "chat.suggestion3", "chat.suggestion4"];
 
+// Stable identity, so memoized message bubbles skip re-rendering while a reply streams.
+const openAiSettings = () => void ipc.openSettings("ai");
+
 export function ChatApp() {
   const settings = useSettings((s) => s.settings);
   const messages = useChat((s) => s.messages);
@@ -230,7 +233,9 @@ export function ChatApp() {
 
   useEffect(() => {
     const el = listRef.current;
-    if (el && stickToBottom.current) el.scrollTo({ top: el.scrollHeight });
+    // Instant: a smooth scroll restarted on every streamed batch keeps the
+    // compositor busy for the whole reply.
+    if (el && stickToBottom.current) el.scrollTo({ top: el.scrollHeight, behavior: "instant" });
   }, [messages]);
 
   const lastAssistantIdx = messages.map((m) => m.role).lastIndexOf("assistant");
@@ -376,11 +381,12 @@ export function ChatApp() {
                 message={m}
                 developer={developer}
                 showReasoning={settings?.ai.showReasoning ?? false}
+                showStats={settings?.ai.showStats ?? true}
                 isLastAssistant={i === lastAssistantIdx}
                 modelName={m.model ? modelLabel(m.model, aliases) : undefined}
                 onRetry={m.error && i === messages.length - 1 ? () => void retryLast() : undefined}
                 onResend={m.role === "user" && i === messages.length - 1 && !busy ? () => void retryLast() : undefined}
-                onOpenSettings={() => void ipc.openSettings("ai")}
+                onOpenSettings={openAiSettings}
               />
             ))
           )}

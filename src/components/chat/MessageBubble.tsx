@@ -1,6 +1,7 @@
 import { memo, useState } from "react";
 import { Check, Copy, Pause, Play, RefreshCw, Square, Volume2 } from "lucide-react";
 import type { UiMessage } from "../../app/chatStore";
+import type { MessageStats } from "../../app/types";
 import { ipc } from "../../app/ipc";
 import { useSettings } from "../../app/settingsStore";
 import { useVoice } from "../../app/voiceStore";
@@ -16,6 +17,8 @@ interface Props {
   message: UiMessage;
   developer: boolean;
   showReasoning: boolean;
+  /** Show generation speed and context use under the reply. */
+  showStats?: boolean;
   /** Kept for layout decisions by the caller. */
   isLastAssistant?: boolean;
   modelName?: string;
@@ -25,7 +28,7 @@ interface Props {
   onOpenSettings?: () => void;
 }
 
-export const MessageBubble = memo(function MessageBubble({ message: m, developer, showReasoning, modelName, onRetry, onResend, onOpenSettings }: Props) {
+export const MessageBubble = memo(function MessageBubble({ message: m, developer, showReasoning, showStats, modelName, onRetry, onResend, onOpenSettings }: Props) {
   const [copied, setCopied] = useState(false);
   const assistantName = useSettings((s) => s.settings?.general.assistantName) || t("chat.assistant");
   const speakingTag = useVoice((s) => s.speakingTag);
@@ -105,6 +108,7 @@ export const MessageBubble = memo(function MessageBubble({ message: m, developer
           }
         />
       )}
+      {showStats && !m.streaming && m.stats && <StatsLine stats={m.stats} />}
       {!m.streaming && m.content && (
         <div className="msg-actions">
           <button
@@ -144,3 +148,25 @@ export const MessageBubble = memo(function MessageBubble({ message: m, developer
     </div>
   );
 });
+
+const fmt = new Intl.NumberFormat("en");
+
+/** "62.1 tok/s · 1,204 / 32,768 ctx" under a finished reply. */
+function StatsLine({ stats: s }: { stats: MessageStats }) {
+  const parts: string[] = [];
+  if (s.tokensPerSecond != null) parts.push(t("chat.stats.speed", { n: s.tokensPerSecond.toFixed(1) }));
+  parts.push(t("chat.stats.tokens", { n: fmt.format(s.completionTokens) }));
+  if (s.contextUsed != null) {
+    parts.push(
+      s.contextLength
+        ? t("chat.stats.contextOf", { used: fmt.format(s.contextUsed), max: fmt.format(s.contextLength), pct: Math.round((s.contextUsed / s.contextLength) * 100) })
+        : t("chat.stats.context", { used: fmt.format(s.contextUsed) }),
+    );
+  }
+  const title = s.firstTokenMs != null ? t("chat.stats.firstToken", { ms: fmt.format(s.firstTokenMs) }) : undefined;
+  return (
+    <div className="msg-stats" dir="ltr" title={title}>
+      {parts.join(" · ")}
+    </div>
+  );
+}
