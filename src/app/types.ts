@@ -40,6 +40,8 @@ export interface Settings {
     logConversationContent: boolean;
     bubbleX: number | null;
     bubbleY: number | null;
+    /** Custom starter prompts for the empty chat screen; empty uses the built-in defaults. */
+    suggestedPrompts: string[];
   };
   ai: {
     provider: ProviderId;

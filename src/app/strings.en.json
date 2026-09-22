@@ -240,7 +240,11 @@
       "compact": "Compact mode",
       "developerMode": "Developer mode",
       "developerModeHint": "Show MCP server, tool name, arguments, results and timing for every tool call.",
-      "startWithOsHint": "Launch the assistant automatically when you sign in."
+      "startWithOsHint": "Launch the assistant automatically when you sign in.",
+      "suggestions": "Starter prompts",
+      "suggestionsHint": "Shown as clickable suggestions on the empty chat screen. Leave a field blank to remove it.",
+      "suggestionsAdd": "Add prompt",
+      "suggestionsReset": "Reset to defaults"
     },
     "ai": {
       "provider": "Provider",

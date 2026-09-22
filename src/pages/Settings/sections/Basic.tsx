@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Download, Upload } from "lucide-react";
+import { Download, Plus, RotateCcw, Trash2, Upload } from "lucide-react";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { ipc, toAppError } from "../../../app/ipc";
 import { useSettings } from "../../../app/settingsStore";
@@ -8,6 +8,8 @@ import type { LangSetting, Settings } from "../../../app/types";
 import { Segmented, Switch } from "../../../components/common/controls";
 import { Card, Row, SectionHeader } from "../../../components/settings/layout";
 import { ShortcutInput } from "../../../components/settings/ShortcutInput";
+
+const DEFAULT_SUGGESTIONS = ["chat.suggestion1", "chat.suggestion2", "chat.suggestion3", "chat.suggestion4"].map((k) => t(k));
 
 export function useS(): [Settings, (m: (d: Settings) => void) => void] {
   const s = useSettings((x) => x.settings)!;
@@ -52,8 +54,56 @@ export function GeneralSection() {
           <Switch id="sw-dev" label={t("settings.general.developerMode")} checked={g.developerMode} onChange={(v) => set((d) => void (d.general.developerMode = v))} />
         </Row>
       </Card>
+      <SuggestionsCard />
       <BackupCard />
     </>
+  );
+}
+
+/** Editable starter prompts shown on the empty chat screen. */
+function SuggestionsCard() {
+  const [s, set] = useS();
+  const [list, setList] = useState(s.general.suggestedPrompts.length ? s.general.suggestedPrompts : DEFAULT_SUGGESTIONS);
+
+  const commit = (next: string[]) => {
+    setList(next);
+    set((d) => void (d.general.suggestedPrompts = next.map((x) => x.trim()).filter(Boolean)));
+  };
+
+  return (
+    <Card
+      title={t("settings.general.suggestions")}
+      actions={
+        <button className="btn btn-sm" onClick={() => commit([...list, ""])}>
+          <Plus size={13} /> {t("settings.general.suggestionsAdd")}
+        </button>
+      }
+    >
+      <p className="row-hint" style={{ margin: "4px 0 10px" }}>
+        {t("settings.general.suggestionsHint")}
+      </p>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {list.map((text, i) => (
+          <div key={i} style={{ display: "flex", gap: 6 }}>
+            <input
+              className="input"
+              dir="auto"
+              value={text}
+              onChange={(e) => setList(list.map((x, j) => (j === i ? e.target.value : x)))}
+              onBlur={() => commit(list)}
+            />
+            <button className="icon-btn" aria-label={t("app.remove")} title={t("app.remove")} onClick={() => commit(list.filter((_, j) => j !== i))}>
+              <Trash2 size={14} />
+            </button>
+          </div>
+        ))}
+      </div>
+      {s.general.suggestedPrompts.length > 0 && (
+        <button className="btn btn-sm" style={{ marginTop: 10 }} onClick={() => commit(DEFAULT_SUGGESTIONS)}>
+          <RotateCcw size={13} /> {t("settings.general.suggestionsReset")}
+        </button>
+      )}
+    </Card>
   );
 }
 
