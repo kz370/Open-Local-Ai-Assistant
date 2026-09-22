@@ -525,9 +525,17 @@ impl SessionCtx {
                         if seg_ms < super::MIN_AUDIO_MS {
                             continue;
                         }
+                        // Transcribing blocks this loop, so no level events go out
+                        // meanwhile: say so, or the call screen looks frozen.
+                        if hands_free {
+                            self.emit_state("transcribing");
+                        }
                         let t0 = Instant::now();
                         let text = super::clean_transcript(&rec.transcribe(&segment));
                         if text.is_empty() {
+                            if hands_free {
+                                self.emit_state("listening");
+                            }
                             continue;
                         }
                         silence.heard_speech();

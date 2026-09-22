@@ -1310,13 +1310,17 @@ html.launcher-window #root {
     transition: none;
   }
 }
+/* Up to three lines, so what you said is readable, not cut to one line. */
 .call-you {
   font-size: var(--text-sm);
   color: var(--text-muted);
   max-width: 340px;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  flex: none;
 }
 .call-device {
   font-size: var(--text-xs);
@@ -1331,7 +1335,7 @@ html.launcher-window #root {
 .call-actions {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
   padding-top: 4px;
 }
 .call-btn {
