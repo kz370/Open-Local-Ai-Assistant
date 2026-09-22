@@ -1,4 +1,11 @@
 //! System prompt construction.
+//!
+//! The system prompt must stay byte-identical from one turn to the next:
+//! LM Studio reuses its cache only for an unchanged prompt prefix, and any
+//! change near the top (the clock ticking over, a different language) makes it
+//! re-read the whole conversation before answering, which with a long chat or
+//! a speculative-decoding draft model takes a very long time. Everything that
+//! changes per turn goes into [`turn_note`], appended to the latest message.
 
 use crate::services::language::Lang;
 
@@ -6,8 +13,6 @@ pub struct PromptContext<'a> {
     pub date: chrono::DateTime<chrono::Local>,
     /// Forced response language, or None for automatic.
     pub forced_language: Option<Lang>,
-    /// Language detected for the latest user message.
-    pub detected_language: Option<Lang>,
     /// (llm-facing tool name, description) of enabled tools.
     pub tools: &'a [(String, String)],
     pub has_web_tool: bool,
@@ -28,27 +33,21 @@ pub fn build_system_prompt(ctx: &PromptContext) -> String {
          You run entirely on the user's own computer through LM Studio.\n",
         ctx.assistant_name
     ));
-    p.push_str(&format!(
-        "Current local date and time: {} ({}).\n",
-        ctx.date.format("%Y-%m-%d %H:%M"),
-        ctx.date.format("%A")
-    ));
+    // Date only: the time of day changes every minute and lives in the turn note.
+    p.push_str(&format!("Today's date: {} ({}).\n", ctx.date.format("%Y-%m-%d"), ctx.date.format("%A")));
 
     p.push_str("\n## Language\n");
-    match (ctx.forced_language, ctx.detected_language) {
-        (Some(l), _) => p.push_str(&format!("Always respond in {}, regardless of the language the user writes in.\n", l.english_name())),
-        (None, Some(l)) => p.push_str(&format!(
-            "Respond in the same language as the user's latest message. The latest message is in {}, so respond in {}.\n",
-            l.english_name(),
-            l.english_name()
-        )),
-        (None, None) => p.push_str("Respond in the same language as the user's latest message (English, Arabic or German).\n"),
+    match ctx.forced_language {
+        Some(l) => p.push_str(&format!("Always respond in {}, regardless of the language the user writes in.\n", l.english_name())),
+        None => p.push_str("Respond in the same language as the user's latest message (English, Arabic or German).\n"),
     }
     p.push_str("Keep code, commands, URLs and technical identifiers unchanged.\n");
-    let is_arabic = matches!(ctx.forced_language, Some(Lang::Ar)) || (ctx.forced_language.is_none() && matches!(ctx.detected_language, Some(Lang::Ar)));
-    if is_arabic {
+    // Included whenever Arabic may be answered, not only when the latest
+    // message is Arabic, so switching language does not change the prompt.
+    let may_be_arabic = matches!(ctx.forced_language, None | Some(Lang::Ar));
+    if may_be_arabic {
         p.push_str(
-            "### Arabic quality\n\
+            "### Arabic quality (when responding in Arabic)\n\
              Write in correct Modern Standard Arabic (فصحى). Grammar is not optional; a grammatically wrong \
              sentence is a wrong answer.\n\
              - Apply إعراب correctly: subject مرفوع, object منصوب, word after a حرف جر مجرور, and the أسماء الخمسة, \
@@ -127,7 +126,22 @@ pub fn build_system_prompt(ctx: &PromptContext) -> String {
     p
 }
 
-/// Ephemeral per-turn hint inserted right before the latest user message.
+/// Per-turn context appended to the latest user message (never stored): the
+/// time of day, the language to answer in, and the freshness hint.
+pub fn turn_note(now: chrono::DateTime<chrono::Local>, forced: Option<Lang>, detected: Option<Lang>, fresh: Option<String>) -> String {
+    let mut note = format!("[Context for this message: local time {}.", now.format("%H:%M"));
+    if let (None, Some(l)) = (forced, detected) {
+        note.push_str(&format!(" It is written in {}; respond in {}.", l.english_name(), l.english_name()));
+    }
+    if let Some(f) = fresh {
+        note.push(' ');
+        note.push_str(&f);
+    }
+    note.push(']');
+    note
+}
+
+/// Ephemeral per-turn hint for a message that asks for current information.
 pub fn freshness_hint(has_web_tool: bool) -> String {
     if has_web_tool {
         "The next user message asks for current information. Use the web search tool before answering, and cite the retrieved sources.".into()
@@ -140,11 +154,10 @@ pub fn freshness_hint(has_web_tool: bool) -> String {
 mod tests {
     use super::*;
 
-    fn ctx<'a>(tools: &'a [(String, String)], forced: Option<Lang>, detected: Option<Lang>, web: bool) -> PromptContext<'a> {
+    fn ctx<'a>(tools: &'a [(String, String)], forced: Option<Lang>, _detected: Option<Lang>, web: bool) -> PromptContext<'a> {
         PromptContext {
             date: chrono::Local::now(),
             forced_language: forced,
-            detected_language: detected,
             tools,
             has_web_tool: web,
             voice_mode: false,
@@ -157,8 +170,21 @@ mod tests {
 
     #[test]
     fn language_directives() {
-        assert!(build_system_prompt(&ctx(&[], None, Some(Lang::Ar), false)).contains("respond in Arabic"));
         assert!(build_system_prompt(&ctx(&[], Some(Lang::De), Some(Lang::Ar), false)).contains("Always respond in German"));
+        let note = turn_note(chrono::Local::now(), None, Some(Lang::Ar), None);
+        assert!(note.contains("respond in Arabic") && note.contains("local time"));
+        assert!(!turn_note(chrono::Local::now(), Some(Lang::De), Some(Lang::Ar), None).contains("Arabic"));
+    }
+
+    #[test]
+    fn system_prompt_is_stable_across_turns() {
+        // Same settings, a later minute and another message language: the
+        // prompt must not change, or LM Studio re-reads the whole chat.
+        let a = PromptContext { date: chrono::Local::now(), ..ctx(&[], None, Some(Lang::En), true) };
+        let b = PromptContext { date: a.date + chrono::Duration::minutes(7), ..ctx(&[], None, Some(Lang::Ar), true) };
+        if a.date.date_naive() == b.date.date_naive() {
+            assert_eq!(build_system_prompt(&a), build_system_prompt(&b));
+        }
     }
 
     #[test]
@@ -169,7 +195,7 @@ mod tests {
         assert!(!prompt.contains("Fully diacritize"));
         // No diacritic (U+064B..U+0652) anywhere in the instructions.
         assert!(!prompt.chars().any(|c| ('\u{064B}'..='\u{0652}').contains(&c)), "the prompt itself must not model tashkeel");
-        assert!(!build_system_prompt(&ctx(&[], None, Some(Lang::En), false)).contains("without diacritics"));
+        assert!(!build_system_prompt(&ctx(&[], Some(Lang::En), None, false)).contains("without diacritics"));
     }
 
     #[test]
@@ -179,7 +205,7 @@ mod tests {
         assert!(build_system_prompt(&voice_ar).contains("إعراب"));
         let forced_ar = PromptContext { voice_mode: true, ..ctx(&[], Some(Lang::Ar), Some(Lang::En), false) };
         assert!(build_system_prompt(&forced_ar).contains("فصحى"));
-        assert!(!build_system_prompt(&ctx(&[], None, Some(Lang::De), false)).contains("فصحى"));
+        assert!(!build_system_prompt(&ctx(&[], Some(Lang::De), None, false)).contains("فصحى"));
     }
 
     #[test]

@@ -4,14 +4,14 @@
 
 use super::attach;
 use super::freshness::needs_fresh_info;
-use super::prompt::{build_system_prompt, freshness_hint, PromptContext};
+use super::prompt::{build_system_prompt, freshness_hint, turn_note, PromptContext};
 use super::resolver::ModelResolver;
 use super::think::ThinkFilter;
 use super::tools::{Permission, Source, SpeechSink, ToolCategory, ToolProvider, ToolSpec};
 use crate::database::conversations::{new_id, now, Message};
 use crate::database::Db;
 use crate::errors::{AppError, AppResult};
-use crate::services::ai::{AiService, ChatMessage, ChatRequest, FunctionDefinition, MessageContent, StreamChunk, ToolCall, ToolDefinition};
+use crate::services::ai::{AiService, ChatMessage, ChatRequest, ContentPart, FunctionDefinition, MessageContent, StreamChunk, ToolCall, ToolDefinition};
 use crate::services::attachments::AttachmentStore;
 use crate::services::language::{detect, Lang};
 use crate::settings::SettingsStore;
@@ -27,6 +27,22 @@ const MAX_TOOL_ROUNDS: usize = 6;
 const TOOL_RESULT_LIMIT: usize = 16_000;
 const CONFIRM_TIMEOUT: Duration = Duration::from_secs(180);
 const TOOL_TIMEOUT: Duration = Duration::from_secs(90);
+
+/// Adds the per-turn note to the latest user message of the request only (the
+/// stored message stays as typed), so the prompt before it stays cacheable.
+fn append_to_last_user(messages: &mut [ChatMessage], note: &str) {
+    let Some(m) = messages.iter_mut().rev().find(|m| m.role == "user") else { return };
+    match &mut m.content {
+        Some(MessageContent::Text(t)) => {
+            t.push_str("
+
+");
+            t.push_str(note);
+        }
+        Some(MessageContent::Parts(parts)) => parts.push(ContentPart::Text { text: note.to_string() }),
+        None => m.content = Some(MessageContent::Text(note.to_string())),
+    }
+}
 
 /// Speed and context use of one reply, summed over its tool rounds.
 #[derive(Debug, Default, Serialize)]
@@ -295,10 +311,9 @@ impl ChatEngine {
         // Whether this reply will be spoken aloud: voice input always replies by
         // voice, and "speak responses" also reads out replies to typed messages.
         let speak = input.voice || settings.tts.speak_responses;
-        let mut system = build_system_prompt(&PromptContext {
+        let system = build_system_prompt(&PromptContext {
             date: chrono::Local::now(),
             forced_language: forced,
-            detected_language: detected,
             tools: &tool_desc,
             has_web_tool,
             voice_mode: speak,
@@ -307,11 +322,7 @@ impl ChatEngine {
             tashkeel_enabled: settings.language.arabic_tashkeel_enabled,
             tashkeel_instruction: &settings.language.arabic_tashkeel_instruction,
         });
-        if needs_fresh_info(&text) {
-            system.push_str("\n## Note for this turn\n");
-            system.push_str(&freshness_hint(has_web_tool));
-            system.push('\n');
-        }
+        let note = turn_note(chrono::Local::now(), forced, detected, needs_fresh_info(&text).then(|| freshness_hint(has_web_tool)));
 
         let ctx_tokens = settings
             .ai
@@ -321,7 +332,8 @@ impl ChatEngine {
         let history = self.db.list_messages(&conversation.id)?;
         let vision = model.info.as_ref().map(|i| i.vision).unwrap_or(false);
         let mut messages = vec![ChatMessage::text("system", system.clone())];
-        messages.extend(build_history(&history, ctx_tokens, system.len(), &self.attachments, vision));
+        messages.extend(build_history(&history, ctx_tokens, system.len() + note.len(), &self.attachments, vision));
+        append_to_last_user(&mut messages, &note);
 
         let tool_defs: Vec<ToolDefinition> = specs
             .iter()
@@ -872,9 +884,14 @@ mod tests {
         let ChatEvent::Done { message, .. } = ev.last().unwrap() else { panic!("expected done") };
         assert_eq!(message.language.as_deref(), Some("ar"));
         let req = &ai.requests.lock().unwrap()[0];
-        assert!(req.messages[0].content_text().contains("respond in Arabic"));
+        // The language hint rides on the latest message, keeping the system
+        // prompt cacheable; the stored message stays exactly as typed.
+        assert!(!req.messages[0].content_text().contains("respond in Arabic"));
+        assert!(req.messages.last().unwrap().content_text().contains("respond in Arabic"));
         let convs = db.list_conversations(10, 0).unwrap();
-        assert_eq!(db.list_messages(&convs[0].id).unwrap().len(), 2);
+        let stored = db.list_messages(&convs[0].id).unwrap();
+        assert_eq!(stored.len(), 2);
+        assert_eq!(stored[0].content, "كيف حالك اليوم؟");
     }
 
     #[tokio::test]
