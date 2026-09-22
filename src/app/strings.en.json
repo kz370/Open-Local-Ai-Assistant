@@ -211,6 +211,10 @@
       "shortcuts": "Keyboard Shortcuts",
       "diagnostics": "Diagnostics"
     },
+    "quickSearch": {
+      "placeholder": "Search settings…",
+      "noResults": "No matching settings"
+    },
     "backup": {
       "title": "Backup",
       "intro": "Save all settings to an encrypted file that only Local Assistant can open, and load them again here or on another computer. Conversations and MCP servers are not included.",
