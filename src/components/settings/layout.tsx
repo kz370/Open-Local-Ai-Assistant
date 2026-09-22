@@ -1,4 +1,5 @@
-import type { ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
+import { useSettingsHighlight } from "../../app/settingsHighlight";
 
 export function Card(props: { title?: string; actions?: ReactNode; children: ReactNode }) {
   return (
@@ -15,8 +16,21 @@ export function Card(props: { title?: string; actions?: ReactNode; children: Rea
 }
 
 export function Row(props: { label: string; hint?: string; htmlFor?: string; children: ReactNode; stack?: boolean; end?: boolean }) {
+  const term = useSettingsHighlight((s) => s.term);
+  const clear = useSettingsHighlight((s) => s.clear);
+  const hit = term !== null && term === props.label;
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!hit) return;
+    ref.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    const id = setTimeout(clear, 2200);
+    return () => clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hit]);
+
   return (
-    <div className={`row${props.stack ? " stack" : ""}`}>
+    <div ref={ref} className={`row${props.stack ? " stack" : ""}${hit ? " row-hit" : ""}`}>
       <label className="row-label" htmlFor={props.htmlFor}>
         {props.label}
         {props.hint && <span className="row-hint">{props.hint}</span>}

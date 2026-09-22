@@ -1,5 +1,6 @@
-import { useEffect, useState, type ComponentType } from "react";
-import { Activity, AudioLines, Bot, Globe, Keyboard, Languages, MemoryStick, Mic, Palette, PenLine, Plug, Settings2, Shield, Volume2 } from "lucide-react";
+import { useEffect, useMemo, useState, type ComponentType } from "react";
+import { Activity, AudioLines, Bot, Globe, Keyboard, Languages, MemoryStick, Mic, Palette, PenLine, Plug, Search, Settings2, Shield, Volume2 } from "lucide-react";
+import { useSettingsHighlight } from "../../app/settingsHighlight";
 import { on } from "../../app/ipc";
 import { t } from "../../app/strings";
 import { AiSection } from "./sections/Ai";
@@ -7,6 +8,7 @@ import { AppearanceSection, GeneralSection, LanguageSection, ShortcutsSection } 
 import { DictationSection } from "./sections/Dictation";
 import { McpSection } from "./sections/Mcp";
 import { MemorySection } from "./sections/Memory";
+import { buildSettingsIndex } from "./searchIndex";
 import { WebSearchSection } from "./sections/WebSearch";
 import { DiagnosticsSection, PrivacySection } from "./sections/System";
 import { SpeechSection, VoiceSection } from "./sections/Voice";
@@ -34,6 +36,21 @@ function sectionFromHash(): string {
 
 export function SettingsApp() {
   const [section, setSection] = useState(sectionFromHash);
+  const [query, setQuery] = useState("");
+  const setHighlight = useSettingsHighlight((s) => s.set);
+  const index = useMemo(() => buildSettingsIndex(SECTIONS.map((s) => s.id)), []);
+  const results = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return [];
+    return index.filter((e) => e.text.toLowerCase().includes(q)).slice(0, 8);
+  }, [query, index]);
+
+  const goToResult = (r: { text: string; sectionId: string }) => {
+    setHighlight(r.text);
+    setQuery("");
+    if (r.sectionId === section) return;
+    location.hash = `#/settings/${r.sectionId}`;
+  };
 
   useEffect(() => {
     const onHash = () => setSection(sectionFromHash());
@@ -57,6 +74,34 @@ export function SettingsApp() {
             <AudioLines size={11} />
           </span>
           {t("settings.title")}
+        </div>
+        <div className="settings-search">
+          <Search size={14} className="settings-search-icon" aria-hidden />
+          <input
+            type="search"
+            className="input settings-search-input"
+            placeholder={t("settings.quickSearch.placeholder")}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => e.key === "Escape" && setQuery("")}
+          />
+          {query.trim() && (
+            <div className="settings-search-results" role="listbox">
+              {results.length === 0 && <div className="settings-search-empty">{t("settings.quickSearch.noResults")}</div>}
+              {results.map((r, i) => {
+                const Icon = SECTIONS.find((s) => s.id === r.sectionId)!.icon;
+                return (
+                  <button key={`${r.sectionId}-${i}`} type="button" role="option" onClick={() => goToResult(r)}>
+                    <span className="settings-search-result-text">{r.text}</span>
+                    <span className="settings-search-result-section">
+                      <Icon size={12} />
+                      {t(`settings.sections.${r.sectionId}`)}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
         {SECTIONS.map(({ id, icon: Icon }) => (
           <button key={id} aria-current={section === id ? "page" : undefined} onClick={() => (location.hash = `#/settings/${id}`)}>
