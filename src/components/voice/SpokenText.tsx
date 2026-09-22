@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { SpokenSentence } from "../../app/voiceStore";
 import { textDir } from "../common/controls";
 
@@ -43,7 +43,8 @@ const SEARCH_AHEAD = 60;
  * diacritics added), so each spoken sentence is located in the reply by its
  * first words, searching forward from where the previous sentence ended.
  */
-export function SpokenText({ text, sentence, paused }: { text: string; sentence: SpokenSentence | null; paused: boolean }) {
+// Memoized: the call screen re-renders on every microphone level event.
+export const SpokenText = memo(function SpokenText({ text, sentence, paused }: { text: string; sentence: SpokenSentence | null; paused: boolean }) {
   // Words alternate with the whitespace between them, so the layout (line
   // breaks included) stays as written.
   const tokens = useMemo(() => plain(text).split(/(\s+)/), [text]);
@@ -118,7 +119,11 @@ export function SpokenText({ text, sentence, paused }: { text: string; sentence:
     const view = viewRef.current;
     const el = view?.querySelector<HTMLElement>(".spoken-word.on");
     if (!view || !el) return;
-    const top = el.offsetTop - view.clientHeight / 2 + el.offsetHeight / 2;
+    // Measured against the box itself: offsetTop would count from the nearest
+    // positioned ancestor (the whole call screen) and overshoot to the bottom.
+    const word = el.getBoundingClientRect();
+    const box = view.getBoundingClientRect();
+    const top = view.scrollTop + (word.top - box.top) - (view.clientHeight - word.height) / 2;
     view.scrollTo?.({ top: Math.max(0, top), behavior: "smooth" });
   }, [current]);
 
@@ -141,4 +146,4 @@ export function SpokenText({ text, sentence, paused }: { text: string; sentence:
       </p>
     </div>
   );
-}
+});

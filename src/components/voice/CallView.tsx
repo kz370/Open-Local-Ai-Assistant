@@ -79,6 +79,7 @@ export function CallView() {
     [callMessages, sentence?.tag, turnId],
   );
   const showReply = !!reply && (state === "speaking" || (busy && reply.turnId === turnId));
+  const thinking = state === "thinking" || state === "transcribing";
   const label = voice.muted ? t("call.muted") : t(`call.${state}`);
   // The reply itself is shown by SpokenText; never dump it here in full.
   const caption = voice.partial || (voice.lastTranscript ?? "");
@@ -94,8 +95,17 @@ export function CallView() {
       </div>
       <div className="call-state" aria-live="polite">
         {label}
+        {thinking && !voice.muted && (
+          <span className="thinking-dots" aria-hidden>
+            <i />
+            <i />
+            <i />
+          </span>
+        )}
       </div>
-      <LevelMeter levels={voice.levels} max={44} label={t("voice.level")} />
+      {/* While the assistant works the microphone level means nothing: the
+          glow and the dots show progress instead, in the same space. */}
+      {thinking ? <div className="call-meter-gap" aria-hidden /> : <LevelMeter levels={voice.levels} max={44} label={t("voice.level")} />}
       {showReply && reply ? (
         <SpokenText text={reply.content} sentence={sentence && sentence.tag === reply.turnId ? sentence : null} paused={voice.paused} />
       ) : (

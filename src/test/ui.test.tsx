@@ -108,6 +108,17 @@ describe("MessageBubble", () => {
     expect(screen.getByText("Open Settings")).toBeInTheDocument();
   });
 
+  it("shows a spinner after Read aloud until the audio starts", async () => {
+    vi.mocked(invoke).mockResolvedValue(undefined);
+    render(<MessageBubble message={{ ...base, id: "m9", content: "Hello there." }} developer={false} showReasoning={false} />);
+    fireEvent.click(screen.getByLabelText("Read aloud"));
+    expect(document.querySelector(".msg-actions .spinner")).not.toBeNull();
+    useVoice.setState({ speakingTag: "m9", paused: false });
+    await waitFor(() => expect(document.querySelector(".msg-actions .spinner")).toBeNull());
+    expect(screen.getByLabelText("Pause")).toBeInTheDocument();
+    useVoice.setState({ speakingTag: null });
+  });
+
   it("offers Send again on a user message that got no answer", () => {
     const retryLast = vi.fn(async () => {});
     useChat.setState({ retryLast });
