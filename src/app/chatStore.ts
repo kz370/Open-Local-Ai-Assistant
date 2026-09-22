@@ -259,6 +259,10 @@ export const useChat = create<ChatState>((set, get) => {
       get().clearAttachments();
       set({ conversationId: null, messages: [], turnId: null, confirmation: null, connectionError: null, draft: "" });
       void ipc.convSetLast(null);
+      // Lazy import avoids a circular dependency (voiceStore imports chatStore).
+      void import("./voiceStore").then(({ useVoice }) => {
+        if (useVoice.getState().handsFree) void useVoice.getState().toggleHandsFree();
+      });
     },
 
     loadConversation: async (id) => {
