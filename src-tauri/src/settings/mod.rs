@@ -291,7 +291,7 @@ impl Default for SttSettings {
             auto_submit: false,
             hands_free: false,
             push_to_talk: true,
-            vad_threshold: 0.5,
+            vad_threshold: 0.6,
             silence_ms: 800,
             extra_model_dirs: Vec::new(),
             call_view: true,

@@ -19,6 +19,33 @@ pub fn level(samples: &[f32]) -> f32 {
     ((db + 60.0) / 60.0).clamp(0.0, 1.0)
 }
 
+/// One-pole high-pass filter that attenuates steady low-frequency noise
+/// (fan hum, AC rumble) before it reaches the level meter, VAD or
+/// recognizer, so a running fan is less likely to be mistaken for speech.
+pub struct HighPassFilter {
+    alpha: f32,
+    prev_in: f32,
+    prev_out: f32,
+}
+
+impl HighPassFilter {
+    /// `cutoff_hz` is the -3dB point below which content is attenuated.
+    pub fn new(cutoff_hz: f32, sample_rate: u32) -> Self {
+        let rc = 1.0 / (std::f32::consts::TAU * cutoff_hz);
+        let dt = 1.0 / sample_rate as f32;
+        Self { alpha: rc / (rc + dt), prev_in: 0.0, prev_out: 0.0 }
+    }
+
+    pub fn process(&mut self, samples: &mut [f32]) {
+        for s in samples.iter_mut() {
+            let out = self.alpha * (self.prev_out + *s - self.prev_in);
+            self.prev_in = *s;
+            self.prev_out = out;
+            *s = out;
+        }
+    }
+}
+
 /// Number of bands in [`spectrum`].
 pub const SPECTRUM_BANDS: usize = 24;
 
@@ -93,7 +120,25 @@ pub fn spectrum(samples: &[f32]) -> Vec<f32> {
 
 #[cfg(test)]
 mod tests {
-    use super::{level, spectrum, SPECTRUM_BANDS, STT_SAMPLE_RATE};
+    use super::{level, spectrum, HighPassFilter, SPECTRUM_BANDS, STT_SAMPLE_RATE};
+
+    #[test]
+    fn high_pass_cuts_hum_keeps_speech() {
+        // Skip the filter's startup transient (a few cycles at the lowest
+        // frequency involved) so RMS reflects steady-state response only.
+        let tone = |hz: f32| -> Vec<f32> { (0..1600).map(|i| 0.3 * (std::f32::consts::TAU * hz * i as f32 / STT_SAMPLE_RATE as f32).sin()).collect() };
+        let rms = |s: &[f32]| (s[400..].iter().map(|v| v * v).sum::<f32>() / (s.len() - 400) as f32).sqrt();
+
+        let mut hum = tone(50.0);
+        let hum_in = rms(&hum);
+        HighPassFilter::new(100.0, STT_SAMPLE_RATE).process(&mut hum);
+        assert!(rms(&hum) < hum_in * 0.5, "50 Hz hum should be heavily attenuated");
+
+        let mut voice = tone(300.0);
+        let voice_in = rms(&voice);
+        HighPassFilter::new(100.0, STT_SAMPLE_RATE).process(&mut voice);
+        assert!(rms(&voice) > voice_in * 0.9, "300 Hz speech content should pass through mostly intact");
+    }
 
     /// `cargo test spectrum_cost -- --ignored --nocapture`
     #[test]

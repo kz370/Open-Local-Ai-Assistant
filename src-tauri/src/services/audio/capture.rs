@@ -1,7 +1,7 @@
 //! Microphone capture on a dedicated thread. Audio is downmixed to mono,
 //! resampled to 16 kHz and delivered in chunks through a channel.
 
-use super::{devices, level, spectrum, STT_SAMPLE_RATE};
+use super::{devices, level, spectrum, HighPassFilter, STT_SAMPLE_RATE};
 use crate::errors::{AppError, AppResult};
 use cpal::traits::{DeviceTrait, StreamTrait};
 use cpal::{SampleFormat, SizedSample};
@@ -218,6 +218,10 @@ where
     let mut ticks: u64 = 0;
     let meter_every = (STT_SAMPLE_RATE / 20) as usize;
     let err_tx = tx.clone();
+    // Cuts fan/AC hum and room rumble, which sit well below speech's
+    // fundamental frequency, before the audio reaches the meter, VAD or
+    // recognizer.
+    let mut hp = HighPassFilter::new(100.0, STT_SAMPLE_RATE);
     device
         .build_input_stream::<T, _, _>(
             config,
@@ -226,13 +230,14 @@ where
                     .chunks(channels)
                     .map(|frame| frame.iter().map(|s| <f32 as cpal::FromSample<T>>::from_sample_(*s)).sum::<f32>() / channels as f32)
                     .collect();
-                let out = match &resampler {
+                let mut out = match &resampler {
                     Some(r) => r.resample(&mono, false),
                     None => mono,
                 };
                 if out.is_empty() {
                     return;
                 }
+                hp.process(&mut out);
                 meter_buf.extend_from_slice(&out);
                 if meter_buf.len() >= meter_every {
                     let lvl = level(&meter_buf);
