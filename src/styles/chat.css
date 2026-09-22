@@ -427,7 +427,8 @@ html[data-route="chat"] #root {
   justify-content: flex-start;
 }
 .msg:hover .msg-actions,
-.msg:focus-within .msg-actions {
+.msg:focus-within .msg-actions,
+.msg-actions.playing {
   opacity: 1;
 }
 .msg-actions .icon-btn {
@@ -1232,60 +1233,41 @@ html.launcher-window #root {
   max-width: 340px;
   user-select: text;
 }
-/* Spoken sentence, sliding with the voice and highlighting the word being said
-   right now. The line moves with a composited transform (never scrollLeft) and
-   the edges fade through a mask on the static box, so following the speech
-   costs no layout work and no scrolling. */
-.ticker {
-  position: relative;
+/* The reply being spoken, with the word being said highlighted. The box
+   scrolls to keep that word near the middle; the edges fade through a mask. */
+.spoken {
   flex: 1;
-  /* Room for one line at the size the spoken word grows to, so the karaoke
-     stays readable without the user dragging the window taller. */
-  min-height: 3.4em;
+  min-height: 6em;
   width: 100%;
   max-width: 340px;
-  display: flex;
-  align-items: center;
-  overflow: hidden;
-  contain: paint;
-  /* Fading the edges with a mask keeps the glow behind the shell visible; the
-     mask sits on this static box, while only the line inside it moves. */
-  -webkit-mask-image: linear-gradient(to right, transparent, #000 6%, #000 94%, transparent);
-  mask-image: linear-gradient(to right, transparent, #000 6%, #000 94%, transparent);
+  overflow-y: auto;
+  scrollbar-width: none;
+  mask-image: linear-gradient(transparent, #000 18%, #000 82%, transparent);
 }
-.ticker-line {
+.spoken-text {
   margin: 0;
-  white-space: nowrap;
+  padding: 2.2em 0;
+  white-space: pre-wrap;
   font-size: var(--text-lg);
   line-height: 1.7;
-  user-select: text;
-  will-change: transform;
-  /* The line is positioned every frame from script, so no transition here: one
-     would fight the interpolation and bring back the stutter. */
-}
-/* The spoken word grows, but only through `transform`. Changing font-size or
-   font-weight would re-lay out the whole line and invalidate the measured word
-   positions mid-slide. */
-.ticker-word {
-  display: inline-block;
   color: var(--text-muted);
-  transform: scale(1);
-  transform-origin: center bottom;
-  transition: color 240ms var(--ease), transform 240ms var(--ease);
+  user-select: text;
 }
-.ticker-word + .ticker-word {
-  margin-inline-start: 0.34em;
+.spoken-word {
+  transition: color 200ms var(--ease), background-color 200ms var(--ease);
+  border-radius: 4px;
 }
-.ticker-word.done {
+.spoken-word.done {
   color: var(--text);
 }
-/* No fake-bold text shadow: it smears the joined Arabic letterforms. */
-.ticker-word.on {
+/* No fake-bold text shadow or scaling: it smears the joined Arabic letterforms
+   and would reflow the paragraph on every word. */
+.spoken-word.on {
   color: var(--accent);
-  transform: scale(1.15);
+  background-color: color-mix(in srgb, var(--accent) 14%, transparent);
 }
 @media (prefers-reduced-motion: reduce) {
-  .ticker-word {
+  .spoken-word {
     transition: none;
   }
 }
