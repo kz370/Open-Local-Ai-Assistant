@@ -229,9 +229,12 @@ fn rel_logical(main_x: i32, main_y: i32, cx: i32, cy: i32, scale: f64) -> (f32, 
 /// Target chat size in physical px. Heals collapsed window (shrink anim
 /// must never persist): falls back to saved settings, else 420x640 logical.
 fn chat_target_size(win: &WebviewWindow, s: &crate::settings::Settings) -> PhysicalSize<u32> {
-    if let Ok(sz) = win.outer_size() {
-        if sz.width >= 240 && sz.height >= 240 {
-            return sz;
+    let maximized = win.is_maximized().unwrap_or(false);
+    if !maximized {
+        if let Ok(sz) = win.outer_size() {
+            if sz.width >= 240 && sz.height >= 240 {
+                return sz;
+            }
         }
     }
     if s.general.compact {
