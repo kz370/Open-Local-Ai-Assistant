@@ -29,6 +29,8 @@ export interface Settings {
     startWithOs: boolean;
     startMinimized: boolean;
     preloadModels: boolean;
+    /** Per-model startup opt-out keyed by MemoryItem.autoloadKey; missing means on. */
+    autoloadModels: Record<string, boolean>;
     alwaysOnTop: boolean;
     windowPosition: "bottom-right" | "bottom-left" | "center" | "custom";
     window: WindowGeometry;
@@ -299,6 +301,9 @@ export interface MemoryItem {
   model: string;
   state: "loaded" | "loading" | "idle" | "missing" | "failed";
   detail: string | null;
+  /** Key of the model's "load at startup" switch; empty when it has none. */
+  autoloadKey: string;
+  autoload: boolean;
 }
 
 export interface SilmaStatus {

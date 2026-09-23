@@ -17,6 +17,7 @@ const SETTINGS: Settings = {
     startWithOs: false,
     startMinimized: false,
     preloadModels: true,
+    autoloadModels: {},
     alwaysOnTop: true,
     windowPosition: "bottom-right",
     window: { x: 0, y: 0, width: 420, height: 640 },
