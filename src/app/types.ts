@@ -57,6 +57,7 @@ export interface Settings {
     contextLength: number | null;
     maxTokens: number | null;
     systemPrompt: string;
+    userGender: "unspecified" | "male" | "female";
     streaming: boolean;
     requestTimeoutSecs: number;
     showReasoning: boolean;

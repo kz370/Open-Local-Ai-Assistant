@@ -21,6 +21,8 @@ pub struct PromptContext<'a> {
     pub has_web_tool: bool,
     pub voice_mode: bool,
     pub assistant_name: &'a str,
+    /// "male" | "female" | anything else = not set.
+    pub user_gender: &'a str,
     pub custom_prompt: &'a str,
     /// When Arabic is active: ask for full tashkeel (diacritics) instead of
     /// the default "write without diacritics" instruction.
@@ -79,6 +81,23 @@ pub fn build_system_prompt(ctx: &PromptContext) -> String {
             );
         }
     }
+    p.push_str("\n## Addressing the user\n");
+    match ctx.user_gender {
+        "male" => p.push_str(
+            "The user is a man. Whenever a language marks gender (Arabic verbs, pronouns and adjectives, German \
+             nouns such as titles or professions), address and refer to him with masculine forms.\n",
+        ),
+        "female" => p.push_str(
+            "The user is a woman. Whenever a language marks gender (Arabic verbs, pronouns and adjectives, German \
+             nouns such as titles or professions), address and refer to her with feminine forms.\n",
+        ),
+        _ => p.push_str(
+            "The user's gender is unknown. Never guess it from their name, topic or writing style. Prefer wording \
+             that does not mark gender; where the grammar forces a choice (as in Arabic), use the conventional \
+             masculine generic forms.\n",
+        ),
+    }
+
     p.push_str("\n## Style\n");
     if ctx.voice_mode {
         p.push_str(
@@ -167,6 +186,7 @@ mod tests {
             has_web_tool: web,
             voice_mode: false,
             assistant_name: "Local Assistant",
+            user_gender: "unspecified",
             custom_prompt: "Be brief.",
             tashkeel_enabled: false,
             tashkeel_instruction: "",
@@ -232,6 +252,16 @@ mod tests {
         let prompt = build_system_prompt(&custom);
         assert!(prompt.contains("Add تشكيل only on ambiguous words."));
         assert!(!prompt.contains("Fully diacritize"));
+    }
+
+    #[test]
+    fn addresses_the_user_by_the_chosen_gender() {
+        let male = build_system_prompt(&PromptContext { user_gender: "male", ..ctx(&[], None, None, false) });
+        assert!(male.contains("The user is a man") && male.contains("masculine"));
+        let female = build_system_prompt(&PromptContext { user_gender: "female", ..ctx(&[], None, None, false) });
+        assert!(female.contains("The user is a woman") && female.contains("feminine"));
+        let unset = build_system_prompt(&ctx(&[], None, None, false));
+        assert!(unset.contains("Never guess it"));
     }
 
     #[test]

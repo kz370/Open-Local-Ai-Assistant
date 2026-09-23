@@ -148,6 +148,9 @@ pub struct AiSettings {
     pub context_length: Option<u32>,
     pub max_tokens: Option<u32>,
     pub system_prompt: String,
+    /// How the assistant addresses the user where grammar marks gender
+    /// (Arabic, German, ...): "unspecified" | "male" | "female".
+    pub user_gender: String,
     pub streaming: bool,
     pub request_timeout_secs: u64,
     pub show_reasoning: bool,
@@ -179,6 +182,7 @@ impl Default for AiSettings {
             context_length: None,
             max_tokens: None,
             system_prompt: String::new(),
+            user_gender: "unspecified".into(),
             streaming: true,
             request_timeout_secs: 300,
             show_reasoning: false,
@@ -539,6 +543,9 @@ impl Settings {
         }
         if !matches!(self.general.accent.as_str(), "teal" | "blue" | "green" | "amber" | "rose" | "slate") {
             self.general.accent = "teal".into();
+        }
+        if !matches!(self.ai.user_gender.as_str(), "unspecified" | "male" | "female") {
+            self.ai.user_gender = "unspecified".into();
         }
         self.general.assistant_name = self.general.assistant_name.trim().chars().take(40).collect();
         if self.general.assistant_name.is_empty() {

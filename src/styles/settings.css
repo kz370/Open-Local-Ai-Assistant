@@ -629,10 +629,15 @@ html.overlay body,
 html.overlay #root {
   background: transparent !important;
 }
+/* Must match MENU_ROOM in window.rs: invisible room above and below the card
+   that the language menu opens into. */
+html.overlay {
+  --menu-room: 240px;
+}
 .overlay-card {
   position: relative;
-  margin: 8px;
-  height: calc(100% - 16px);
+  margin: calc(var(--menu-room) + 8px) 8px;
+  height: calc(100% - 2 * var(--menu-room) - 16px);
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -721,18 +726,14 @@ html.overlay #root {
   opacity: 0.7;
   transition: transform 120ms ease;
 }
-.overlay-lang.open .overlay-lang-chevron {
+.overlay-lang.open:not(.up) .overlay-lang-chevron {
   transform: rotate(180deg);
 }
-/* Vertical list under the pill, dropping over the transcript. Anchored to
-   .overlay-card (not the pill) and capped to the card's height so it always
-   fits inside the small overlay window; longer lists scroll. */
+/* Hangs outside the card, in the window's invisible room above or below it;
+   placed inline (top/right/max-height) from the pill's position. */
 .overlay-lang-menu {
-  position: absolute;
+  position: fixed;
   z-index: 5;
-  top: 40px;
-  bottom: 8px;
-  inset-inline-end: 10px;
   width: 210px;
   display: flex;
   flex-direction: column;
@@ -742,7 +743,7 @@ html.overlay #root {
   border-radius: 10px;
   background: var(--popover);
   border: 1px solid var(--border);
-  box-shadow: var(--shadow-lg);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
   animation: fade-in 120ms ease;
   cursor: default;
 }

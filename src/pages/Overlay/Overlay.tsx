@@ -78,49 +78,86 @@ function HeadBtn(props: { label: string; onClick: () => void; children: React.Re
 
 const quiet = () => undefined;
 
-/** Language pill with a scrolling list that drops over the text. A native
- *  select's popup is clipped by the small overlay window and can't be styled. */
-function LanguageMenu(props: { value: string; languages: LanguageEntry[]; onChange: (code: string) => void }) {
-  const [open, setOpen] = useState(false);
+const MENU_ROW = 27; // option height + gap
+const MENU_PAD = 10; // padding + border
+const MENU_MAX_ROWS = 8;
+const MENU_GAP = 6; // between the pill and the menu
+
+/** Language pill with a dropdown list. The overlay window keeps invisible room
+ *  above and below the card (see MENU_ROOM in window.rs); opening the menu
+ *  uncovers it, so the list hangs outside the card at full size without the
+ *  window moving. It opens downward, or upward when the screen ends below. */
+function LanguageMenu(props: { value: string; languages: LanguageEntry[]; onChange: (code: string) => void; resetKey: string }) {
+  const [open, setOpen] = useState<{ top: number; right: number } | null>(null);
   const ref = useRef<HTMLDivElement>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const openRef = useRef(false);
+
+  const nameOf = (e: LanguageEntry) => (e.builtIn ? t(`languages.${e.code}`) : e.displayName);
+  const options = [{ code: "auto", short: t("overlay.auto"), name: t("app.automatic") }, ...props.languages.map((e) => ({ code: e.code, short: e.code.toUpperCase(), name: nameOf(e) }))];
+  const current = options.find((o) => o.code === props.value) ?? options[0];
+  const menuH = Math.min(options.length, MENU_MAX_ROWS) * MENU_ROW + MENU_PAD;
+
+  const close = () => {
+    if (!openRef.current) return;
+    openRef.current = false;
+    setOpen(null);
+    void ipc.dictationOverlayMenu(false).catch(quiet);
+  };
+
+  const show = async () => {
+    const r = btnRef.current?.getBoundingClientRect();
+    if (!r || openRef.current) return;
+    openRef.current = true;
+    const scr = window.screen as Screen & { availTop?: number };
+    const screenBottom = (scr.availTop ?? 0) + scr.availHeight;
+    const down = window.screenY + r.bottom + MENU_GAP + menuH <= screenBottom;
+    // Uncover the room first, so the menu's first frame isn't clipped.
+    await ipc.dictationOverlayMenu(true).catch(quiet);
+    if (!openRef.current) return;
+    setOpen({ top: down ? r.bottom + MENU_GAP : r.top - MENU_GAP - menuH, right: document.documentElement.clientWidth - r.right });
+  };
 
   useEffect(() => {
     if (!open) return;
     menuRef.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest" });
     const onDown = (e: PointerEvent) => {
-      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+      if (!ref.current?.contains(e.target as Node)) close();
     };
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && close();
     document.addEventListener("pointerdown", onDown);
     document.addEventListener("keydown", onKey);
     return () => {
       document.removeEventListener("pointerdown", onDown);
       document.removeEventListener("keydown", onKey);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  const nameOf = (e: LanguageEntry) => (e.builtIn ? t(`languages.${e.code}`) : e.displayName);
-  const options = [{ code: "auto", short: t("overlay.auto"), name: t("app.automatic") }, ...props.languages.map((e) => ({ code: e.code, short: e.code.toUpperCase(), name: nameOf(e) }))];
-  const current = options.find((o) => o.code === props.value) ?? options[0];
+  // A new dictation state (review, done) or unmounting covers the room again.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => close, [props.resetKey]);
 
+  const up = open !== null && open.top < (btnRef.current?.getBoundingClientRect().top ?? 0);
   return (
     <div ref={ref} className="overlay-lang-wrap" onPointerDown={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
       <button
+        ref={btnRef}
         type="button"
-        className={`overlay-lang${open ? " open" : ""}`}
+        className={`overlay-lang${open ? " open" : ""}${up ? " up" : ""}`}
         title={`${t("overlay.language")}: ${current.name}`}
         aria-label={`${t("overlay.language")}: ${current.name}`}
         aria-haspopup="listbox"
-        aria-expanded={open}
-        onClick={() => setOpen((o) => !o)}
+        aria-expanded={!!open}
+        onClick={() => (open ? close() : void show())}
       >
         <Globe size={12} aria-hidden />
         {current.short}
         <ChevronDown size={12} aria-hidden className="overlay-lang-chevron" />
       </button>
       {open && (
-        <div ref={menuRef} className="overlay-lang-menu" role="listbox" aria-label={t("overlay.language")}>
+        <div ref={menuRef} className="overlay-lang-menu" role="listbox" aria-label={t("overlay.language")} style={{ top: open.top, right: open.right, maxHeight: menuH }}>
           {options.map((o) => (
             <button
               key={o.code}
@@ -130,7 +167,7 @@ function LanguageMenu(props: { value: string; languages: LanguageEntry[]; onChan
               className="overlay-lang-option"
               title={o.name}
               onClick={() => {
-                setOpen(false);
+                close();
                 if (o.code !== props.value) props.onChange(o.code);
               }}
             >
@@ -268,7 +305,7 @@ export function Overlay() {
         <span className="overlay-label">{label}</span>
         {listening && <LevelMeter levels={levels} max={14} label={t("voice.level")} />}
         <span style={{ flex: 1 }} />
-        {(listening || reviewing) && <LanguageMenu value={language} languages={languages} onChange={changeLanguage} />}
+        {(listening || reviewing) && <LanguageMenu value={language} languages={languages} onChange={changeLanguage} resetKey={state} />}
         <HeadBtn label={`${t("voice.cancel")} (Esc)`} onClick={() => void ipc.dictationCancel().catch(quiet)}>
           <X size={14} />
         </HeadBtn>

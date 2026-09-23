@@ -96,6 +96,12 @@ pub fn dictation_reset_overlay_position(app: AppHandle) {
     crate::desktop::window::reset_overlay_position(&app);
 }
 
+/// Uncovers the room around the overlay card while its language menu is open.
+#[tauri::command]
+pub fn dictation_overlay_menu(app: AppHandle, open: bool) {
+    crate::desktop::window::set_overlay_menu_open(&app, open);
+}
+
 #[tauri::command]
 pub fn voice_status(state: State<'_, AppState>) -> Option<ListenMode> {
     state.voice.active_mode()

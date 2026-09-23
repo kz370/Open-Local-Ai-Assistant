@@ -42,6 +42,7 @@ const SETTINGS: Settings = {
     contextLength: null,
     maxTokens: null,
     systemPrompt: "",
+    userGender: "unspecified",
     streaming: true,
     requestTimeoutSecs: 300,
     showReasoning: false,
