@@ -3,15 +3,13 @@ import { ExternalLink, FolderOpen, FolderPlus, Plus, Play, Square, Trash2 } from
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { ipc, on, toAppError } from "../../../app/ipc";
 import { formatBytes, t } from "../../../app/strings";
-import type { AppErrorPayload, AppInfo, AudioDevice, GpuStatus, IncompatibleModel, InstalledModel, LangSetting, LanguageEntry, VoiceEvent, VoiceInfo } from "../../../app/types";
+import type { AppErrorPayload, AppInfo, AudioDevice, GpuStatus, IncompatibleModel, InstalledModel, LanguageEntry, VoiceEvent, VoiceInfo } from "../../../app/types";
 import { ErrorNotice, openExternal, Segmented, Switch } from "../../../components/common/controls";
 import { GpuCard } from "../../../components/settings/GpuCard";
 import { Card, Row, SectionHeader } from "../../../components/settings/layout";
 import { ModelManager } from "../../../components/settings/ModelManager";
 import { SilmaCard } from "../../../components/settings/SilmaCard";
-import { LanguagePicker } from "../../../components/settings/LanguagePicker";
 import { LevelMeter } from "../../../components/voice/LevelMeter";
-import { KNOWN_LANGUAGES } from "../../../app/knownLanguages";
 import { useS } from "./Basic";
 
 function useDevices(micOnly: boolean) {
@@ -239,16 +237,6 @@ export function SpeechSection() {
           </select>
           {!sttModels.length && <span className="badge warn">{t("settings.speech.noModel")}</span>}
         </Row>
-        <Row label={t("settings.speech.language")} htmlFor="sel-stt-lang">
-          <select id="sel-stt-lang" className="select" value={s.stt.language} onChange={(e) => set((d) => void (d.stt.language = e.target.value as LangSetting))}>
-            <option value="auto">{t("app.automatic")}</option>
-            {s.language.entries.map((e) => (
-              <option key={e.code} value={e.code}>
-                {languageLabel(e)}
-              </option>
-            ))}
-          </select>
-        </Row>
         <Row label={t("settings.speech.microphone")} htmlFor="sel-mic">
           <select id="sel-mic" className="select" value={s.stt.microphone ?? ""} onChange={(e) => set((d) => void (d.stt.microphone = e.target.value || null))}>
             <option value="">{t("app.automatic")}</option>
@@ -367,7 +355,6 @@ export function VoiceSection() {
   const gpu = useGpuStatus();
   const [error, setError] = useState<AppErrorPayload | null>(null);
   const [activeLang, setActiveLang] = useState(s.language.entries[0]?.code ?? "en");
-  const [newLang, setNewLang] = useState<string | null>(null);
 
   useEffect(() => {
     if (!s.language.entries.some((e) => e.code === activeLang) && s.language.entries[0]) {
@@ -383,19 +370,6 @@ export function VoiceSection() {
       const target = d.language.entries.find((e) => e.code === code);
       if (target) Object.assign(target, patch);
     });
-
-  const addLanguage = () => {
-    const known = KNOWN_LANGUAGES.find((k) => k.code === newLang);
-    if (!known || s.language.entries.some((e) => e.code === known.code)) return;
-    set((d) => void d.language.entries.push({ code: known.code, displayName: known.name, direction: known.direction, sttLanguage: known.code, ttsVoice: "auto", builtIn: false }));
-    setActiveLang(known.code);
-    setNewLang(null);
-  };
-
-  const removeLanguage = (code: string) => {
-    if (s.language.entries.length <= 1) return;
-    set((d) => void (d.language.entries = d.language.entries.filter((e) => e.code !== code)));
-  };
 
   return (
     <>
@@ -426,33 +400,10 @@ export function VoiceSection() {
         </Row>
         <Row label={t("settings.voice.language")}>
           <Segmented label={t("settings.voice.language")} value={activeLang} options={s.language.entries.map((e) => ({ value: e.code, label: languageLabel(e) }))} onChange={setActiveLang} />
-          <button className="btn btn-sm" onClick={() => setNewLang("")}>
-            <Plus size={12} /> {t("settings.voice.addLanguage")}
+          <button className="btn btn-sm" onClick={() => (location.hash = "#/settings/language")}>
+            <Plus size={12} /> {t("settings.voice.manageLanguages")}
           </button>
-          {entry && !entry.builtIn && (
-            <button className="icon-btn danger" aria-label={t("settings.voice.removeLanguage")} title={t("settings.voice.removeLanguage")} onClick={() => removeLanguage(entry.code)}>
-              <Trash2 size={14} />
-            </button>
-          )}
         </Row>
-        {newLang !== null && (
-          <Row label={t("settings.voice.newLanguage")}>
-            <LanguagePicker
-              options={KNOWN_LANGUAGES.filter((k) => !s.language.entries.some((e) => e.code === k.code))}
-              value={newLang}
-              onChange={setNewLang}
-              label={t("settings.voice.newLanguage")}
-              placeholder={t("settings.voice.searchLanguage")}
-              emptyText={t("settings.voice.noLanguageMatch")}
-            />
-            <button className="btn btn-sm btn-primary" disabled={!newLang} onClick={addLanguage}>
-              {t("app.add")}
-            </button>
-            <button className="btn btn-sm" onClick={() => setNewLang(null)}>
-              {t("app.cancel")}
-            </button>
-          </Row>
-        )}
         {entry && !entry.builtIn && <p className="row-hint">{t("settings.voice.unsupportedLanguageHint")}</p>}
         {entry && !entry.builtIn && list.length === 0 && <NoVoiceHelp entry={entry} />}
         {entry && (

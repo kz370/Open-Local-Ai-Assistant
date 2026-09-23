@@ -7,7 +7,7 @@ export interface SettingEntry {
   sectionId: string;
 }
 
-const SKIP_KEYS = new Set(["title", "sections", "quickSearch"]);
+const SKIP_KEYS = new Set(["title", "sections", "groups", "quickSearch"]);
 
 function flatten(node: Dict, sectionId: string, out: SettingEntry[]) {
   for (const [key, val] of Object.entries(node)) {
