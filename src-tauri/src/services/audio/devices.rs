@@ -40,13 +40,15 @@ fn is_loopback_name(name: &str) -> bool {
     MARKS.iter().any(|m| lower.contains(m))
 }
 
-pub fn list_inputs(mic_only: bool) -> Vec<AudioDevice> {
+/// Real microphones only: loopback inputs (Stereo Mix etc.) would feed the
+/// PC's own audio to speech recognition, so they are never offered.
+pub fn list_inputs() -> Vec<AudioDevice> {
     let host = cpal::default_host();
     let default_id = host.default_input_device().and_then(|d| d.id().ok()).map(|i| i.to_string());
     host.input_devices()
         .map(|it| {
             it.filter_map(|d| describe(&d, &default_id))
-                .filter(|d| !mic_only || !is_loopback_name(&d.name))
+                .filter(|d| !is_loopback_name(&d.name))
                 .collect()
         })
         .unwrap_or_default()
@@ -60,15 +62,12 @@ pub fn list_outputs() -> Vec<AudioDevice> {
         .unwrap_or_default()
 }
 
-/// Finds a device by id; `None`, or an id that disappeared, selects the system default.
-/// With `mic_only`, loopback devices (Stereo Mix etc.) are skipped in favor of
-/// the first real microphone.
-pub fn input_device(id: Option<&str>, mic_only: bool) -> AppResult<cpal::Device> {
+/// Finds a device by id; `None`, or an id that disappeared, selects the system
+/// default. Loopback devices (Stereo Mix etc.) are never used: when one is the
+/// default, the first real microphone is picked instead.
+pub fn input_device(id: Option<&str>) -> AppResult<cpal::Device> {
     let host = cpal::default_host();
     let usable = |d: &cpal::Device| -> bool {
-        if !mic_only {
-            return true;
-        }
         let name = d.description().map(|x| x.name().to_string()).unwrap_or_else(|_| d.to_string());
         !is_loopback_name(&name)
     };
@@ -86,13 +85,13 @@ pub fn input_device(id: Option<&str>, mic_only: bool) -> AppResult<cpal::Device>
             tracing::warn!("configured microphone not found, using default");
         }
     }
-    if mic_only {
-        if let Some(d) = host.input_devices().ok().and_then(|mut it| it.find(|d| usable(d))) {
-            return Ok(d);
-        }
-        return Err(AppError::Audio("no microphone found (loopback devices excluded)".into()));
+    if let Some(d) = host.default_input_device().filter(|d| usable(d)) {
+        return Ok(d);
     }
-    host.default_input_device().ok_or_else(|| AppError::Audio("no microphone found".into()))
+    host.input_devices()
+        .ok()
+        .and_then(|mut it| it.find(|d| usable(d)))
+        .ok_or_else(|| AppError::Audio("no microphone found (loopback devices excluded)".into()))
 }
 
 pub fn output_device(id: Option<&str>) -> AppResult<cpal::Device> {
@@ -124,8 +123,8 @@ mod tests {
             "Desktop Audio",
             "System Audio",
             "Wave Out Mix",
-            // Virtual cables carry PC audio back into an "input", so mic-only
-            // mode must skip them too.
+            // Virtual cables carry PC audio back into an "input", so they
+            // must be skipped too.
             "VoiceMeeter Output (VB-Audio VoiceMeeter VAIO)",
         ] {
             assert!(is_loopback_name(name), "{name}");

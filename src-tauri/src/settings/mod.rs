@@ -265,14 +265,6 @@ pub struct SttSettings {
     pub language: String,
     /// None = automatic (system default input)
     pub microphone: Option<String>,
-    /// true = microphone only (loopback / Stereo Mix excluded)
-    #[serde(default = "default_true")]
-    pub mic_only: bool,
-    /// true = ignore microphone audio while the PC's own speakers are
-    /// playing (via WASAPI loopback level), so system audio can't bleed
-    /// into a real microphone's recording.
-    #[serde(default = "default_true")]
-    pub isolate_system_audio: bool,
     /// "auto" | "cpu"
     pub hardware: String,
     pub auto_submit: bool,
@@ -296,8 +288,6 @@ impl Default for SttSettings {
             model: "auto".into(),
             language: "auto".into(),
             microphone: None,
-            mic_only: true,
-            isolate_system_audio: true,
             hardware: "auto".into(),
             auto_submit: false,
             hands_free: false,
@@ -664,11 +654,8 @@ impl SettingsStore {
                 // v2: dictation became a default feature.
                 s.dictation.enabled = true;
             }
-            if s.version < 3 {
-                // v3: system-audio isolation is on by default, so the microphone
-                // no longer transcribes what the speakers are playing.
-                s.stt.isolate_system_audio = true;
-            }
+            // v3 turned on system-audio isolation, a setting that has since
+            // been removed (the stored key is ignored), so there is nothing to do.
             if s.version < 4 {
                 // v4: the fixed en/ar/de voice fields became a user-editable
                 // language list. `entries` already defaulted to the builtins
@@ -784,14 +771,11 @@ mod tests {
     }
 
     #[test]
-    fn migration_turns_on_system_audio_isolation() {
-        let db = Arc::new(Db::open_in_memory().unwrap());
-        db.set_kv(KEY, r#"{"version":2,"stt":{"isolateSystemAudio":false}}"#).unwrap();
-        let store = SettingsStore::load(db.clone()).unwrap();
-        assert!(store.get().stt.isolate_system_audio);
-        // A later explicit opt-out is respected.
-        store.update(|s| s.stt.isolate_system_audio = false).unwrap();
-        assert!(!SettingsStore::load(db).unwrap().get().stt.isolate_system_audio);
+    fn retired_microphone_keys_are_ignored() {
+        // Settings saved before "microphone only" and "isolate system audio"
+        // were removed must still load, keeping everything else.
+        let s: Settings = serde_json::from_str(r#"{"stt":{"micOnly":false,"isolateSystemAudio":true,"language":"de"}}"#).unwrap();
+        assert_eq!(s.stt.language, "de");
     }
 
     #[test]
@@ -807,14 +791,5 @@ mod tests {
         assert_eq!(ar.tts_voice, "piper-ar_JO-kareem-medium:0");
         let de = s.language.entries.iter().find(|e| e.code == "de").unwrap();
         assert_eq!(de.tts_voice, "auto");
-    }
-
-    #[test]
-    fn mic_only_defaults_true_for_old_settings() {
-        let s = Settings::default();
-        assert!(s.stt.mic_only);
-        // Stored settings from before the flag existed must also get true.
-        let old: Settings = serde_json::from_str(r#"{"stt":{"microphone":null}}"#).unwrap();
-        assert!(old.stt.mic_only);
     }
 }

@@ -20,9 +20,8 @@ pub struct AudioDevices {
 }
 
 #[tauri::command]
-pub async fn audio_devices(state: State<'_, AppState>) -> CmdResult<AudioDevices> {
-    let mic_only = state.settings.get().stt.mic_only;
-    tokio::task::spawn_blocking(move || AudioDevices { inputs: devices::list_inputs(mic_only), outputs: devices::list_outputs() })
+pub async fn audio_devices() -> CmdResult<AudioDevices> {
+    tokio::task::spawn_blocking(|| AudioDevices { inputs: devices::list_inputs(), outputs: devices::list_outputs() })
         .await
         .map_err(|e| AppError::Audio(e.to_string()))
 }
