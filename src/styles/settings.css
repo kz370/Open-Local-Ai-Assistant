@@ -3,7 +3,7 @@
     radial-gradient(80% 50% at 100% 0%, var(--glow-1) 0%, transparent 60%),
     var(--bg);
   display: grid;
-  grid-template-columns: 220px 1fr;
+  grid-template-columns: 280px 1fr;
   height: 100%;
 }
 .settings-nav {
