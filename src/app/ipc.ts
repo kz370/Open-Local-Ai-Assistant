@@ -119,6 +119,7 @@ export const ipc = {
   dictationHistoryDelete: (id: string) => invoke<void>("dictation_history_delete", { id }),
   dictationHistoryClear: () => invoke<void>("dictation_history_clear"),
   dictationResetOverlayPosition: () => invoke<void>("dictation_reset_overlay_position"),
+  dictationOverlayMenu: (open: boolean) => invoke<void>("dictation_overlay_menu", { open }),
   voiceStatus: () => invoke<ListenMode | null>("voice_status"),
   voiceSetMuted: (muted: boolean) => invoke<boolean>("voice_set_muted", { muted }),
   voiceMuted: () => invoke<boolean>("voice_muted"),

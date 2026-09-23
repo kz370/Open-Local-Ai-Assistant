@@ -329,6 +329,7 @@ impl ChatEngine {
             has_web_tool,
             voice_mode: speak,
             assistant_name: &settings.general.assistant_name,
+            user_gender: &settings.ai.user_gender,
             custom_prompt: &settings.ai.system_prompt,
             tashkeel_enabled: settings.language.arabic_tashkeel_enabled,
             tashkeel_instruction: &settings.language.arabic_tashkeel_instruction,

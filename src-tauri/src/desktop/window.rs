@@ -8,7 +8,7 @@
 use crate::settings::WindowGeometry;
 use crate::services::stt::session::ListenMode;
 use crate::state::AppState;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use tauri::{AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
 pub const MAIN: &str = "main";
@@ -637,20 +637,74 @@ pub fn restore_target(app: &AppHandle) {
     focus_hwnd(app.state::<AppState>().dictation_target.load(Ordering::Relaxed));
 }
 
+/// Invisible room kept above and below the overlay card (logical px) so the
+/// language menu can hang outside the card without the window ever moving or
+/// resizing while it is on screen: a move always shows the card jumping for a
+/// frame or two before the webview catches up. The room is cut away with a
+/// window region (not drawn, clicks pass through) and only uncovered while the
+/// menu is open. Fits the menu's 8 rows plus its gap from the pill.
+const MENU_ROOM: f64 = 240.0;
+
+static MENU_OPEN: AtomicBool = AtomicBool::new(false);
+
+fn room_px(w: &WebviewWindow) -> i32 {
+    (MENU_ROOM * w.scale_factor().unwrap_or(1.0)).round() as i32
+}
+
+/// Window size for a card of logical height `card_h`.
+fn overlay_window_size(card_h: f64) -> LogicalSize<f64> {
+    LogicalSize::new(OVERLAY_W, card_h + 2.0 * MENU_ROOM)
+}
+
+/// Clips the overlay window to its card, or uncovers the whole window while
+/// the language menu is open.
+#[cfg(windows)]
+fn apply_overlay_region(app: &AppHandle, w: &WebviewWindow) {
+    use windows::Win32::Graphics::Gdi::{CreateRectRgn, SetWindowRgn};
+    let raw = overlay_hwnd(app);
+    let Ok(size) = w.outer_size() else { return };
+    if raw == 0 {
+        return;
+    }
+    let room = room_px(w);
+    // SAFETY: plain Win32 calls on the overlay's own window handle; on success
+    // the system owns the region, so it is not freed here.
+    unsafe {
+        let region = (!MENU_OPEN.load(Ordering::Relaxed)).then(|| CreateRectRgn(0, room, size.width as i32, size.height as i32 - room));
+        let _ = SetWindowRgn(hwnd_of(raw), region, true);
+    }
+}
+
+#[cfg(not(windows))]
+fn apply_overlay_region(_app: &AppHandle, _w: &WebviewWindow) {}
+
+/// Uncovers the room around the card while the language menu is open.
+pub fn set_overlay_menu_open(app: &AppHandle, open: bool) {
+    MENU_OPEN.store(open, Ordering::Relaxed);
+    if let Some(w) = app.get_webview_window(OVERLAY) {
+        apply_overlay_region(app, &w);
+    }
+}
+
 /// Switches the overlay between its compact listening size and the taller,
 /// focusable review size (an editable result needs the keyboard).
 pub fn set_overlay_review(app: &AppHandle, review: bool) {
     let Ok(w) = create_overlay(app) else { return };
     suppress_persistence();
-    let _ = w.set_size(LogicalSize::new(OVERLAY_W, if review { OVERLAY_H_REVIEW } else { OVERLAY_H }));
+    MENU_OPEN.store(false, Ordering::Relaxed);
+    let card_h = if review { OVERLAY_H_REVIEW } else { OVERLAY_H };
+    // The card's top stays put: the window grows downward, room and all.
+    let _ = w.set_size(overlay_window_size(card_h));
+    apply_overlay_region(app, &w);
     if review {
         // Growing must not push the card off the bottom of the screen.
         let scale = w.scale_factor().unwrap_or(1.0);
         if let (Ok(pos), Ok(Some(m))) = (w.outer_position(), w.current_monitor()) {
             let area = m.work_area();
+            let room = room_px(&w);
             let size = ((OVERLAY_W * scale).round() as u32, (OVERLAY_H_REVIEW * scale).round() as u32);
-            let (x, y) = clamp_into((area.position.x, area.position.y), (area.size.width, area.size.height), (pos.x, pos.y), size);
-            let _ = w.set_position(PhysicalPosition::new(x, y));
+            let (x, y) = clamp_into((area.position.x, area.position.y), (area.size.width, area.size.height), (pos.x, pos.y + room), size);
+            let _ = w.set_position(PhysicalPosition::new(x, y - room));
         }
         let _ = w.set_focusable(true);
         focus_hwnd(overlay_hwnd(app));
@@ -679,7 +733,7 @@ pub fn create_overlay(app: &AppHandle) -> tauri::Result<WebviewWindow> {
     }
     let w = WebviewWindowBuilder::new(app, OVERLAY, WebviewUrl::App("index.html#/overlay".into()))
         .title("Dictation")
-        .inner_size(OVERLAY_W, OVERLAY_H)
+        .inner_size(OVERLAY_W, OVERLAY_H + 2.0 * MENU_ROOM)
         .decorations(false)
         .transparent(true)
         .shadow(false)
@@ -695,12 +749,14 @@ pub fn create_overlay(app: &AppHandle) -> tauri::Result<WebviewWindow> {
     // persisted as if the user had dragged it there.
     suppress_persistence();
     let h = app.clone();
+    let w2 = w.clone();
     w.on_window_event(move |e| {
         if let tauri::WindowEvent::Moved(pos) = e {
             if now_ms() < SUPPRESS_UNTIL.load(Ordering::Relaxed) {
                 return;
             }
-            let (x, y) = (pos.x, pos.y);
+            // Saved as the card's spot, not the window's (which includes the room above).
+            let (x, y) = (pos.x, pos.y + room_px(&w2));
             let _ = h.state::<AppState>().settings.update(|s| {
                 s.dictation.overlay_x = Some(x);
                 s.dictation.overlay_y = Some(y);
@@ -710,13 +766,15 @@ pub fn create_overlay(app: &AppHandle) -> tauri::Result<WebviewWindow> {
     Ok(w)
 }
 
-/// Top-left for the overlay's default centered-near-the-bottom placement.
+/// Top-left of the card for the overlay's default centered-near-the-bottom
+/// placement.
 fn default_overlay_position(w: &WebviewWindow) -> Option<(i32, i32)> {
     let m = w.primary_monitor().ok().flatten()?;
     let area = m.work_area();
-    let size = w.outer_size().unwrap_or(PhysicalSize::new(OVERLAY_W as u32, OVERLAY_H as u32));
-    let x = area.position.x + (area.size.width as i32 - size.width as i32) / 2;
-    let y = area.position.y + area.size.height as i32 - size.height as i32 - 40;
+    let scale = m.scale_factor();
+    let (cw, ch) = ((OVERLAY_W * scale).round() as i32, (OVERLAY_H * scale).round() as i32);
+    let x = area.position.x + (area.size.width as i32 - cw) / 2;
+    let y = area.position.y + area.size.height as i32 - ch - 40;
     Some((x, y))
 }
 
@@ -727,13 +785,15 @@ pub fn show_overlay(app: &AppHandle) {
     let Ok(w) = create_overlay(app) else { return };
     let saved = app.state::<AppState>().settings.get().dictation;
     suppress_persistence();
-    let _ = w.set_size(LogicalSize::new(OVERLAY_W, OVERLAY_H));
+    MENU_OPEN.store(false, Ordering::Relaxed);
+    let _ = w.set_size(overlay_window_size(OVERLAY_H));
+    apply_overlay_region(app, &w);
     let pos = match (saved.overlay_x, saved.overlay_y) {
         (Some(x), Some(y)) if on_any_monitor(&w, x, y) => Some((x, y)),
         _ => default_overlay_position(&w),
     };
     if let Some((x, y)) = pos {
-        let _ = w.set_position(PhysicalPosition::new(x, y));
+        let _ = w.set_position(PhysicalPosition::new(x, y - room_px(&w)));
     }
     let _ = w.show();
 }
@@ -748,7 +808,7 @@ pub fn reset_overlay_position(app: &AppHandle) {
     let Ok(w) = create_overlay(app) else { return };
     suppress_persistence();
     if let Some((x, y)) = default_overlay_position(&w) {
-        let _ = w.set_position(PhysicalPosition::new(x, y));
+        let _ = w.set_position(PhysicalPosition::new(x, y - room_px(&w)));
     }
 }
 

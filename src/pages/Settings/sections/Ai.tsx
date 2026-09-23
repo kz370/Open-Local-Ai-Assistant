@@ -4,7 +4,7 @@ import { ipc, toAppError } from "../../../app/ipc";
 import { PROVIDERS } from "../../../app/providers";
 import { formatBytes, modelLabel, t } from "../../../app/strings";
 import type { AppErrorPayload, ConnectionStatus, ModelInfo, ModelSelection, ProviderId } from "../../../app/types";
-import { ErrorNotice, Switch } from "../../../components/common/controls";
+import { ErrorNotice, Segmented, Switch } from "../../../components/common/controls";
 import { Card, Row, SectionHeader } from "../../../components/settings/layout";
 import { useS } from "./Basic";
 
@@ -287,6 +287,21 @@ export function AiSection() {
             );
           })}
         </div>
+      </Card>
+
+      <Card title={t("settings.ai.aboutYou")}>
+        <Row label={t("settings.ai.userGender")} hint={t("settings.ai.userGenderHint")}>
+          <Segmented
+            label={t("settings.ai.userGender")}
+            value={s.ai.userGender}
+            options={[
+              { value: "unspecified", label: t("settings.ai.genderUnspecified") },
+              { value: "male", label: t("settings.ai.genderMale") },
+              { value: "female", label: t("settings.ai.genderFemale") },
+            ]}
+            onChange={(v) => set((d) => void (d.ai.userGender = v))}
+          />
+        </Row>
       </Card>
 
       <Card title={t("app.advanced")}>

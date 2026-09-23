@@ -499,6 +499,7 @@ pub fn run() {
             commands::voice::dictation_history_delete,
             commands::voice::dictation_history_clear,
             commands::voice::dictation_reset_overlay_position,
+            commands::voice::dictation_overlay_menu,
             commands::voice::voice_status,
             commands::voice::voice_set_muted,
             commands::voice::voice_muted,
