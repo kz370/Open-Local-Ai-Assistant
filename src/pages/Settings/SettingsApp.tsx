@@ -1,11 +1,12 @@
-import { useEffect, useMemo, useState, type ComponentType } from "react";
+import { Fragment, useEffect, useMemo, useState, type ComponentType } from "react";
 import { Activity, AudioLines, Bot, Globe, Keyboard, Languages, MemoryStick, Mic, Palette, PenLine, Plug, Search, Settings2, Shield, Volume2 } from "lucide-react";
 import { useSettingsHighlight } from "../../app/settingsHighlight";
 import { on } from "../../app/ipc";
 import { t } from "../../app/strings";
 import { AiSection } from "./sections/Ai";
-import { AppearanceSection, GeneralSection, LanguageSection, ShortcutsSection } from "./sections/Basic";
+import { AppearanceSection, GeneralSection, ShortcutsSection } from "./sections/Basic";
 import { DictationSection } from "./sections/Dictation";
+import { LanguageSection } from "./sections/Languages";
 import { McpSection } from "./sections/Mcp";
 import { MemorySection } from "./sections/Memory";
 import { buildSettingsIndex } from "./searchIndex";
@@ -13,20 +14,23 @@ import { WebSearchSection } from "./sections/WebSearch";
 import { DiagnosticsSection, PrivacySection } from "./sections/System";
 import { SpeechSection, VoiceSection } from "./sections/Voice";
 
-const SECTIONS: { id: string; icon: ComponentType<{ size?: number }>; view: ComponentType }[] = [
-  { id: "general", icon: Settings2, view: GeneralSection },
-  { id: "ai", icon: Bot, view: AiSection },
-  { id: "speech", icon: Mic, view: SpeechSection },
-  { id: "voice", icon: Volume2, view: VoiceSection },
-  { id: "memory", icon: MemoryStick, view: MemorySection },
-  { id: "language", icon: Languages, view: LanguageSection },
-  { id: "dictation", icon: PenLine, view: DictationSection },
-  { id: "search", icon: Globe, view: WebSearchSection },
-  { id: "mcp", icon: Plug, view: McpSection },
-  { id: "privacy", icon: Shield, view: PrivacySection },
-  { id: "appearance", icon: Palette, view: AppearanceSection },
-  { id: "shortcuts", icon: Keyboard, view: ShortcutsSection },
-  { id: "diagnostics", icon: Activity, view: DiagnosticsSection },
+type Section = { id: string; group: string; icon: ComponentType<{ size?: number }>; view: ComponentType };
+
+// Ordered by group, so the menu reads as four short lists instead of one long one.
+const SECTIONS: Section[] = [
+  { id: "ai", group: "assistant", icon: Bot, view: AiSection },
+  { id: "memory", group: "assistant", icon: MemoryStick, view: MemorySection },
+  { id: "language", group: "assistant", icon: Languages, view: LanguageSection },
+  { id: "search", group: "assistant", icon: Globe, view: WebSearchSection },
+  { id: "mcp", group: "assistant", icon: Plug, view: McpSection },
+  { id: "speech", group: "voice", icon: Mic, view: SpeechSection },
+  { id: "voice", group: "voice", icon: Volume2, view: VoiceSection },
+  { id: "dictation", group: "voice", icon: PenLine, view: DictationSection },
+  { id: "general", group: "app", icon: Settings2, view: GeneralSection },
+  { id: "appearance", group: "app", icon: Palette, view: AppearanceSection },
+  { id: "shortcuts", group: "app", icon: Keyboard, view: ShortcutsSection },
+  { id: "privacy", group: "app", icon: Shield, view: PrivacySection },
+  { id: "diagnostics", group: "advanced", icon: Activity, view: DiagnosticsSection },
 ];
 
 /** Index of the match, preferring one at the start of a word over a mid-word hit. */
@@ -164,11 +168,14 @@ export function SettingsApp() {
             </div>
           )}
         </div>
-        {SECTIONS.map(({ id, icon: Icon }) => (
-          <button key={id} aria-current={section === id ? "page" : undefined} onClick={() => (location.hash = `#/settings/${id}`)}>
-            <Icon size={16} />
-            {t(`settings.sections.${id}`)}
-          </button>
+        {SECTIONS.map(({ id, group, icon: Icon }, i) => (
+          <Fragment key={id}>
+            {(i === 0 || SECTIONS[i - 1].group !== group) && <div className="settings-nav-group">{t(`settings.groups.${group}`)}</div>}
+            <button aria-current={section === id ? "page" : undefined} onClick={() => (location.hash = `#/settings/${id}`)}>
+              <Icon size={16} />
+              {t(`settings.sections.${id}`)}
+            </button>
+          </Fragment>
         ))}
       </nav>
       <main className="settings-main" key={section}>

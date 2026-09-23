@@ -228,49 +228,6 @@ export function AppearanceSection() {
   );
 }
 
-export function LanguageSection() {
-  const [s, set] = useS();
-  const options: { value: string; label: string }[] = [
-    { value: "auto", label: t("settings.language.responseAuto") },
-    ...s.language.entries.map((e) => ({ value: e.code, label: e.builtIn ? t(`languages.${e.code}`) : e.displayName })),
-  ];
-  return (
-    <>
-      <SectionHeader title={t("settings.sections.language")} intro={t("settings.language.detectHint")} />
-      <Card>
-        <Row label={t("settings.language.response")} stack>
-          <div className="radio-list" role="radiogroup" aria-label={t("settings.language.response")}>
-            {options.map((o) => (
-              <label key={o.value}>
-                <input type="radio" name="resp-lang" checked={s.language.responseLanguage === o.value} onChange={() => set((d) => void (d.language.responseLanguage = o.value))} />
-                {o.label}
-              </label>
-            ))}
-          </div>
-        </Row>
-      </Card>
-      <Card title={t("settings.language.arabicTashkeel")}>
-        <Row label={t("settings.language.arabicTashkeelEnabled")} hint={t("settings.language.arabicTashkeelEnabledHint")} htmlFor="sw-tashkeel">
-          <Switch id="sw-tashkeel" label={t("settings.language.arabicTashkeelEnabled")} checked={s.language.arabicTashkeelEnabled} onChange={(v) => set((d) => void (d.language.arabicTashkeelEnabled = v))} />
-        </Row>
-        {s.language.arabicTashkeelEnabled && (
-          <Row label={t("settings.language.arabicTashkeelInstruction")} hint={t("settings.language.arabicTashkeelInstructionHint")} htmlFor="ta-tashkeel" stack>
-            <textarea
-              id="ta-tashkeel"
-              className="textarea"
-              rows={3}
-              dir="rtl"
-              placeholder={t("settings.language.arabicTashkeelPlaceholder")}
-              defaultValue={s.language.arabicTashkeelInstruction}
-              onBlur={(e) => set((d) => void (d.language.arabicTashkeelInstruction = e.target.value))}
-            />
-          </Row>
-        )}
-      </Card>
-    </>
-  );
-}
-
 export function ShortcutsSection() {
   const [s, set] = useS();
   const [errors, setErrors] = useState<string[]>([]);

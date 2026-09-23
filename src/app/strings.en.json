@@ -199,10 +199,10 @@
     "sections": {
       "general": "General",
       "ai": "AI provider",
-      "speech": "Speech Recognition",
-      "voice": "Text-to-Speech",
-      "memory": "Models in Memory",
-      "language": "Language",
+      "speech": "Voice input",
+      "voice": "Assistant voice",
+      "memory": "Loaded models",
+      "language": "Languages",
       "dictation": "Dictation",
       "search": "Web Search",
       "mcp": "MCP & Tools",
@@ -316,7 +316,6 @@
       "provider": "Provider",
       "local": "Local",
       "model": "Model",
-      "language": "Language",
       "microphone": "Microphone",
       "micOnly": "Microphone only",
       "micOnlyHint": "Ignore system audio and loopback devices such as Stereo Mix. Turn off to allow them.",
@@ -374,21 +373,14 @@
       "genderMale": "Male",
       "localHint": "Voices can also be loaded from your own folders (see Speech Recognition - Model folders).",
       "language": "Language",
-      "addLanguage": "Add language",
-      "removeLanguage": "Remove this language",
-      "newLanguage": "New language",
-      "languageCode": "Code (e.g. fr)",
-      "languageName": "Name",
-      "direction": "Direction",
       "unsupportedLanguageHint": "Replies in this language follow the language you choose under Language. Automatic language detection only covers English, Arabic and German.",
-      "searchLanguage": "Search languages…",
-      "noLanguageMatch": "No language matches.",
       "noVoiceTitle": "No voice installed for {{language}}",
       "noVoiceStep1": "Find a voice for it — look for a Piper voice named vits-piper-{{code}}_… (or an MMS voice) in the list below.",
       "noVoiceStep2": "Download it and extract it into its own folder. It must contain a .onnx file, tokens.txt and espeak-ng-data.",
       "noVoiceStep3": "Add the folder containing it with \"Add folder\". The voice then appears in the list here.",
       "noVoiceList": "Browse available voices",
-      "noVoiceDownloads": "Open downloads"
+      "noVoiceDownloads": "Open downloads",
+      "manageLanguages": "Add or remove languages"
     },
     "language": {
       "response": "Response language",
@@ -399,7 +391,18 @@
       "arabicTashkeelEnabledHint": "Off: Arabic replies are written without diacritics (the default). On: replies include full تشكيل.",
       "arabicTashkeelInstruction": "Custom instruction",
       "arabicTashkeelInstructionHint": "Replaces the default tashkeel instruction sent to the model. Leave blank to use the default.",
-      "arabicTashkeelPlaceholder": "Fully diacritize every word with complete تشكيل, applying إعراب rules precisely."
+      "arabicTashkeelPlaceholder": "Fully diacritize every word with complete تشكيل, applying إعراب rules precisely.",
+      "yourLanguages": "Your languages",
+      "builtIn": "Built in",
+      "add": "Add language",
+      "remove": "Remove language",
+      "newLanguage": "New language",
+      "searchLanguage": "Search languages…",
+      "noLanguageMatch": "No language matches.",
+      "speechCard": "Speech",
+      "speechLanguage": "Speech recognition language",
+      "dictationLanguage": "Dictation language",
+      "dictationLanguageHint": "Also changeable from the dictation window. Automatic detects the language from your speech."
     },
     "dictation": {
       "intro": "Dictate text into any application, such as Notepad or your browser. Speech is recognized locally.",
@@ -416,8 +419,6 @@
       "type": "Typing",
       "paste": "Pasting (restores clipboard)",
       "trailingSpace": "Add a space after inserted text",
-      "language": "Dictation language",
-      "languageHint": "Also changeable from the dictation window. Automatic detects the language from your speech.",
       "review": "Review before inserting",
       "reviewHint": "Show the result in the overlay so you can edit it, then insert it with Ctrl+Enter.",
       "history": "Dictation history",
@@ -682,6 +683,12 @@
         "missing": "Not installed",
         "failed": "Unavailable"
       }
+    },
+    "groups": {
+      "assistant": "Assistant",
+      "voice": "Voice",
+      "app": "App",
+      "advanced": "Advanced"
     }
   },
   "setup": {

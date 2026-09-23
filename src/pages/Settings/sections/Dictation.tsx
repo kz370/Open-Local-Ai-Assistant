@@ -124,16 +124,6 @@ export function DictationSection() {
         <Row label={t("settings.dictation.trailingSpace")} htmlFor="sw-space">
           <Switch id="sw-space" label={t("settings.dictation.trailingSpace")} checked={d.addTrailingSpace} onChange={(v) => set((x) => void (x.dictation.addTrailingSpace = v))} />
         </Row>
-        <Row label={t("settings.dictation.language")} hint={t("settings.dictation.languageHint")} htmlFor="sel-dict-lang">
-          <select id="sel-dict-lang" className="select" value={d.language || s.stt.language} onChange={(e) => set((x) => void (x.dictation.language = e.target.value))}>
-            <option value="auto">{t("app.automatic")}</option>
-            {s.language.entries.map((e) => (
-              <option key={e.code} value={e.code}>
-                {e.builtIn ? t(`languages.${e.code}`) : e.displayName}
-              </option>
-            ))}
-          </select>
-        </Row>
         <Row label={t("settings.dictation.review")} hint={t("settings.dictation.reviewHint")} htmlFor="sw-review">
           <Switch id="sw-review" label={t("settings.dictation.review")} checked={d.reviewBeforeInsert} onChange={(v) => set((x) => void (x.dictation.reviewBeforeInsert = v))} />
         </Row>
