@@ -78,7 +78,7 @@ export function ErrorNotice(props: { error: AppErrorPayload; actions?: ReactNode
 }
 
 export function openExternal(url: string) {
-  if (/^https?:\/\//i.test(url)) void openUrl(url);
+  if (/^https?:\/\//i.test(url)) openUrl(url).catch((e) => console.warn("could not open link", url, e));
 }
 
 /** Detects the base direction of text for correct Arabic/English rendering. */

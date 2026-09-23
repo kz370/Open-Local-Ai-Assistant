@@ -1,15 +1,17 @@
 import { useEffect, useState } from "react";
-import { FolderOpen, FolderPlus, Plus, Play, Square, Trash2 } from "lucide-react";
+import { ExternalLink, FolderOpen, FolderPlus, Plus, Play, Square, Trash2 } from "lucide-react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { ipc, on, toAppError } from "../../../app/ipc";
 import { formatBytes, t } from "../../../app/strings";
 import type { AppErrorPayload, AppInfo, AudioDevice, GpuStatus, IncompatibleModel, InstalledModel, LangSetting, LanguageEntry, VoiceEvent, VoiceInfo } from "../../../app/types";
-import { ErrorNotice, Segmented, Switch } from "../../../components/common/controls";
+import { ErrorNotice, openExternal, Segmented, Switch } from "../../../components/common/controls";
 import { GpuCard } from "../../../components/settings/GpuCard";
 import { Card, Row, SectionHeader } from "../../../components/settings/layout";
 import { ModelManager } from "../../../components/settings/ModelManager";
 import { SilmaCard } from "../../../components/settings/SilmaCard";
+import { LanguagePicker } from "../../../components/settings/LanguagePicker";
 import { LevelMeter } from "../../../components/voice/LevelMeter";
+import { KNOWN_LANGUAGES } from "../../../app/knownLanguages";
 import { useS } from "./Basic";
 
 function useDevices(micOnly: boolean) {
@@ -323,6 +325,41 @@ function useVoices() {
   return voices;
 }
 
+const VOICE_LIST_URL = "https://k2-fsa.github.io/sherpa/onnx/tts/pretrained_models/index.html";
+const VOICE_DOWNLOAD_URL = "https://github.com/k2-fsa/sherpa-onnx/releases/tag/tts-models";
+
+/** Shown for a language the app ships no voice for: where to get one and how to add it. */
+function NoVoiceHelp({ entry }: { entry: LanguageEntry }) {
+  const [, set] = useS();
+  const name = entry.displayName || entry.code;
+  const addFolder = async () => {
+    const picked = await openDialog({ directory: true, multiple: false, title: t("settings.speech.addFolder") });
+    if (!picked || Array.isArray(picked)) return;
+    set((d) => void (d.stt.extraModelDirs.includes(picked) || d.stt.extraModelDirs.push(picked)));
+  };
+  return (
+    <div className="notice info" style={{ maxWidth: 820, margin: "8px 0", flexDirection: "column", alignItems: "stretch", gap: 6 }}>
+      <strong>{t("settings.voice.noVoiceTitle", { language: name })}</strong>
+      <ol style={{ margin: 0, paddingInlineStart: 20, display: "grid", gap: 2 }}>
+        <li>{t("settings.voice.noVoiceStep1", { code: entry.code })}</li>
+        <li>{t("settings.voice.noVoiceStep2")}</li>
+        <li>{t("settings.voice.noVoiceStep3")}</li>
+      </ol>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        <button className="btn btn-sm" onClick={() => openExternal(VOICE_LIST_URL)}>
+          <ExternalLink size={12} /> {t("settings.voice.noVoiceList")}
+        </button>
+        <button className="btn btn-sm" onClick={() => openExternal(VOICE_DOWNLOAD_URL)}>
+          <ExternalLink size={12} /> {t("settings.voice.noVoiceDownloads")}
+        </button>
+        <button className="btn btn-sm btn-primary" onClick={() => void addFolder()}>
+          <FolderPlus size={12} /> {t("settings.speech.addFolder")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function VoiceSection() {
   const [s, set] = useS();
   const devices = useDevices(s.stt.micOnly);
@@ -330,7 +367,7 @@ export function VoiceSection() {
   const gpu = useGpuStatus();
   const [error, setError] = useState<AppErrorPayload | null>(null);
   const [activeLang, setActiveLang] = useState(s.language.entries[0]?.code ?? "en");
-  const [newLang, setNewLang] = useState<{ code: string; name: string; direction: "ltr" | "rtl" } | null>(null);
+  const [newLang, setNewLang] = useState<string | null>(null);
 
   useEffect(() => {
     if (!s.language.entries.some((e) => e.code === activeLang) && s.language.entries[0]) {
@@ -348,11 +385,10 @@ export function VoiceSection() {
     });
 
   const addLanguage = () => {
-    if (!newLang) return;
-    const code = newLang.code.trim().toLowerCase();
-    if (!code || s.language.entries.some((e) => e.code === code)) return;
-    set((d) => void d.language.entries.push({ code, displayName: newLang.name.trim() || code, direction: newLang.direction, sttLanguage: code, ttsVoice: "auto", builtIn: false }));
-    setActiveLang(code);
+    const known = KNOWN_LANGUAGES.find((k) => k.code === newLang);
+    if (!known || s.language.entries.some((e) => e.code === known.code)) return;
+    set((d) => void d.language.entries.push({ code: known.code, displayName: known.name, direction: known.direction, sttLanguage: known.code, ttsVoice: "auto", builtIn: false }));
+    setActiveLang(known.code);
     setNewLang(null);
   };
 
@@ -390,7 +426,7 @@ export function VoiceSection() {
         </Row>
         <Row label={t("settings.voice.language")}>
           <Segmented label={t("settings.voice.language")} value={activeLang} options={s.language.entries.map((e) => ({ value: e.code, label: languageLabel(e) }))} onChange={setActiveLang} />
-          <button className="btn btn-sm" onClick={() => setNewLang({ code: "", name: "", direction: "ltr" })}>
+          <button className="btn btn-sm" onClick={() => setNewLang("")}>
             <Plus size={12} /> {t("settings.voice.addLanguage")}
           </button>
           {entry && !entry.builtIn && (
@@ -399,20 +435,17 @@ export function VoiceSection() {
             </button>
           )}
         </Row>
-        {newLang && (
+        {newLang !== null && (
           <Row label={t("settings.voice.newLanguage")}>
-            <input className="input" placeholder={t("settings.voice.languageCode")} value={newLang.code} onChange={(e) => setNewLang({ ...newLang, code: e.target.value })} style={{ maxWidth: 90 }} />
-            <input className="input" placeholder={t("settings.voice.languageName")} value={newLang.name} onChange={(e) => setNewLang({ ...newLang, name: e.target.value })} style={{ maxWidth: 160 }} />
-            <Segmented
-              label={t("settings.voice.direction")}
-              value={newLang.direction}
-              options={[
-                { value: "ltr" as const, label: "LTR" },
-                { value: "rtl" as const, label: "RTL" },
-              ]}
-              onChange={(v) => setNewLang({ ...newLang, direction: v })}
+            <LanguagePicker
+              options={KNOWN_LANGUAGES.filter((k) => !s.language.entries.some((e) => e.code === k.code))}
+              value={newLang}
+              onChange={setNewLang}
+              label={t("settings.voice.newLanguage")}
+              placeholder={t("settings.voice.searchLanguage")}
+              emptyText={t("settings.voice.noLanguageMatch")}
             />
-            <button className="btn btn-sm btn-primary" onClick={addLanguage}>
+            <button className="btn btn-sm btn-primary" disabled={!newLang} onClick={addLanguage}>
               {t("app.add")}
             </button>
             <button className="btn btn-sm" onClick={() => setNewLang(null)}>
@@ -421,6 +454,7 @@ export function VoiceSection() {
           </Row>
         )}
         {entry && !entry.builtIn && <p className="row-hint">{t("settings.voice.unsupportedLanguageHint")}</p>}
+        {entry && !entry.builtIn && list.length === 0 && <NoVoiceHelp entry={entry} />}
         {entry && (
           <Row label={t("settings.voice.voiceFor", { language: languageLabel(entry) })} htmlFor="sel-voice">
             <select id="sel-voice" className="select" value={entry.ttsVoice} onChange={(e) => updateEntry(entry.code, { ttsVoice: e.target.value })} disabled={!list.length} style={{ maxWidth: 260 }}>
