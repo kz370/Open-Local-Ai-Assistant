@@ -8,7 +8,8 @@
 use crate::settings::WindowGeometry;
 use crate::services::stt::session::ListenMode;
 use crate::state::AppState;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
 pub const MAIN: &str = "main";
@@ -641,11 +642,19 @@ pub fn restore_target(app: &AppHandle) {
 /// language menu can hang outside the card without the window ever moving or
 /// resizing while it is on screen: a move always shows the card jumping for a
 /// frame or two before the webview catches up. The room is cut away with a
-/// window region (not drawn, clicks pass through) and only uncovered while the
-/// menu is open. Fits the menu's 8 rows plus its gap from the pill.
+/// window region (not drawn, clicks pass through); the open menu is added to
+/// the region. Fits the menu's 8 rows plus its gap from the pill.
 const MENU_ROOM: f64 = 240.0;
 
-static MENU_OPEN: AtomicBool = AtomicBool::new(false);
+/// The open language menu's rectangle in the window (logical x, y, w, h).
+static MENU_RECT: Mutex<Option<[f64; 4]>> = Mutex::new(None);
+/// Card margin inside the window and corner radius, the menu's corner radius,
+/// and the room left around the menu for its shadow (logical px; must match
+/// .overlay-card / .overlay-lang-menu).
+const CARD_MARGIN: f64 = 8.0;
+const CARD_RADIUS: f64 = 18.0;
+const MENU_RADIUS: f64 = 10.0;
+const MENU_SHADOW: f64 = 14.0;
 
 fn room_px(w: &WebviewWindow) -> i32 {
     (MENU_ROOM * w.scale_factor().unwrap_or(1.0)).round() as i32
@@ -656,31 +665,84 @@ fn overlay_window_size(card_h: f64) -> LogicalSize<f64> {
     LogicalSize::new(OVERLAY_W, card_h + 2.0 * MENU_ROOM)
 }
 
-/// Clips the overlay window to its card, or uncovers the whole window while
-/// the language menu is open.
+/// Frameless windows keep their caption styles (for snapping and animations)
+/// and merely hide the frame. Once a window region is set, Windows stops
+/// drawing the modern frame and paints the classic title bar and border
+/// instead, so the overlay drops those styles before it gets a region. The
+/// window library adds them back whenever it updates the window (showing it,
+/// changing focusability), so this runs before every region change.
 #[cfg(windows)]
-fn apply_overlay_region(app: &AppHandle, w: &WebviewWindow) {
-    use windows::Win32::Graphics::Gdi::{CreateRectRgn, SetWindowRgn};
+fn strip_frame_styles(raw: isize) {
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetWindowLongPtrW, SetWindowLongPtrW, SetWindowPos, GWL_STYLE, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, WS_CAPTION,
+        WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
+    };
+    let hwnd = hwnd_of(raw);
+    let frame = (WS_CAPTION | WS_THICKFRAME | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX).0 as isize;
+    // SAFETY: plain Win32 calls on the overlay's own window handle.
+    unsafe {
+        let style = GetWindowLongPtrW(hwnd, GWL_STYLE);
+        let stripped = (style & !frame) | WS_POPUP.0 as isize;
+        if stripped != style {
+            SetWindowLongPtrW(hwnd, GWL_STYLE, stripped);
+            let _ = SetWindowPos(hwnd, None, 0, 0, 0, 0, SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+        }
+    }
+}
+
+/// Clips the overlay window to the card plus its shadow margin, and the open
+/// language menu plus its shadow, each with rounded corners following the
+/// element's own (`clip`); or removes the clip while the overlay is hidden.
+/// Nothing else of the window is drawn or clickable: its transparent room
+/// would otherwise show as a dim box and block clicks to the app behind.
+#[cfg(windows)]
+fn set_overlay_region(app: &AppHandle, w: &WebviewWindow, clip: bool) {
+    use windows::Win32::Graphics::Gdi::{CombineRgn, CreateRoundRectRgn, DeleteObject, SetWindowRgn, HGDIOBJ, RGN_OR};
     let raw = overlay_hwnd(app);
     let Ok(size) = w.outer_size() else { return };
     if raw == 0 {
         return;
     }
+    if clip {
+        strip_frame_styles(raw);
+    }
+    let scale = w.scale_factor().unwrap_or(1.0);
+    let px = |v: f64| (v * scale).round() as i32;
     let room = room_px(w);
-    // SAFETY: plain Win32 calls on the overlay's own window handle; on success
-    // the system owns the region, so it is not freed here.
+    let menu = *MENU_RECT.lock().unwrap_or_else(|p| p.into_inner());
+    // SAFETY: plain Win32 calls on the overlay's own window handle. The menu
+    // region is merged into the card's and freed; on success the system owns
+    // the combined region, so it is not freed here.
     unsafe {
-        let region = (!MENU_OPEN.load(Ordering::Relaxed)).then(|| CreateRectRgn(0, room, size.width as i32, size.height as i32 - room));
+        let region = clip.then(|| {
+            // CreateRoundRectRgn takes the corner ellipse's size (2x radius) and
+            // leaves out the right and bottom edges, hence +1.
+            let d = px(CARD_RADIUS + CARD_MARGIN) * 2;
+            let card = CreateRoundRectRgn(0, room, size.width as i32 + 1, size.height as i32 - room + 1, d, d);
+            if let Some([x, y, mw, mh]) = menu {
+                let s = MENU_SHADOW;
+                let d = px(MENU_RADIUS + s) * 2;
+                let rgn = CreateRoundRectRgn(px(x - s), px(y - s), px(x + mw + s) + 1, px(y + mh + s) + 1, d, d);
+                CombineRgn(Some(card), Some(card), Some(rgn), RGN_OR);
+                let _ = DeleteObject(HGDIOBJ(rgn.0));
+            }
+            card
+        });
         let _ = SetWindowRgn(hwnd_of(raw), region, true);
     }
 }
 
 #[cfg(not(windows))]
-fn apply_overlay_region(_app: &AppHandle, _w: &WebviewWindow) {}
+fn set_overlay_region(_app: &AppHandle, _w: &WebviewWindow, _clip: bool) {}
 
-/// Uncovers the room around the card while the language menu is open.
-pub fn set_overlay_menu_open(app: &AppHandle, open: bool) {
-    MENU_OPEN.store(open, Ordering::Relaxed);
+fn apply_overlay_region(app: &AppHandle, w: &WebviewWindow) {
+    set_overlay_region(app, w, true);
+}
+
+/// Adds the open language menu (`Some(logical x, y, w, h)` in the window) to
+/// the visible part of the overlay, or takes it away again (`None`).
+pub fn set_overlay_menu(app: &AppHandle, menu: Option<[f64; 4]>) {
+    *MENU_RECT.lock().unwrap_or_else(|p| p.into_inner()) = menu;
     if let Some(w) = app.get_webview_window(OVERLAY) {
         apply_overlay_region(app, &w);
     }
@@ -691,11 +753,13 @@ pub fn set_overlay_menu_open(app: &AppHandle, open: bool) {
 pub fn set_overlay_review(app: &AppHandle, review: bool) {
     let Ok(w) = create_overlay(app) else { return };
     suppress_persistence();
-    MENU_OPEN.store(false, Ordering::Relaxed);
+    *MENU_RECT.lock().unwrap_or_else(|p| p.into_inner()) = None;
+    // Unclipped while its styles change (see strip_frame_styles); clipped again below.
+    set_overlay_region(app, &w, false);
+    let _ = w.set_focusable(review);
     let card_h = if review { OVERLAY_H_REVIEW } else { OVERLAY_H };
     // The card's top stays put: the window grows downward, room and all.
     let _ = w.set_size(overlay_window_size(card_h));
-    apply_overlay_region(app, &w);
     if review {
         // Growing must not push the card off the bottom of the screen.
         let scale = w.scale_factor().unwrap_or(1.0);
@@ -706,11 +770,11 @@ pub fn set_overlay_review(app: &AppHandle, review: bool) {
             let (x, y) = clamp_into((area.position.x, area.position.y), (area.size.width, area.size.height), (pos.x, pos.y + room), size);
             let _ = w.set_position(PhysicalPosition::new(x, y - room));
         }
-        let _ = w.set_focusable(true);
+    }
+    apply_overlay_region(app, &w);
+    if review {
         focus_hwnd(overlay_hwnd(app));
         let _ = w.set_focus();
-    } else {
-        let _ = w.set_focusable(false);
     }
 }
 
@@ -785,9 +849,8 @@ pub fn show_overlay(app: &AppHandle) {
     let Ok(w) = create_overlay(app) else { return };
     let saved = app.state::<AppState>().settings.get().dictation;
     suppress_persistence();
-    MENU_OPEN.store(false, Ordering::Relaxed);
+    *MENU_RECT.lock().unwrap_or_else(|p| p.into_inner()) = None;
     let _ = w.set_size(overlay_window_size(OVERLAY_H));
-    apply_overlay_region(app, &w);
     let pos = match (saved.overlay_x, saved.overlay_y) {
         (Some(x), Some(y)) if on_any_monitor(&w, x, y) => Some((x, y)),
         _ => default_overlay_position(&w),
@@ -796,6 +859,8 @@ pub fn show_overlay(app: &AppHandle) {
         let _ = w.set_position(PhysicalPosition::new(x, y - room_px(&w)));
     }
     let _ = w.show();
+    // After showing: that re-adds the frame styles the region needs gone.
+    apply_overlay_region(app, &w);
 }
 
 /// Clears the dragged overlay position and moves it back to the default spot
@@ -815,6 +880,8 @@ pub fn reset_overlay_position(app: &AppHandle) {
 pub fn hide_overlay(app: &AppHandle) {
     if let Some(w) = app.get_webview_window(OVERLAY) {
         let _ = w.hide();
+        // Showing it again changes its styles; that must not happen while clipped.
+        set_overlay_region(app, &w, false);
     }
 }
 

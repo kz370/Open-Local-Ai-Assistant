@@ -96,10 +96,11 @@ pub fn dictation_reset_overlay_position(app: AppHandle) {
     crate::desktop::window::reset_overlay_position(&app);
 }
 
-/// Uncovers the room around the overlay card while its language menu is open.
+/// Shows the overlay's open language menu (logical x, y, width, height in the
+/// window) outside the card, or hides that area again (`None`).
 #[tauri::command]
-pub fn dictation_overlay_menu(app: AppHandle, open: bool) {
-    crate::desktop::window::set_overlay_menu_open(&app, open);
+pub fn dictation_overlay_menu(app: AppHandle, menu: Option<[f64; 4]>) {
+    crate::desktop::window::set_overlay_menu(&app, menu);
 }
 
 #[tauri::command]

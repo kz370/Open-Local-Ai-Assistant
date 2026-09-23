@@ -645,7 +645,9 @@ html.overlay {
   border-radius: 18px;
   background: var(--popover);
   border: 1px solid var(--hairline);
-  box-shadow: var(--shadow-lg);
+  /* Small enough to fade out inside the 8px margin: the window is clipped just
+     outside it (CARD_MARGIN in window.rs), so a bigger shadow gets cut off. */
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.3);
   overflow: hidden;
 }
 .overlay-card.done {
@@ -743,7 +745,9 @@ html.overlay {
   border-radius: 10px;
   background: var(--popover);
   border: 1px solid var(--border);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  /* Stays within MENU_SHADOW (window.rs): the window is clipped to the menu
+     plus that margin, with rounded corners. */
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.35);
   animation: fade-in 120ms ease;
   cursor: default;
 }
