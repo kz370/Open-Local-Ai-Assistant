@@ -585,6 +585,45 @@ html.overlay #root {
   outline: none;
   border-color: var(--accent);
 }
+.lang-picker {
+  position: relative;
+  width: 260px;
+}
+.lang-list {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 4px);
+  inset-inline: 0;
+  max-height: 240px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  background: var(--popover);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-lg);
+}
+.lang-option,
+.lang-empty {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: var(--text-sm);
+}
+.lang-option {
+  cursor: pointer;
+}
+.lang-option.active {
+  background: var(--accent-soft);
+  color: var(--accent-soft-text);
+}
+.lang-native,
+.lang-empty {
+  color: var(--text-faint);
+}
 .history-list {
   display: flex;
   flex-direction: column;

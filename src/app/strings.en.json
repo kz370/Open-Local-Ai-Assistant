@@ -380,7 +380,15 @@
       "languageCode": "Code (e.g. fr)",
       "languageName": "Name",
       "direction": "Direction",
-      "unsupportedLanguageHint": "Automatic detection and replies aren't available for this language yet — only its voice preference is used here."
+      "unsupportedLanguageHint": "Replies in this language follow the language you choose under Language. Automatic language detection only covers English, Arabic and German.",
+      "searchLanguage": "Search languages…",
+      "noLanguageMatch": "No language matches.",
+      "noVoiceTitle": "No voice installed for {{language}}",
+      "noVoiceStep1": "Find a voice for it — look for a Piper voice named vits-piper-{{code}}_… (or an MMS voice) in the list below.",
+      "noVoiceStep2": "Download it and extract it into its own folder. It must contain a .onnx file, tokens.txt and espeak-ng-data.",
+      "noVoiceStep3": "Add the folder containing it with \"Add folder\". The voice then appears in the list here.",
+      "noVoiceList": "Browse available voices",
+      "noVoiceDownloads": "Open downloads"
     },
     "language": {
       "response": "Response language",
