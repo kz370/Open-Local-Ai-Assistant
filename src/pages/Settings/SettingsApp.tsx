@@ -29,9 +29,26 @@ const SECTIONS: { id: string; icon: ComponentType<{ size?: number }>; view: Comp
   { id: "diagnostics", icon: Activity, view: DiagnosticsSection },
 ];
 
+/** Index of the match, preferring one at the start of a word over a mid-word hit. */
+function matchIndex(text: string, q: string): number {
+  const lower = text.toLowerCase();
+  const needle = q.toLowerCase();
+  let at = lower.indexOf(needle);
+  while (at > 0 && /[\p{L}\p{N}]/u.test(lower[at - 1])) {
+    const next = lower.indexOf(needle, at + 1);
+    if (next < 0) return lower.indexOf(needle);
+    at = next;
+  }
+  return at;
+}
+
+function isWordStart(text: string, at: number): boolean {
+  return at === 0 || !/[\p{L}\p{N}]/u.test(text[at - 1]);
+}
+
 function highlightMatch(text: string, q: string) {
-  const at = text.toLowerCase().indexOf(q.toLowerCase());
-  if (at < 0) return text;
+  const at = matchIndex(text, q);
+  if (at < 0 || q.length < 2 || !isWordStart(text, at)) return text;
   return (
     <>
       {text.slice(0, at)}
@@ -54,7 +71,16 @@ export function SettingsApp() {
   const results = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return [];
-    return index.filter((e) => e.text.toLowerCase().includes(q)).slice(0, 8);
+    const rank = (text: string) => {
+      const at = matchIndex(text, q);
+      return at === 0 ? 0 : isWordStart(text, at) ? 1 : 2;
+    };
+    return index
+      .filter((e) => e.text.toLowerCase().includes(q))
+      .map((e) => ({ e, r: rank(e.text) }))
+      .sort((a, b) => a.r - b.r || a.e.text.length - b.e.text.length)
+      .slice(0, 8)
+      .map((x) => x.e);
   }, [query, index]);
 
   const [activeIdx, setActiveIdx] = useState(0);
