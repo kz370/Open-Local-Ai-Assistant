@@ -15,7 +15,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Local Assistant",
+        "title": "Open Local Assistant",
         "url": "index.html#/",
         "width": 480,
         "height": 640,
@@ -40,7 +40,7 @@
   "bundle": {
     "active": true,
     "targets": ["nsis", "msi"],
-    "publisher": "Local Assistant",
+    "publisher": "Open Local Assistant",
     "shortDescription": "Local-first desktop AI assistant powered by LM Studio",
     "longDescription": "A private desktop assistant that uses your local LM Studio server, local speech recognition and local neural text-to-speech.",
     "category": "Productivity",

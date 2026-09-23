@@ -1,4 +1,4 @@
-# Local Assistant
+# Open Local Assistant
 
 A small, fast, local-first desktop AI assistant. It lives in a floating window (bottom-right by default), runs in the system tray, and opens with a global shortcut. You can type or talk to it in **English, Arabic or German**, and it can answer out loud with natural local voices.
 

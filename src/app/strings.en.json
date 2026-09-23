@@ -1,6 +1,6 @@
 {
   "app": {
-    "name": "Local Assistant",
+    "name": "Open Local Assistant",
     "close": "Close to tray",
     "hide": "Hide",
     "minimize": "Minimize to bubble",
@@ -40,7 +40,7 @@
     "test": "Test",
     "remove": "Remove",
     "add": "Add",
-    "quit": "Quit Local Assistant"
+    "quit": "Quit Open Local Assistant"
   },
   "chat": {
     "you": "You",
@@ -207,6 +207,7 @@
       "search": "Web Search",
       "mcp": "MCP & Tools",
       "privacy": "Privacy",
+      "about": "About",
       "appearance": "Appearance",
       "shortcuts": "Keyboard Shortcuts",
       "diagnostics": "Diagnostics"
@@ -217,7 +218,7 @@
     },
     "backup": {
       "title": "Backup",
-      "intro": "Save all settings to an encrypted file that only Local Assistant can open, and load them again here or on another computer. Conversations and MCP servers are not included.",
+      "intro": "Save all settings to an encrypted file that only Open Local Assistant can open, and load them again here or on another computer. Conversations and MCP servers are not included.",
       "includeKeys": "Include API keys",
       "includeKeysHint": "Off by default. The file is encrypted, but anyone who has it and this app can load the keys.",
       "actions": "Settings file",
@@ -633,6 +634,12 @@
       "runSelfTest": "Run self-test",
       "selfTestHint": "Calls every backend command this window uses and reports which ones answer."
     },
+    "about": {
+      "tagline": "A private assistant that runs on your computer with LM Studio.",
+      "version": "Version",
+      "privacy": "Everything runs on this computer. Your conversations, voice and settings never leave it.",
+      "dataFolder": "Data folder"
+    },
     "silma": {
       "title": "Natural Arabic voice (SILMA)",
       "intro": "SILMA speaks Arabic far more naturally than the built-in voices and adds the missing vowel marks (tashkeel) by itself. It speaks Arabic only; English and German use the built-in voices. It runs on PyTorch, so it is a one-time setup; after that the app starts and stops it automatically.",
@@ -692,7 +699,7 @@
     }
   },
   "setup": {
-    "welcome": "Welcome to Local Assistant",
+    "welcome": "Welcome to Open Local Assistant",
     "intro": "A private assistant that runs on your computer with LM Studio.",
     "scanning": "Scanning your computer…",
     "lmStudio": "LM Studio detected",

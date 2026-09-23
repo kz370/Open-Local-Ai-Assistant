@@ -43,7 +43,7 @@ pub fn encrypt(settings: &Settings) -> AppResult<Vec<u8>> {
 }
 
 pub fn decrypt(bytes: &[u8]) -> AppResult<Settings> {
-    let invalid = || AppError::Invalid("this is not a Local Assistant settings backup, or it was damaged".into());
+    let invalid = || AppError::Invalid("this is not an Open Local Assistant settings backup, or it was damaged".into());
     let rest = bytes.strip_prefix(MAGIC).ok_or_else(invalid)?;
     if rest.len() <= NONCE_LEN {
         return Err(invalid());

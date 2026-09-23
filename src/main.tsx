@@ -72,7 +72,7 @@ function Root() {
   if (startupError || (ready && !settings)) {
     return (
       <div style={{ padding: 20, userSelect: "text" }}>
-        <h1 style={{ fontSize: 16, margin: "0 0 6px" }}>Local Assistant could not start.</h1>
+        <h1 style={{ fontSize: 16, margin: "0 0 6px" }}>Open Local Assistant could not start.</h1>
         <p style={{ fontSize: 13, color: "var(--text-muted)" }}>{startupError ?? "Settings could not be loaded."}</p>
         <button className="btn" onClick={() => location.reload()}>
           Retry

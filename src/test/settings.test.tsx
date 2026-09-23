@@ -127,7 +127,7 @@ function mockBackend() {
   });
 }
 
-const SECTIONS = ["general", "ai", "speech", "voice", "language", "dictation", "search", "mcp", "privacy", "appearance", "shortcuts", "diagnostics"];
+const SECTIONS = ["general", "ai", "speech", "voice", "language", "dictation", "search", "mcp", "privacy", "about", "appearance", "shortcuts", "diagnostics"];
 
 describe("settings dashboard", () => {
   beforeEach(async () => {

@@ -11,7 +11,7 @@
 AppId={{E4B7C2A1-5F3D-4E8A-9C1B-2D3E4F5A6B7C}}
 AppName={#AppName}
 AppVersion={#AppVersion}
-AppPublisher=Local Assistant
+AppPublisher=Open Local Assistant
 DefaultDirName={autopf}\Open Local Assistant
 PrivilegesRequired=admin
 OutputDir={#OutputDir}

@@ -2,7 +2,7 @@
 name = "local-ai-assistant"
 version = "0.1.0"
 description = "Local-first desktop AI assistant powered by LM Studio"
-authors = ["Local Assistant"]
+authors = ["Open Local Assistant"]
 edition = "2021"
 default-run = "local-ai-assistant"
 
