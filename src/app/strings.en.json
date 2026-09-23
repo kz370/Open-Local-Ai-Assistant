@@ -656,6 +656,7 @@
       "states": {
         "loaded": "Loaded",
         "loading": "Loading…",
+        "unloading": "Unloading…",
         "idle": "Not loaded",
         "missing": "Not installed",
         "failed": "Unavailable"

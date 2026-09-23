@@ -390,6 +390,9 @@ pub struct Silma {
     run: Arc<(Mutex<RunState>, Condvar)>,
     pending: Arc<Mutex<HashMap<u64, Sender<Reply>>>>,
     next_id: AtomicU64,
+    /// Bumped on every start and stop, so a helper that was stopped cannot
+    /// overwrite the state of the one that replaced it.
+    generation: Arc<AtomicU64>,
     emit: Arc<dyn Fn(SilmaStatus) + Send + Sync>,
     force_cpu: AtomicBool,
 }
@@ -403,6 +406,7 @@ impl Silma {
             run: Arc::new((Mutex::new(RunState { state: "off".into(), ..Default::default() }), Condvar::new())),
             pending: Arc::new(Mutex::new(HashMap::new())),
             next_id: AtomicU64::new(1),
+            generation: Arc::new(AtomicU64::new(0)),
             emit,
             force_cpu: AtomicBool::new(false),
         }
@@ -472,6 +476,7 @@ impl Silma {
         let stdin = child.stdin.take().expect("piped");
         let stdout = child.stdout.take().expect("piped");
         let stderr = child.stderr.take().expect("piped");
+        let my_gen = self.generation.fetch_add(1, Ordering::SeqCst) + 1;
         self.set_state("starting", None, None);
         tracing::info!("SILMA helper started");
 
@@ -486,7 +491,7 @@ impl Silma {
             })
             .map_err(|e| AppError::Tts(e.to_string()))?;
 
-        let (run, pending, emit) = (self.run.clone(), self.pending.clone(), self.emit.clone());
+        let (run, pending, emit, generation) = (self.run.clone(), self.pending.clone(), self.emit.clone(), self.generation.clone());
         let data_dir = self.data_dir.clone();
         let nvidia = self.nvidia;
         std::thread::Builder::new()
@@ -523,6 +528,11 @@ impl Silma {
                             }
                         }
                     }
+                }
+                // Stopped or replaced on purpose: stop() / the new start() already set the state.
+                if generation.load(Ordering::SeqCst) != my_gen {
+                    tracing::info!("SILMA helper exited");
+                    return;
                 }
                 // Process ended: fail whatever is still waiting.
                 pending.lock().unwrap_or_else(|p| p.into_inner()).clear();
@@ -578,18 +588,22 @@ impl Silma {
 
     /// Stops the helper (frees its GPU memory).
     pub fn stop(&self) {
-        if let Some(mut p) = self.proc.lock().unwrap_or_else(|p| p.into_inner()).take() {
-            let _ = writeln!(p.stdin, "{{\"cmd\":\"quit\"}}");
-            drop(p.stdin);
-            let started = Instant::now();
-            while started.elapsed() < Duration::from_secs(2) {
-                if matches!(p.child.try_wait(), Ok(Some(_))) {
-                    return;
-                }
-                std::thread::sleep(Duration::from_millis(50));
+        let Some(mut p) = self.proc.lock().unwrap_or_else(|p| p.into_inner()).take() else { return };
+        // Report "off" right away: the reader thread only notices the exit later,
+        // and the UI must not keep offering "Unload" until then.
+        self.generation.fetch_add(1, Ordering::SeqCst);
+        self.pending.lock().unwrap_or_else(|p| p.into_inner()).clear();
+        self.set_state("off", None, None);
+        let _ = writeln!(p.stdin, "{{\"cmd\":\"quit\"}}");
+        drop(p.stdin);
+        let started = Instant::now();
+        while started.elapsed() < Duration::from_secs(2) {
+            if matches!(p.child.try_wait(), Ok(Some(_))) {
+                return;
             }
-            let _ = p.child.kill();
+            std::thread::sleep(Duration::from_millis(50));
         }
+        let _ = p.child.kill();
     }
 
     pub fn remove(&self) -> AppResult<()> {

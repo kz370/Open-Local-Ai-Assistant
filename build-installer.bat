@@ -46,7 +46,7 @@ if %JOBS% LSS 1 set JOBS=1
 
 
 echo [1/4] Building frontend...
-if not exist "%ROOT%node_modules" goto :npm_install
+if not exist "%ROOT%node_modules" goto :npm_install 
 goto :skip_npm
 :npm_install
 echo       installing frontend dependencies...

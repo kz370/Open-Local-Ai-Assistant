@@ -26,7 +26,7 @@ const BADGE: Record<MemoryItem["state"], string> = { loaded: " ok", loading: "",
 export function MemorySection() {
   const [s, set] = useS();
   const [items, setItems] = useState<MemoryItem[] | null>(null);
-  const [busy, setBusy] = useState<Set<string>>(new Set());
+  const [busy, setBusy] = useState<Map<string, "load" | "unload">>(new Map());
   const [error, setError] = useState<AppErrorPayload | null>(null);
 
   const refresh = () => ipc.memoryStatus().then(setItems, (e) => setError(toAppError(e)));
@@ -43,18 +43,19 @@ export function MemorySection() {
 
   const run = async (key: string, action: "load" | "unload") => {
     setError(null);
-    setBusy((b) => new Set(b).add(key));
+    setBusy((b) => new Map(b).set(key, action));
     try {
       await (action === "load" ? ipc.memoryLoad(key) : ipc.memoryUnload(key));
     } catch (e) {
       setError(toAppError(e));
     } finally {
+      // Show the new state before dropping the spinner, or the old button flashes back.
+      await refresh();
       setBusy((b) => {
-        const n = new Set(b);
+        const n = new Map(b);
         n.delete(key);
         return n;
       });
-      void refresh();
     }
   };
 
@@ -86,14 +87,16 @@ export function MemorySection() {
       >
         {items === null && <p className="row-hint">{t("settings.memory.checking")}</p>}
         {items?.map((item) => {
-          const working = busy.has(item.key) || item.state === "loading";
+          const action = busy.get(item.key);
+          const working = action !== undefined || item.state === "loading";
+          const stateLabel = action === "unload" ? "unloading" : working ? "loading" : item.state;
           const canLoad = item.state === "idle" || item.state === "failed";
           const canUnload = item.state === "loaded" && item.key !== "llm";
           return (
             <Row key={item.key} label={rowLabel(item)} hint={item.model || t("settings.memory.none")}>
               <span className={`badge${BADGE[item.state]}`}>
-                {working && <span className="spinner" style={{ width: 10, height: 10 }} />} {t(`settings.memory.states.${working ? "loading" : item.state}`)}
-                {item.detail && item.state !== "failed" ? ` · ${item.detail}` : ""}
+                {working && <span className="spinner" style={{ width: 10, height: 10 }} />} {t(`settings.memory.states.${stateLabel}`)}
+                {item.detail && item.state !== "failed" && !working ? ` · ${item.detail}` : ""}
               </span>
               {canLoad && item.key !== "llm" && (
                 <button className="btn btn-sm" disabled={working} onClick={() => void run(item.key, "load")}>
