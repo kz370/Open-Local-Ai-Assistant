@@ -75,16 +75,59 @@ fn render_accent_icon(accent: &str) -> Image<'static> {
     Image::new_owned(rgba, S, S)
 }
 
+/// Tauri's `set_icon` only sets the window's small icon (title bar, alt-tab),
+/// but the taskbar button reads the big one, which is otherwise never set and
+/// falls back to the exe icon. Set it ourselves. Handles are cached per accent
+/// and never destroyed: a window may still point at an earlier one.
+#[cfg(windows)]
+fn set_taskbar_icon(window: &tauri::WebviewWindow, accent: &str) {
+    use std::collections::HashMap;
+    use std::sync::{Mutex, OnceLock};
+    use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
+    use windows::Win32::UI::WindowsAndMessaging::{CreateIcon, PostMessageW, ICON_BIG, WM_SETICON};
+
+    static CACHE: OnceLock<Mutex<HashMap<String, isize>>> = OnceLock::new();
+    let Ok(hwnd) = window.hwnd() else { return };
+    let hicon = {
+        let mut cache = CACHE.get_or_init(Default::default).lock().unwrap_or_else(|e| e.into_inner());
+        match cache.get(accent) {
+            Some(&h) => h,
+            None => {
+                let img = render_accent_icon(accent);
+                let (w, h) = (img.width(), img.height());
+                // 32bpp XOR bits are BGRA; alpha does the masking, so the
+                // 1bpp AND mask (rows padded to 16 bits) stays all zero.
+                let mut bgra = img.rgba().to_vec();
+                for px in bgra.chunks_exact_mut(4) {
+                    px.swap(0, 2);
+                }
+                let and_mask = vec![0u8; (w.div_ceil(16) * 2 * h) as usize];
+                let Ok(icon) = (unsafe { CreateIcon(None, w as i32, h as i32, 1, 32, and_mask.as_ptr(), bgra.as_ptr()) }) else {
+                    tracing::warn!("taskbar icon create failed");
+                    return;
+                };
+                cache.insert(accent.to_string(), icon.0 as isize);
+                icon.0 as isize
+            }
+        }
+    };
+    // Post, not send: callers may be off the UI thread while it is busy.
+    let _ = unsafe { PostMessageW(Some(HWND(hwnd.0 as _)), WM_SETICON, WPARAM(ICON_BIG as usize), LPARAM(hicon)) };
+}
+
+#[cfg(not(windows))]
+fn set_taskbar_icon(_window: &tauri::WebviewWindow, _accent: &str) {}
+
 /// Re-pushes the accent icon to one window. Windows builds a window's taskbar
 /// button when it is first shown and can keep the generic icon it had while
 /// the window was hidden, so a window created hidden needs this after `show`.
 pub fn apply_accent_to(window: &tauri::WebviewWindow, accent: &str) {
     let _ = window.set_icon(render_accent_icon(accent));
+    set_taskbar_icon(window, accent);
 }
 
 /// Push accent icon to tray + all windows. Failures only warn.
 pub fn apply_accent(app: &tauri::AppHandle, accent: &str) {
-    let icon = render_accent_icon(accent);
     // Tray (taskbar overflow on Windows).
     if let Some(tray) = app.tray_by_id("main") {
         // set_icon takes Option<Image>; clone via fresh render (cheap 64px).
@@ -94,9 +137,8 @@ pub fn apply_accent(app: &tauri::AppHandle, accent: &str) {
     }
     // Windows (taskbar icon for settings, alt-tab, etc).
     for w in app.webview_windows().values() {
-        let _ = w.set_icon(render_accent_icon(accent));
+        apply_accent_to(w, accent);
     }
-    let _ = icon;
 }
 
 #[cfg(test)]

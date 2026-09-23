@@ -267,6 +267,12 @@ pub async fn memory_load(app: AppHandle, key: String) -> CmdResult<()> {
     load(&app, &key).await
 }
 
+/// Stopping the helper waits for its process to exit, so keep that off the async workers.
+async fn stop_silma(state: &AppState) {
+    let silma = state.silma.clone();
+    let _ = tokio::task::spawn_blocking(move || silma.stop()).await;
+}
+
 #[tauri::command]
 pub async fn memory_unload(app: AppHandle, state: State<'_, AppState>, key: String) -> CmdResult<()> {
     match key.as_str() {
@@ -276,11 +282,11 @@ pub async fn memory_unload(app: AppHandle, state: State<'_, AppState>, key: Stri
             }
             state.stt.unload();
         }
-        "silma" => state.silma.stop(),
+        "silma" => stop_silma(&state).await,
         k if k.starts_with("voice:") => {
             let lang = lang_from_key(k).ok_or_else(|| AppError::Invalid(k.into()))?;
             match state.tts.selected_voice(lang) {
-                Some(v) if v.engine == Engine::Silma => state.silma.stop(),
+                Some(v) if v.engine == Engine::Silma => stop_silma(&state).await,
                 Some(v) => state.tts.unload_model(&v.model_id),
                 None => {}
             }
