@@ -75,6 +75,13 @@ fn render_accent_icon(accent: &str) -> Image<'static> {
     Image::new_owned(rgba, S, S)
 }
 
+/// Re-pushes the accent icon to one window. Windows builds a window's taskbar
+/// button when it is first shown and can keep the generic icon it had while
+/// the window was hidden, so a window created hidden needs this after `show`.
+pub fn apply_accent_to(window: &tauri::WebviewWindow, accent: &str) {
+    let _ = window.set_icon(render_accent_icon(accent));
+}
+
 /// Push accent icon to tray + all windows. Failures only warn.
 pub fn apply_accent(app: &tauri::AppHandle, accent: &str) {
     let icon = render_accent_icon(accent);

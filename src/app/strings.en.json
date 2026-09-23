@@ -230,7 +230,7 @@
       "startWithOs": "Start with Windows",
       "startMinimized": "Start minimized to tray",
       "preloadModels": "Load models when the app starts",
-      "preloadModelsHint": "Speech recognition, voices, SILMA and the LM Studio chat model load in the background, so the first answer is instant. Uses memory while idle.",
+      "preloadModelsHint": "Speech recognition, voices, SILMA and the LM Studio chat model load in the background, so the first answer is instant. Uses memory while idle. Switch off single models in the list below; a model you unload loads again when it is needed.",
       "alwaysOnTop": "Always on top",
       "windowPosition": "Window position",
       "windowPositionHint": "Bottom-right, bottom-left and center lock the chat window in place. Choose Custom to drag it anywhere; it remembers where you leave it.",
@@ -650,6 +650,7 @@
       "load": "Load",
       "unload": "Unload",
       "loadAll": "Load all",
+      "autoload": "Load at startup",
       "refresh": "Refresh",
       "checking": "Checking…",
       "states": {

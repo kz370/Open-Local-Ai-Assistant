@@ -172,7 +172,7 @@ fn on_voice_event(app: &AppHandle, ev: VoiceEvent) {
 pub(crate) fn preload_models(app: &AppHandle) {
     if app.state::<AppState>().settings.get().general.preload_models {
         tracing::info!("preloading models");
-        commands::memory::load_all(app);
+        commands::memory::load_all(app, true);
     }
 }
 

@@ -105,6 +105,17 @@ export function MemorySection() {
                   <Upload size={13} /> {t("settings.memory.unload")}
                 </button>
               )}
+              {item.autoloadKey && (
+                <label className="row-hint" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                  {t("settings.memory.autoload")}
+                  <Switch
+                    id={`sw-autoload-${item.key}`}
+                    label={`${rowLabel(item)}: ${t("settings.memory.autoload")}`}
+                    checked={s.general.autoloadModels?.[item.autoloadKey] !== false}
+                    onChange={(v) => set((d) => void ((d.general.autoloadModels ??= {})[item.autoloadKey] = v))}
+                  />
+                </label>
+              )}
               {item.state === "failed" && item.detail && <span className="row-hint">{item.detail}</span>}
             </Row>
           );

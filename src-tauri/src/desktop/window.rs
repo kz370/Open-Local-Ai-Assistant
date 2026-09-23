@@ -555,6 +555,9 @@ pub fn open_settings(app: &AppHandle, section: Option<&str>) -> tauri::Result<()
         tracing::error!(error = %e, "open_settings focus failed");
         return Err(e.into());
     }
+    // The window was built hidden at startup, so its taskbar button only exists
+    // now; give it the accent icon again so it does not show up broken.
+    super::icon::apply_accent_to(&w, &app.state::<AppState>().settings.get().general.accent);
     // TEMP PROBE (remove after diagnosis): if JS runs, body goes red under
     // the opaque UI (invisible when healthy). Red visible = nav+JS alive,
     // React missing. White = navigation dead.

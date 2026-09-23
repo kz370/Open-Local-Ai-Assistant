@@ -62,6 +62,9 @@ pub struct GeneralSettings {
     /// Load the speech, voice and chat models in the background at startup,
     /// so the first use does not wait for them (costs RAM/VRAM while idle).
     pub preload_models: bool,
+    /// Per-model opt-out of that startup load, keyed like the "Models in memory"
+    /// rows ("stt", "voice:en", "voice:ar", "voice:de", "llm"). Missing = on.
+    pub autoload_models: std::collections::BTreeMap<String, bool>,
     pub always_on_top: bool,
     /// "bottom-right" | "bottom-left" | "center" | "custom"
     pub window_position: String,
@@ -80,6 +83,13 @@ pub struct GeneralSettings {
     pub suggested_prompts: Vec<String>,
 }
 
+impl GeneralSettings {
+    /// Whether `key` (see [`Self::autoload_models`]) loads at startup.
+    pub fn autoloads(&self, key: &str) -> bool {
+        self.autoload_models.get(key).copied().unwrap_or(true)
+    }
+}
+
 impl Default for GeneralSettings {
     fn default() -> Self {
         Self {
@@ -91,6 +101,7 @@ impl Default for GeneralSettings {
             start_with_os: false,
             start_minimized: false,
             preload_models: true,
+            autoload_models: Default::default(),
             always_on_top: false,
             window_position: "bottom-right".into(),
             window: WindowGeometry::default(),
