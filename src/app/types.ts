@@ -79,8 +79,6 @@ export interface Settings {
     model: string;
     language: string;
     microphone: string | null;
-    micOnly: boolean;
-    isolateSystemAudio: boolean;
     hardware: "auto" | "cpu";
     autoSubmit: boolean;
     handsFree: boolean;

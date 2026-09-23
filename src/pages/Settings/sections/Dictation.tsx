@@ -127,12 +127,6 @@ export function DictationSection() {
         <Row label={t("settings.dictation.review")} hint={t("settings.dictation.reviewHint")} htmlFor="sw-review">
           <Switch id="sw-review" label={t("settings.dictation.review")} checked={d.reviewBeforeInsert} onChange={(v) => set((x) => void (x.dictation.reviewBeforeInsert = v))} />
         </Row>
-        <Row label={t("settings.speech.micOnly")} hint={t("settings.speech.micOnlyHint")} htmlFor="sw-miconly-dict">
-          <Switch id="sw-miconly-dict" label={t("settings.speech.micOnly")} checked={s.stt.micOnly} onChange={(v) => set((x) => void (x.stt.micOnly = v))} />
-        </Row>
-        <Row label={t("settings.speech.isolateSystemAudio")} hint={t("settings.speech.isolateSystemAudioHint")} htmlFor="sw-isolate-dict">
-          <Switch id="sw-isolate-dict" label={t("settings.speech.isolateSystemAudio")} checked={s.stt.isolateSystemAudio} onChange={(v) => set((x) => void (x.stt.isolateSystemAudio = v))} />
-        </Row>
         <Row label={t("settings.dictation.overlayPosition")} hint={t("settings.dictation.overlayPositionHint")}>
           <button className="btn btn-sm" onClick={() => void ipc.dictationResetOverlayPosition()}>
             {t("overlay.resetPosition")}

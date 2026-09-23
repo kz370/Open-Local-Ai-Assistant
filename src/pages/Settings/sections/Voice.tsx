@@ -12,11 +12,11 @@ import { SilmaCard } from "../../../components/settings/SilmaCard";
 import { LevelMeter } from "../../../components/voice/LevelMeter";
 import { useS } from "./Basic";
 
-function useDevices(micOnly: boolean) {
+function useDevices() {
   const [devices, setDevices] = useState<{ inputs: AudioDevice[]; outputs: AudioDevice[] }>({ inputs: [], outputs: [] });
   useEffect(() => {
     void ipc.audioDevices().then(setDevices);
-  }, [micOnly]);
+  }, []);
   return devices;
 }
 
@@ -213,7 +213,7 @@ function languageLabel(e: LanguageEntry) {
 
 export function SpeechSection() {
   const [s, set] = useS();
-  const devices = useDevices(s.stt.micOnly);
+  const devices = useDevices();
   const installed = useInstalled();
   const gpu = useGpuStatus();
   const sttModels = installed.filter((m) => m.kind === "stt");
@@ -249,12 +249,6 @@ export function SpeechSection() {
         </Row>
         <Row label={t("settings.speech.testMic")}>
           <MicTest microphone={s.stt.microphone} />
-        </Row>
-        <Row label={t("settings.speech.micOnly")} hint={t("settings.speech.micOnlyHint")} htmlFor="sw-miconly">
-          <Switch id="sw-miconly" label={t("settings.speech.micOnly")} checked={s.stt.micOnly} onChange={(v) => set((d) => void (d.stt.micOnly = v))} />
-        </Row>
-        <Row label={t("settings.speech.isolateSystemAudio")} hint={t("settings.speech.isolateSystemAudioHint")} htmlFor="sw-isolate">
-          <Switch id="sw-isolate" label={t("settings.speech.isolateSystemAudio")} checked={s.stt.isolateSystemAudio} onChange={(v) => set((d) => void (d.stt.isolateSystemAudio = v))} />
         </Row>
         <Row label={t("settings.speech.hardware")}>
           {gpu?.supported ? (
@@ -350,7 +344,7 @@ function NoVoiceHelp({ entry }: { entry: LanguageEntry }) {
 
 export function VoiceSection() {
   const [s, set] = useS();
-  const devices = useDevices(s.stt.micOnly);
+  const devices = useDevices();
   const voices = useVoices();
   const gpu = useGpuStatus();
   const [error, setError] = useState<AppErrorPayload | null>(null);

@@ -120,8 +120,7 @@ impl LocalCapabilityManager {
 
     pub async fn scan(&self, settings: &Settings) -> CapabilityReport {
         let lm_studio = self.detect_lm_studio().await;
-        let mic_only = settings.stt.mic_only;
-        let (microphones, audio_outputs) = tokio::task::spawn_blocking(move || (devices::list_inputs(mic_only), devices::list_outputs()))
+        let (microphones, audio_outputs) = tokio::task::spawn_blocking(|| (devices::list_inputs(), devices::list_outputs()))
             .await
             .unwrap_or_default();
         let statuses = self.mcp.statuses().await.unwrap_or_default();

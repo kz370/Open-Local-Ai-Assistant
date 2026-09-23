@@ -8,12 +8,12 @@
 use super::engine::Recognizer;
 use super::SttService;
 use crate::errors::{AppError, AppResult};
-use crate::services::audio::capture::{Capture, CaptureEvent, LoopbackMonitor};
+use crate::services::audio::capture::{Capture, CaptureEvent};
 use crate::services::language::{detect, Lang};
 use crate::settings::{SettingsStore, SttSettings};
 use serde::{Deserialize, Serialize};
 use std::cell::Cell;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -121,24 +121,8 @@ impl VoiceSessions {
             let _ = prev.join();
         }
 
-        let (capture, rx) = Capture::start(settings.stt.microphone.as_deref(), settings.stt.mic_only)?;
+        let (capture, rx) = Capture::start(settings.stt.microphone.as_deref())?;
         let device = capture.device_name.clone();
-        // Best-effort: if the speaker loopback can't be opened, sessions just
-        // run without system-audio gating instead of failing to start.
-        let loopback = if settings.stt.isolate_system_audio && mode != ListenMode::Test {
-            // Watch the very output the assistant speaks through, not just the
-            // system default, or nothing is gated when they differ.
-            match LoopbackMonitor::start(settings.tts.output_device.as_deref()) {
-                Ok(m) => Some(m),
-                Err(e) => {
-                    tracing::warn!(error = %e, "system audio isolation is on but the speaker monitor could not start");
-                    None
-                }
-            }
-        } else {
-            None
-        };
-        let system_audio = loopback.as_ref().map(|l| l.level_handle());
         let stop = Arc::new(AtomicBool::new(false));
         let discard = Arc::new(AtomicBool::new(false));
         // A fresh session always starts listening: a mute belongs to the call
@@ -153,7 +137,7 @@ impl VoiceSessions {
         let thread = std::thread::Builder::new()
             .name("voice-session".into())
             .spawn(move || {
-                let (mut capture, mut loopback) = (capture, loopback);
+                let mut capture = capture;
                 let ctx = SessionCtx {
                     mode,
                     emit: emit.clone(),
@@ -162,14 +146,10 @@ impl VoiceSessions {
                     settings: stt_settings.clone(),
                     stop: stop2,
                     discard: discard2,
-                    system_audio,
                     muted_until: Cell::new(None),
                 };
                 run_session(&stt, &ctx, &rx, vad_path.as_deref());
                 capture.stop();
-                if let Some(lb) = loopback.as_mut() {
-                    lb.stop();
-                }
                 emit(VoiceEvent::State { mode, state: "idle".into(), device: None, streaming });
             })
             .map_err(|e| AppError::Audio(e.to_string()))?;
@@ -236,7 +216,6 @@ pub fn run_session_for_test(
         settings: settings.clone(),
         stop,
         discard: Arc::new(AtomicBool::new(false)),
-        system_audio: None,
         muted_until: Cell::new(None),
     };
     run_session(stt, &ctx, rx, vad_path);
@@ -271,11 +250,9 @@ struct SessionCtx {
     settings: SttSettings,
     stop: Arc<AtomicBool>,
     discard: Arc<AtomicBool>,
-    /// Live speaker-loopback level, when "isolate system audio" is on.
-    system_audio: Option<Arc<AtomicU32>>,
-    /// Keeps the microphone gated for a short tail after the speakers go quiet.
-    /// Captured audio reaches this loop later than the loopback level does, so
-    /// without the tail the end of every spoken phrase still bleeds in.
+    /// Keeps the microphone gated for a short tail after the assistant stops
+    /// speaking. Captured audio reaches this loop later than the playback
+    /// state changes, so without the tail its last word still bleeds in.
     muted_until: Cell<Option<Instant>>,
 }
 
@@ -303,9 +280,7 @@ impl SilenceGuard {
 
 /// Level above which we consider the microphone to be picking up speech.
 const SPEECH_LEVEL: f32 = 0.22;
-/// Level above which we consider the speakers to be audibly playing something.
-const SYSTEM_AUDIO_LEVEL: f32 = 0.12;
-/// How long the microphone stays gated after the last audible speaker sample:
+/// How long the microphone stays gated after the assistant stops speaking:
 /// covers the playback/capture latency and the room tail of the last word, and
 /// bridges the short silences between words so the gate does not flap.
 const AUDIO_TAIL: Duration = Duration::from_millis(700);
@@ -315,22 +290,19 @@ impl SessionCtx {
         self.stop.load(Ordering::Relaxed)
     }
 
-    /// True while this sample should be ignored instead of transcribed: the
-    /// user muted the microphone, or the assistant is speaking (hands-free), or
-    /// "isolate system audio" is on and the speakers are audibly playing
-    /// something, or either was true within the last `AUDIO_TAIL`.
     /// True while the user has muted the microphone from the call screen.
     fn mic_muted(&self) -> bool {
         self.muted.load(Ordering::Relaxed)
     }
 
+    /// True while this sample should be ignored instead of transcribed: the
+    /// user muted the microphone, or the assistant is speaking (hands-free) or
+    /// stopped within the last `AUDIO_TAIL`.
     fn input_muted(&self, hands_free: bool) -> bool {
         if self.mic_muted() {
             return true;
         }
-        let assistant = hands_free && (self.speaking)();
-        let speakers = self.system_audio.as_ref().is_some_and(|a| f32::from_bits(a.load(Ordering::Relaxed)) > SYSTEM_AUDIO_LEVEL);
-        if assistant || speakers {
+        if hands_free && (self.speaking)() {
             self.muted_until.set(Some(Instant::now() + AUDIO_TAIL));
             return true;
         }
@@ -598,7 +570,7 @@ impl SessionCtx {
 mod tests {
     use super::*;
 
-    fn ctx(system_audio: Option<Arc<AtomicU32>>, speaking: bool) -> SessionCtx {
+    fn ctx(speaking: bool) -> SessionCtx {
         SessionCtx {
             mode: ListenMode::Dictation,
             emit: Arc::new(|_| {}),
@@ -607,19 +579,18 @@ mod tests {
             settings: SttSettings::default(),
             stop: Arc::new(AtomicBool::new(false)),
             discard: Arc::new(AtomicBool::new(false)),
-            system_audio,
             muted_until: Cell::new(None),
         }
     }
 
     #[test]
-    fn no_gating_without_the_monitor() {
-        assert!(!ctx(None, false).input_muted(false));
+    fn no_gating_while_silent() {
+        assert!(!ctx(false).input_muted(false));
     }
 
     #[test]
     fn muting_gates_the_microphone_until_it_is_unmuted() {
-        let c = ctx(None, false);
+        let c = ctx(false);
         c.muted.store(true, Ordering::Relaxed);
         assert!(c.input_muted(false), "a muted microphone must hear nothing");
         assert!(c.input_muted(true));
@@ -628,27 +599,19 @@ mod tests {
     }
 
     #[test]
-    fn speakers_gate_the_microphone_and_keep_gating_for_the_tail() {
-        let level = Arc::new(AtomicU32::new(0.0f32.to_bits()));
-        let c = ctx(Some(level.clone()), false);
-        assert!(!c.input_muted(false), "silent speakers must not gate");
-
-        level.store(0.5f32.to_bits(), Ordering::Relaxed);
-        assert!(c.input_muted(false));
-
-        // The speakers go quiet: the microphone stays gated for the tail, because
-        // the audio it captured while they played arrives here a moment later.
-        level.store(0.0f32.to_bits(), Ordering::Relaxed);
-        assert!(c.input_muted(false), "the tail must still be gated");
-
-        c.muted_until.set(Some(Instant::now() - Duration::from_millis(1)));
-        assert!(!c.input_muted(false), "gate must reopen once the tail has passed");
+    fn assistant_speech_gates_hands_free_only() {
+        let c = ctx(true);
+        assert!(c.input_muted(true));
+        assert!(!ctx(true).input_muted(false));
     }
 
     #[test]
-    fn assistant_speech_gates_hands_free_only() {
-        let c = ctx(None, true);
-        assert!(c.input_muted(true));
-        assert!(!ctx(None, true).input_muted(false));
+    fn gate_keeps_the_tail_then_reopens() {
+        let c = ctx(false);
+        // The assistant just stopped: its last word is still in the pipeline.
+        c.muted_until.set(Some(Instant::now() + AUDIO_TAIL));
+        assert!(c.input_muted(true), "the tail must still be gated");
+        c.muted_until.set(Some(Instant::now() - Duration::from_millis(1)));
+        assert!(!c.input_muted(true), "gate must reopen once the tail has passed");
     }
 }
