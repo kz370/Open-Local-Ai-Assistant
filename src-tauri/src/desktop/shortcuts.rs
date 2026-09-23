@@ -115,13 +115,14 @@ fn dispatch_shortcut_action(app: &AppHandle, action: Action, pressed: bool) {
     }
 }
 
-fn start_dictation(app: &AppHandle) {
+pub fn start_dictation(app: &AppHandle) {
     let state = app.state::<AppState>();
     if state.dictation_busy.load(std::sync::atomic::Ordering::Relaxed) {
         return;
     }
     // Fresh session owns the cancel flag (clears a stale Esc).
     state.dictation_cancel.store(false, std::sync::atomic::Ordering::Relaxed);
+    window::remember_target(app);
     match state.voice.start(ListenMode::Dictation) {
         Ok(()) => window::show_overlay(app),
         Err(e) => {

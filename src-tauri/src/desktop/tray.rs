@@ -10,6 +10,7 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
     let new_conv = MenuItem::with_id(app, "new", "New Conversation", true, None::<&str>)?;
     let voice = MenuItem::with_id(app, "voice", "Voice Mode", true, None::<&str>)?;
     let dictation = MenuItem::with_id(app, "dictation", "Dictation", true, None::<&str>)?;
+    let dictation_history = MenuItem::with_id(app, "dictation-history", "Dictation History", true, None::<&str>)?;
     let settings = MenuItem::with_id(app, "settings", "Settings", true, None::<&str>)?;
     let diagnostics = MenuItem::with_id(app, "diagnostics", "Diagnostics", true, None::<&str>)?;
     let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
@@ -21,6 +22,7 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
             &new_conv,
             &voice,
             &dictation,
+            &dictation_history,
             &PredefinedMenuItem::separator(app)?,
             &settings,
             &PredefinedMenuItem::separator(app)?,
@@ -45,6 +47,9 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
                 let _ = app.emit_to(window::MAIN, "app://toggle-hands-free", ());
             }
             "dictation" => super::shortcuts::toggle_dictation(app),
+            "dictation-history" => {
+                let _ = window::open_settings(app, Some("dictation"));
+            }
             "settings" => {
                 let _ = window::open_settings(app, None);
             }

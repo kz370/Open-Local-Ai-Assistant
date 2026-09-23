@@ -111,6 +111,8 @@ export interface Settings {
     correctionModel: string | null;
     insertMethod: "type" | "paste";
     addTrailingSpace: boolean;
+    reviewBeforeInsert: boolean;
+    historyEnabled: boolean;
     overlayX: number | null;
     overlayY: number | null;
   };
@@ -509,8 +511,18 @@ export interface PrivacyStatus {
   internetServers: string[];
 }
 
+export interface DictationEntry {
+  id: string;
+  createdAt: string;
+  raw: string;
+  text: string;
+  corrected: boolean;
+  /** False when typing or pasting into the target application failed. */
+  inserted: boolean;
+}
+
 export interface DictationStateEvent {
-  state: "listening" | "transcribing" | "idle" | "correcting" | "inserted" | "empty" | "cancelled" | "error";
+  state: "listening" | "transcribing" | "idle" | "correcting" | "review" | "inserted" | "empty" | "cancelled" | "error";
   text?: string;
   error?: AppErrorPayload;
   result?: { raw: string; inserted: string; corrected: boolean; correctionError: string | null };

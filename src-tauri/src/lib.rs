@@ -116,6 +116,8 @@ fn init_state(app: &AppHandle) -> Result<AppState, Box<dyn std::error::Error>> {
         dictation_busy: AtomicBool::new(false),
         dictation_cancel: AtomicBool::new(false),
         dictation_live_typer: Default::default(),
+        dictation_review: Mutex::new(None),
+        dictation_target: std::sync::atomic::AtomicIsize::new(0),
         shortcut_errors: Mutex::new(Vec::new()),
     })
 }
@@ -144,7 +146,9 @@ fn on_voice_event(app: &AppHandle, ev: VoiceEvent) {
         }
         VoiceEvent::Partial { mode: ListenMode::Dictation, text } => {
             let state = app.state::<AppState>();
-            if state.settings.get().dictation.insert_method == "type" {
+            // Review mode types nothing until the user confirms the result.
+            let d = state.settings.get().dictation;
+            if d.insert_method == "type" && !d.review_before_insert {
                 state.dictation_live_typer.set_target(app.clone(), text.clone());
             }
         }
@@ -242,29 +246,96 @@ async fn run_dictation(app: AppHandle, raw: String) {
             state.dictation_busy.store(false, Ordering::Relaxed);
             return;
         }
-        let final_text = dictation::finalize_text(&text, &settings);
-        let insert = if settings.insert_method == "type" {
-            let app2 = app.clone();
-            tokio::task::spawn_blocking(move || app2.state::<AppState>().dictation_live_typer.finish(&final_text)).await
-        } else {
-            let s2 = settings.clone();
-            tokio::task::spawn_blocking(move || dictation::insert_text(&final_text, &s2)).await
-        };
-        match insert {
-            Ok(Ok(())) => {
-                let result = dictation::DictationResult { raw: raw.clone(), inserted: text.clone(), corrected, correction_error: correction_error.map(|e| e.to_string()) };
-                let _ = app.emit("dictation://state", serde_json::json!({ "state": "inserted", "result": result }));
-            }
-            Ok(Err(e)) => {
-                let _ = app.emit("dictation://state", serde_json::json!({ "state": "error", "error": e }));
-            }
-            Err(e) => {
-                let _ = app.emit("dictation://state", serde_json::json!({ "state": "error", "error": { "code": "other", "detail": e.to_string() } }));
-            }
+        let correction_error = correction_error.map(|e| e.to_string());
+        if settings.review_before_insert {
+            // Hold the result for editing. Stays "busy" until confirmed, retried or cancelled.
+            *state.dictation_review.lock().unwrap_or_else(|p| p.into_inner()) =
+                Some(dictation::ReviewPending { raw: raw.clone(), corrected, correction_error: correction_error.clone() });
+            window::set_overlay_review(&app, true);
+            let result = dictation::DictationResult { raw, inserted: text, corrected, correction_error };
+            let _ = app.emit("dictation://state", serde_json::json!({ "state": "review", "result": result }));
+            return;
         }
+        insert_and_report(&app, raw, text, corrected, correction_error, true).await;
     }
     state.dictation_busy.store(false, Ordering::Relaxed);
     hide_overlay_later(&app);
+}
+
+/// Types or pastes the final text, records it in the history and reports the
+/// outcome to the overlay. `live` means partials were typed while speaking.
+async fn insert_and_report(app: &AppHandle, raw: String, text: String, corrected: bool, correction_error: Option<String>, live: bool) {
+    let state = app.state::<AppState>();
+    let settings = state.settings.get().dictation;
+    let final_text = dictation::finalize_text(&text, &settings);
+    let insert = if live && settings.insert_method == "type" {
+        let app2 = app.clone();
+        tokio::task::spawn_blocking(move || app2.state::<AppState>().dictation_live_typer.finish(&final_text)).await
+    } else {
+        let s2 = settings.clone();
+        tokio::task::spawn_blocking(move || dictation::insert_text(&final_text, &s2)).await
+    };
+    if settings.history_enabled {
+        let inserted = matches!(insert, Ok(Ok(())));
+        match state.db.dictation_add(&raw, &text, corrected, inserted) {
+            Ok(()) => {
+                let _ = app.emit("dictation://history", ());
+            }
+            Err(e) => tracing::warn!(error = %e, "could not save the dictation to the history"),
+        }
+    }
+    match insert {
+        Ok(Ok(())) => {
+            let result = dictation::DictationResult { raw, inserted: text, corrected, correction_error };
+            let _ = app.emit("dictation://state", serde_json::json!({ "state": "inserted", "result": result }));
+        }
+        Ok(Err(e)) => {
+            let _ = app.emit("dictation://state", serde_json::json!({ "state": "error", "error": e }));
+        }
+        Err(e) => {
+            let _ = app.emit("dictation://state", serde_json::json!({ "state": "error", "error": { "code": "other", "detail": e.to_string() } }));
+        }
+    }
+}
+
+/// Inserts the (possibly edited) result the overlay is holding for review.
+pub(crate) async fn confirm_review(app: AppHandle, text: String) -> Result<(), errors::AppError> {
+    let state = app.state::<AppState>();
+    let pending = state
+        .dictation_review
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .take()
+        .ok_or_else(|| errors::AppError::Invalid("nothing is waiting to be inserted".into()))?;
+    let text = text.trim().to_string();
+    // The overlay took focus for editing: shrink it, give focus back to the
+    // window that was being dictated into, and let that settle before typing.
+    window::set_overlay_review(&app, false);
+    window::restore_target(&app);
+    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+    if text.is_empty() {
+        let _ = app.emit("dictation://state", serde_json::json!({ "state": "empty" }));
+    } else {
+        insert_and_report(&app, pending.raw, text, pending.corrected, pending.correction_error, false).await;
+    }
+    state.dictation_busy.store(false, Ordering::Relaxed);
+    hide_overlay_later(&app);
+    Ok(())
+}
+
+/// Throws away what was heard (or is still being heard) and listens again.
+pub(crate) async fn retry_dictation(app: AppHandle) {
+    let state = app.state::<AppState>();
+    if window::discard_review(&app) {
+        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+    } else if state.voice.active_mode() == Some(ListenMode::Dictation) {
+        state.voice.stop(true);
+        // Anything live-typed so far belongs to the take being thrown away.
+        retract_live_typed(&app).await;
+    } else {
+        return; // transcribing or correcting: nothing to retry yet
+    }
+    let _ = tokio::task::spawn_blocking(move || desktop::shortcuts::start_dictation(&app)).await;
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -406,6 +477,12 @@ pub fn run() {
             commands::voice::voice_start,
             commands::voice::voice_stop,
             commands::voice::dictation_cancel,
+            commands::voice::dictation_insert_now,
+            commands::voice::dictation_confirm,
+            commands::voice::dictation_retry,
+            commands::voice::dictation_history,
+            commands::voice::dictation_history_delete,
+            commands::voice::dictation_history_clear,
             commands::voice::dictation_reset_overlay_position,
             commands::voice::voice_status,
             commands::voice::voice_set_muted,

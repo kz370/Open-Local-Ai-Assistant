@@ -1,6 +1,7 @@
 //! Local SQLite storage for conversations, settings and MCP configuration.
 
 pub mod conversations;
+pub mod dictation;
 pub mod export;
 mod migrations;
 

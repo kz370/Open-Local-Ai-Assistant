@@ -408,6 +408,17 @@
       "type": "Typing",
       "paste": "Pasting (restores clipboard)",
       "trailingSpace": "Add a space after inserted text",
+      "review": "Review before inserting",
+      "reviewHint": "Show the result in the overlay so you can edit it, then insert it with Ctrl+Enter.",
+      "history": "Dictation history",
+      "historyEnabled": "Keep a history of dictations",
+      "historyEnabledHint": "Stored only on this computer (last 100). Useful when an insert fails or you closed the wrong window.",
+      "historyEmpty": "Nothing dictated yet.",
+      "historyNotInserted": "Not inserted",
+      "historyCopy": "Copy",
+      "historyCopied": "Copied",
+      "historyDelete": "Delete",
+      "historyClear": "Clear history",
       "requiresStt": "Dictation needs a local speech recognition model.",
       "overlayPosition": "Overlay position",
       "overlayPositionHint": "Drag the dictation overlay freely — hold Shift to move it horizontally only, Alt to move it vertically only."
@@ -702,7 +713,14 @@
     "speakNow": "Speak now",
     "hint": "Release to insert • Esc cancels",
     "hintToggle": "Press the shortcut again to insert • Esc cancels",
-    "resetPosition": "Reset overlay position"
+    "resetPosition": "Reset overlay position",
+    "insertNow": "Insert now",
+    "insertNowHint": "Stop listening and insert what you said",
+    "retry": "Retry",
+    "retryHint": "Throw this away and dictate again",
+    "review": "Review — edit if needed",
+    "insert": "Insert",
+    "insertHint": "Ctrl+Enter to insert • Esc discards"
   },
   "languages": {
     "en": "English",

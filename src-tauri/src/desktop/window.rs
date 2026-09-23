@@ -566,13 +566,120 @@ pub fn open_settings(app: &AppHandle, section: Option<&str>) -> tauri::Result<()
     Ok(())
 }
 
+/// Logical size of the dictation overlay while listening, and while a result
+/// waits for review (taller, to hold the editable text and its buttons).
+const OVERLAY_W: f64 = 440.0;
+const OVERLAY_H: f64 = 112.0;
+const OVERLAY_H_REVIEW: f64 = 176.0;
+
+#[cfg(windows)]
+fn hwnd_of(raw: isize) -> windows::Win32::Foundation::HWND {
+    windows::Win32::Foundation::HWND(raw as *mut core::ffi::c_void)
+}
+
+/// The window that currently has keyboard focus (0 when unknown).
+#[cfg(windows)]
+fn foreground_window() -> isize {
+    // SAFETY: GetForegroundWindow has no preconditions.
+    unsafe { windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow().0 as isize }
+}
+
+#[cfg(not(windows))]
+fn foreground_window() -> isize {
+    0
+}
+
+/// Brings a window to the foreground. Windows only lets the process that got
+/// the last input do this, so the input queues are attached for the call.
+#[cfg(windows)]
+fn focus_hwnd(raw: isize) {
+    use windows::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
+    use windows::Win32::UI::Input::KeyboardAndMouse::SetFocus;
+    use windows::Win32::UI::WindowsAndMessaging::{BringWindowToTop, GetForegroundWindow, GetWindowThreadProcessId, IsWindow, SetForegroundWindow};
+    if raw == 0 {
+        return;
+    }
+    let target = hwnd_of(raw);
+    // SAFETY: plain Win32 calls on a handle that is validated with IsWindow.
+    unsafe {
+        if !IsWindow(Some(target)).as_bool() {
+            return;
+        }
+        let (this, other) = (GetCurrentThreadId(), GetWindowThreadProcessId(GetForegroundWindow(), None));
+        let attached = other != 0 && other != this && AttachThreadInput(this, other, true).as_bool();
+        let _ = BringWindowToTop(target);
+        let _ = SetForegroundWindow(target);
+        if attached {
+            let _ = AttachThreadInput(this, other, false);
+        }
+        let _ = SetFocus(Some(target));
+    }
+}
+
+#[cfg(not(windows))]
+fn focus_hwnd(_raw: isize) {}
+
+fn overlay_hwnd(app: &AppHandle) -> isize {
+    app.get_webview_window(OVERLAY).and_then(|w| w.hwnd().ok()).map(|h| h.0 as isize).unwrap_or(0)
+}
+
+/// Remembers which window had focus when dictation started, so a reviewed
+/// result can be typed back into it after the overlay took focus.
+pub fn remember_target(app: &AppHandle) {
+    let fg = foreground_window();
+    if fg != 0 && fg != overlay_hwnd(app) {
+        app.state::<AppState>().dictation_target.store(fg, Ordering::Relaxed);
+    }
+}
+
+/// Gives keyboard focus back to the window dictation started in.
+pub fn restore_target(app: &AppHandle) {
+    focus_hwnd(app.state::<AppState>().dictation_target.load(Ordering::Relaxed));
+}
+
+/// Switches the overlay between its compact listening size and the taller,
+/// focusable review size (an editable result needs the keyboard).
+pub fn set_overlay_review(app: &AppHandle, review: bool) {
+    let Ok(w) = create_overlay(app) else { return };
+    suppress_persistence();
+    let _ = w.set_size(LogicalSize::new(OVERLAY_W, if review { OVERLAY_H_REVIEW } else { OVERLAY_H }));
+    if review {
+        // Growing must not push the card off the bottom of the screen.
+        let scale = w.scale_factor().unwrap_or(1.0);
+        if let (Ok(pos), Ok(Some(m))) = (w.outer_position(), w.current_monitor()) {
+            let area = m.work_area();
+            let size = ((OVERLAY_W * scale).round() as u32, (OVERLAY_H_REVIEW * scale).round() as u32);
+            let (x, y) = clamp_into((area.position.x, area.position.y), (area.size.width, area.size.height), (pos.x, pos.y), size);
+            let _ = w.set_position(PhysicalPosition::new(x, y));
+        }
+        let _ = w.set_focusable(true);
+        focus_hwnd(overlay_hwnd(app));
+        let _ = w.set_focus();
+    } else {
+        let _ = w.set_focusable(false);
+    }
+}
+
+/// Drops a result that is waiting for review and hands focus back. Returns
+/// whether there was one.
+pub fn discard_review(app: &AppHandle) -> bool {
+    let state = app.state::<AppState>();
+    let had = state.dictation_review.lock().unwrap_or_else(|p| p.into_inner()).take().is_some();
+    if had {
+        set_overlay_review(app, false);
+        restore_target(app);
+        state.dictation_busy.store(false, Ordering::Relaxed);
+    }
+    had
+}
+
 pub fn create_overlay(app: &AppHandle) -> tauri::Result<WebviewWindow> {
     if let Some(w) = app.get_webview_window(OVERLAY) {
         return Ok(w);
     }
     let w = WebviewWindowBuilder::new(app, OVERLAY, WebviewUrl::App("index.html#/overlay".into()))
         .title("Dictation")
-        .inner_size(440.0, 128.0)
+        .inner_size(OVERLAY_W, OVERLAY_H)
         .decorations(false)
         .transparent(true)
         .shadow(false)
@@ -607,7 +714,7 @@ pub fn create_overlay(app: &AppHandle) -> tauri::Result<WebviewWindow> {
 fn default_overlay_position(w: &WebviewWindow) -> Option<(i32, i32)> {
     let m = w.primary_monitor().ok().flatten()?;
     let area = m.work_area();
-    let size = w.outer_size().unwrap_or(PhysicalSize::new(440, 128));
+    let size = w.outer_size().unwrap_or(PhysicalSize::new(OVERLAY_W as u32, OVERLAY_H as u32));
     let x = area.position.x + (area.size.width as i32 - size.width as i32) / 2;
     let y = area.position.y + area.size.height as i32 - size.height as i32 - 40;
     Some((x, y))
@@ -620,6 +727,7 @@ pub fn show_overlay(app: &AppHandle) {
     let Ok(w) = create_overlay(app) else { return };
     let saved = app.state::<AppState>().settings.get().dictation;
     suppress_persistence();
+    let _ = w.set_size(LogicalSize::new(OVERLAY_W, OVERLAY_H));
     let pos = match (saved.overlay_x, saved.overlay_y) {
         (Some(x), Some(y)) if on_any_monitor(&w, x, y) => Some((x, y)),
         _ => default_overlay_position(&w),
@@ -651,21 +759,24 @@ pub fn hide_overlay(app: &AppHandle) {
 }
 
 /// Cancels in-progress dictation (Esc / overlay X): drops audio, skips the
-/// insert, shows "cancelled" feedback. No-op without an active session.
+/// insert, shows "cancelled" feedback. Also discards a result waiting for
+/// review. No-op otherwise.
 pub fn cancel_dictation(app: &AppHandle) {
     let state = app.state::<AppState>();
-    if state.voice.active_mode() != Some(ListenMode::Dictation) {
-        return;
+    if !discard_review(app) {
+        if state.voice.active_mode() != Some(ListenMode::Dictation) {
+            return;
+        }
+        state.dictation_cancel.store(true, Ordering::Relaxed);
+        state.voice.stop(true);
     }
-    state.dictation_cancel.store(true, Ordering::Relaxed);
-    state.voice.stop(true);
     let _ = app.emit("dictation://state", serde_json::json!({"state": "cancelled"}));
     // Let "cancelled" paint, then hide unless a new session started.
     let app2 = app.clone();
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(std::time::Duration::from_millis(1400)).await;
         let s = app2.state::<AppState>();
-        if s.voice.active_mode() != Some(ListenMode::Dictation) {
+        if s.voice.active_mode() != Some(ListenMode::Dictation) && !s.dictation_busy.load(Ordering::Relaxed) {
             hide_overlay(&app2);
         }
     });
