@@ -107,22 +107,38 @@ fn dispatch_shortcut_action(app: &AppHandle, action: Action, pressed: bool) {
             let hold = state.settings.get().dictation.mode == "hold";
             let active = state.voice.active_mode() == Some(ListenMode::Dictation);
             if pressed && !active {
-                if state.dictation_busy.load(std::sync::atomic::Ordering::Relaxed) {
-                    return;
-                }
-                // Fresh session owns the cancel flag (clears a stale Esc).
-                state.dictation_cancel.store(false, std::sync::atomic::Ordering::Relaxed);
-                match state.voice.start(ListenMode::Dictation) {
-                    Ok(()) => window::show_overlay(app),
-                    Err(e) => {
-                        window::show_overlay(app);
-                        let _ = app.emit("dictation://state", serde_json::json!({"state": "error", "error": e}));
-                    }
-                }
+                start_dictation(app);
             } else if active && ((hold && !pressed) || (!hold && pressed)) {
                 state.voice.stop(false);
             }
         }
+    }
+}
+
+fn start_dictation(app: &AppHandle) {
+    let state = app.state::<AppState>();
+    if state.dictation_busy.load(std::sync::atomic::Ordering::Relaxed) {
+        return;
+    }
+    // Fresh session owns the cancel flag (clears a stale Esc).
+    state.dictation_cancel.store(false, std::sync::atomic::Ordering::Relaxed);
+    match state.voice.start(ListenMode::Dictation) {
+        Ok(()) => window::show_overlay(app),
+        Err(e) => {
+            window::show_overlay(app);
+            let _ = app.emit("dictation://state", serde_json::json!({"state": "error", "error": e}));
+        }
+    }
+}
+
+/// Tray entry: start dictation, or stop and insert if already listening.
+/// Always tap-style, regardless of the hold/toggle shortcut mode.
+pub fn toggle_dictation(app: &AppHandle) {
+    let state = app.state::<AppState>();
+    if state.voice.active_mode() == Some(ListenMode::Dictation) {
+        state.voice.stop(false);
+    } else {
+        start_dictation(app);
     }
 }
 
