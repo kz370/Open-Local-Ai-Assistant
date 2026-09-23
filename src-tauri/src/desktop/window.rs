@@ -165,7 +165,7 @@ pub fn create_bubble(app: &AppHandle) -> tauri::Result<WebviewWindow> {
         return Ok(w);
     }
     let w = WebviewWindowBuilder::new(app, BUBBLE, WebviewUrl::App("index.html#/bubble".into()))
-        .title("Local Assistant")
+        .title("Open Local Assistant")
         .inner_size(BUBBLE_SIZE, BUBBLE_SIZE)
         .decorations(false)
         .transparent(true)
@@ -504,7 +504,7 @@ pub fn ensure_settings(app: &AppHandle) -> tauri::Result<WebviewWindow> {
     }
     tracing::info!("open_settings creating new window");
     let w = match WebviewWindowBuilder::new(app, SETTINGS, WebviewUrl::App("index.html#/settings/general".into()))
-        .title("Local Assistant — Settings")
+        .title("Open Local Assistant — Settings")
         .inner_size(1000.0, 720.0)
         .min_inner_size(720.0, 520.0)
         .max_inner_size(1400.0, 1000.0)

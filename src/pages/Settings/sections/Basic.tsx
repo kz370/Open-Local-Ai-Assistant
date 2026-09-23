@@ -107,7 +107,7 @@ function SuggestionsCard() {
   );
 }
 
-const BACKUP_FILTER = [{ name: "Local Assistant backup", extensions: ["labackup"] }];
+const BACKUP_FILTER = [{ name: "Open Local Assistant backup", extensions: ["labackup"] }];
 
 /** Encrypted settings export/import. */
 function BackupCard() {

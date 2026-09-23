@@ -1,8 +1,9 @@
 import { Fragment, useEffect, useMemo, useState, type ComponentType } from "react";
-import { Activity, AudioLines, Bot, Globe, Keyboard, Languages, MemoryStick, Mic, Palette, PenLine, Plug, Search, Settings2, Shield, Volume2 } from "lucide-react";
+import { Activity, AudioLines, Info, Bot, Globe, Keyboard, Languages, MemoryStick, Mic, Palette, PenLine, Plug, Search, Settings2, Shield, Volume2 } from "lucide-react";
 import { useSettingsHighlight } from "../../app/settingsHighlight";
 import { on } from "../../app/ipc";
 import { t } from "../../app/strings";
+import { AboutSection } from "./sections/About";
 import { AiSection } from "./sections/Ai";
 import { AppearanceSection, GeneralSection, ShortcutsSection } from "./sections/Basic";
 import { DictationSection } from "./sections/Dictation";
@@ -30,6 +31,7 @@ const SECTIONS: Section[] = [
   { id: "appearance", group: "app", icon: Palette, view: AppearanceSection },
   { id: "shortcuts", group: "app", icon: Keyboard, view: ShortcutsSection },
   { id: "privacy", group: "app", icon: Shield, view: PrivacySection },
+  { id: "about", group: "app", icon: Info, view: AboutSection },
   { id: "diagnostics", group: "advanced", icon: Activity, view: DiagnosticsSection },
 ];
 

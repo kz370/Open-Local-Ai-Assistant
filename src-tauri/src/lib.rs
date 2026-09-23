@@ -1,4 +1,4 @@
-//! Local Assistant — a local-first desktop assistant powered by LM Studio.
+//! Open Local Assistant — a local-first desktop assistant powered by LM Studio.
 
 pub mod capabilities;
 pub mod commands;
@@ -362,7 +362,7 @@ pub fn run() {
                 // Keep the non-blocking writer alive for the whole process.
                 Box::leak(Box::new(guard));
             }
-            tracing::info!(version = env!("CARGO_PKG_VERSION"), "starting Local Assistant");
+            tracing::info!(version = env!("CARGO_PKG_VERSION"), "starting Open Local Assistant");
 
             let state = init_state(&handle)?;
             let mcp = state.mcp.clone();
@@ -503,7 +503,7 @@ pub fn run() {
             commands::voice::models_delete,
         ])
         .build(tauri::generate_context!())
-        .expect("error while building Local Assistant")
+        .expect("error while building Open Local Assistant")
         .run(|app, event| {
             // Keep running in the tray when all windows are closed.
             if let tauri::RunEvent::ExitRequested { api, code, .. } = event {
