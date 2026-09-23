@@ -29,6 +29,18 @@ const SECTIONS: { id: string; icon: ComponentType<{ size?: number }>; view: Comp
   { id: "diagnostics", icon: Activity, view: DiagnosticsSection },
 ];
 
+function highlightMatch(text: string, q: string) {
+  const at = text.toLowerCase().indexOf(q.toLowerCase());
+  if (at < 0) return text;
+  return (
+    <>
+      {text.slice(0, at)}
+      <mark className="settings-search-mark">{text.slice(at, at + q.length)}</mark>
+      {text.slice(at + q.length)}
+    </>
+  );
+}
+
 function sectionFromHash(): string {
   const id = location.hash.replace(/^#\/settings\/?/, "").split("/")[0];
   return SECTIONS.some((s) => s.id === id) ? id : "general";
@@ -45,11 +57,26 @@ export function SettingsApp() {
     return index.filter((e) => e.text.toLowerCase().includes(q)).slice(0, 8);
   }, [query, index]);
 
+  const [activeIdx, setActiveIdx] = useState(0);
+  useEffect(() => setActiveIdx(0), [query]);
+
   const goToResult = (r: { text: string; sectionId: string }) => {
     setHighlight(r.text);
     setQuery("");
     if (r.sectionId === section) return;
     location.hash = `#/settings/${r.sectionId}`;
+  };
+
+  const onSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Escape") return setQuery("");
+    if (!results.length) return;
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      const step = e.key === "ArrowDown" ? 1 : -1;
+      setActiveIdx((i) => (i + step + results.length) % results.length);
+    } else if (e.key === "Enter") {
+      goToResult(results[activeIdx] ?? results[0]);
+    }
   };
 
   useEffect(() => {
@@ -83,7 +110,7 @@ export function SettingsApp() {
             placeholder={t("settings.quickSearch.placeholder")}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => e.key === "Escape" && setQuery("")}
+            onKeyDown={onSearchKeyDown}
           />
           {query.trim() && (
             <div className="settings-search-results" role="listbox">
@@ -91,10 +118,18 @@ export function SettingsApp() {
               {results.map((r, i) => {
                 const Icon = SECTIONS.find((s) => s.id === r.sectionId)!.icon;
                 return (
-                  <button key={`${r.sectionId}-${i}`} type="button" role="option" onClick={() => goToResult(r)}>
-                    <span className="settings-search-result-text">{r.text}</span>
+                  <button
+                    key={`${r.sectionId}-${i}`}
+                    type="button"
+                    role="option"
+                    aria-selected={i === activeIdx}
+                    className="settings-search-result"
+                    onMouseMove={() => setActiveIdx(i)}
+                    onClick={() => goToResult(r)}
+                  >
+                    <span className="settings-search-result-text">{highlightMatch(r.text, query.trim())}</span>
                     <span className="settings-search-result-section">
-                      <Icon size={12} />
+                      <Icon size={11} />
                       {t(`settings.sections.${r.sectionId}`)}
                     </span>
                   </button>
