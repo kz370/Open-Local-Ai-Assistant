@@ -81,6 +81,18 @@ const MIGRATIONS: &[&str] = &[
     r#"
     ALTER TABLE messages ADD COLUMN stats_json TEXT;
     "#,
+    // 4: past dictations
+    r#"
+    CREATE TABLE dictation_history (
+        id         TEXT PRIMARY KEY,
+        created_at TEXT NOT NULL,
+        raw        TEXT NOT NULL,
+        text       TEXT NOT NULL,
+        corrected  INTEGER NOT NULL DEFAULT 0,
+        inserted   INTEGER NOT NULL DEFAULT 1
+    );
+    CREATE INDEX idx_dictation_history_created ON dictation_history(created_at DESC);
+    "#,
 ];
 
 pub fn run(conn: &Connection) -> rusqlite::Result<()> {

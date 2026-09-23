@@ -410,6 +410,10 @@ pub struct DictationSettings {
     /// "type" | "paste"
     pub insert_method: String,
     pub add_trailing_space: bool,
+    /// Hold the result in the overlay for editing instead of inserting it at once.
+    pub review_before_insert: bool,
+    /// Keep a local list of past dictations (last 100).
+    pub history_enabled: bool,
     /// Last dragged position of the dictation overlay (physical pixels), or
     /// None to auto-center it near the bottom of the screen.
     pub overlay_x: Option<i32>,
@@ -426,6 +430,8 @@ impl Default for DictationSettings {
             correction_model: None,
             insert_method: "type".into(),
             add_trailing_space: true,
+            review_before_insert: false,
+            history_enabled: true,
             overlay_x: None,
             overlay_y: None,
         }

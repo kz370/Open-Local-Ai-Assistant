@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { CheckCircle2, Mic, RotateCcw, X, XCircle } from "lucide-react";
+import { Check, CheckCircle2, LocateFixed, Mic, Pencil, RotateCcw, X, XCircle } from "lucide-react";
 import { getCurrentWindow, PhysicalPosition } from "@tauri-apps/api/window";
 import { ipc, on } from "../../app/ipc";
 import { useSettings } from "../../app/settingsStore";
@@ -58,15 +58,38 @@ function useOverlayDrag() {
   };
 }
 
-/** Non-focusable window shown while dictating into another application.
- *  Displays what you say live, then confirms the insertion. */
+/** Small header button. Stops the pointer so pressing it never starts a drag. */
+function HeadBtn(props: { label: string; onClick: () => void; children: React.ReactNode; disabled?: boolean }) {
+  return (
+    <button
+      type="button"
+      className="icon-btn"
+      style={{ width: 24, height: 24 }}
+      aria-label={props.label}
+      title={props.label}
+      disabled={props.disabled}
+      onPointerDown={(e) => e.stopPropagation()}
+      onClick={props.onClick}
+    >
+      {props.children}
+    </button>
+  );
+}
+
+const quiet = () => undefined;
+
+/** Window shown while dictating into another application. Displays what you
+ *  say live, then confirms the insertion. In review mode it holds the result
+ *  as editable text until you insert or discard it. */
 export function Overlay() {
   const [state, setState] = useState<DictationStateEvent["state"]>("idle");
   const [error, setError] = useState<string | null>(null);
   const [text, setText] = useState("");
+  const [draft, setDraft] = useState("");
   const [levels, setLevels] = useState<number[]>(new Array(18).fill(0));
   const mode = useSettings((s) => s.settings?.dictation.mode ?? "hold");
   const textRef = useRef<HTMLDivElement>(null);
+  const editRef = useRef<HTMLTextAreaElement>(null);
   const drag = useOverlayDrag();
 
   useEffect(() => {
@@ -81,6 +104,7 @@ export function Overlay() {
         }
         if (e.error) setError(errorMessage(e.error.code));
         if (e.result?.inserted) setText(e.result.inserted);
+        if (e.state === "review") setDraft(e.result?.inserted ?? "");
       }),
       on<VoiceEvent>("voice://event", (e) => {
         if (e.mode !== "dictation") return;
@@ -96,83 +120,120 @@ export function Overlay() {
     textRef.current?.scrollTo({ top: textRef.current.scrollHeight });
   }, [text]);
 
+  const reviewing = state === "review";
+  useEffect(() => {
+    if (!reviewing) return;
+    // The window only just became focusable; give it a beat before typing focus.
+    const id = setTimeout(() => {
+      const el = editRef.current;
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(el.value.length, el.value.length);
+    }, 60);
+    return () => clearTimeout(id);
+  }, [reviewing]);
+
   const listening = state === "listening" || state === "idle";
   let icon = <Mic size={16} className="ic-listening" />;
   let label = t("overlay.speakNow");
-  let hint = mode === "hold" ? t("overlay.hint") : t("overlay.hintToggle");
   switch (state) {
     case "transcribing":
       icon = <span className="spinner" />;
       label = t("overlay.transcribing");
-      hint = "";
       break;
     case "correcting":
       icon = <span className="spinner" />;
       label = t("overlay.correcting");
-      hint = "";
+      break;
+    case "review":
+      icon = <Pencil size={16} style={{ color: "var(--accent)" }} />;
+      label = t("overlay.review");
       break;
     case "inserted":
       icon = <CheckCircle2 size={16} style={{ color: "var(--success)" }} />;
       label = t("overlay.inserted");
-      hint = "";
       break;
     case "empty":
       icon = <XCircle size={16} style={{ color: "var(--text-faint)" }} />;
       label = t("overlay.empty");
-      hint = "";
       break;
     case "cancelled":
       icon = <XCircle size={16} style={{ color: "var(--text-faint)" }} />;
       label = t("overlay.cancelled");
-      hint = "";
       break;
     case "error":
       icon = <XCircle size={16} style={{ color: "var(--danger)" }} />;
       label = error ?? t("overlay.error");
-      hint = "";
       break;
   }
 
   const placeholder = mode === "toggle" ? t("overlay.listeningToggle") : t("overlay.listening");
+  const confirm = () => void ipc.dictationConfirm(draft).catch(quiet);
 
   return (
     <div className={`overlay-card${state === "inserted" ? " done" : ""}`} role="status" aria-live="polite">
       <div className="overlay-head" onPointerDown={drag.onPointerDown} onPointerMove={drag.onPointerMove} onPointerUp={drag.onPointerUp} style={{ cursor: "move" }}>
         {icon}
         <span className="overlay-label">{label}</span>
+        {listening && <LevelMeter levels={levels} max={16} label={t("voice.level")} />}
         <span style={{ flex: 1 }} />
-        <button
-          type="button"
-          className="icon-btn"
-          style={{ width: 24, height: 24 }}
-          aria-label={t("overlay.resetPosition")}
-          title={t("overlay.resetPosition")}
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={() => void ipc.dictationResetOverlayPosition().catch(() => undefined)}
-        >
-          <RotateCcw size={13} />
-        </button>
-        <button
-          type="button"
-          className="icon-btn"
-          style={{ width: 24, height: 24 }}
-          aria-label={t("voice.cancel")}
-          title={`${t("voice.cancel")} (Esc)`}
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={() => void ipc.dictationCancel().catch(() => undefined)}
-        >
+        {listening && (
+          <>
+            <button
+              type="button"
+              className="btn btn-sm btn-primary"
+              title={t("overlay.insertNowHint")}
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={() => void ipc.dictationInsertNow().catch(quiet)}
+            >
+              <Check size={13} /> {t("overlay.insertNow")}
+            </button>
+            <HeadBtn label={t("overlay.retryHint")} onClick={() => void ipc.dictationRetry().catch(quiet)}>
+              <RotateCcw size={13} />
+            </HeadBtn>
+          </>
+        )}
+        <HeadBtn label={t("overlay.resetPosition")} onClick={() => void ipc.dictationResetOverlayPosition().catch(quiet)}>
+          <LocateFixed size={13} />
+        </HeadBtn>
+        <HeadBtn label={`${t("voice.cancel")} (Esc)`} onClick={() => void ipc.dictationCancel().catch(quiet)}>
           <X size={14} />
-        </button>
+        </HeadBtn>
       </div>
-      {listening && (
-        <div className="overlay-status">
-          <LevelMeter levels={levels} max={16} label={t("voice.level")} />
-          {hint && <span className="overlay-hint">{hint}</span>}
+      {reviewing ? (
+        <>
+          <textarea
+            ref={editRef}
+            className="overlay-edit"
+            value={draft}
+            dir={draft ? textDir(draft) : "auto"}
+            spellCheck
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+                e.preventDefault();
+                confirm();
+              } else if (e.key === "Escape") {
+                e.preventDefault();
+                void ipc.dictationCancel().catch(quiet);
+              }
+            }}
+          />
+          <div className="overlay-actions">
+            <button type="button" className="btn btn-sm" title={t("overlay.retryHint")} onClick={() => void ipc.dictationRetry().catch(quiet)}>
+              <RotateCcw size={13} /> {t("overlay.retry")}
+            </button>
+            <span className="overlay-hint">{t("overlay.insertHint")}</span>
+            <button type="button" className="btn btn-sm btn-primary" onClick={confirm}>
+              <Check size={13} /> {t("overlay.insert")}
+            </button>
+          </div>
+        </>
+      ) : (
+        <div className={`overlay-text${text ? "" : " empty"}`} ref={textRef} dir={text ? textDir(text) : "auto"}>
+          {text || placeholder}
         </div>
       )}
-      <div className={`overlay-text${text ? "" : " empty"}`} ref={textRef} dir={text ? textDir(text) : "auto"}>
-        {text || placeholder}
-      </div>
     </div>
   );
 }

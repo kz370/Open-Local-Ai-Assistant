@@ -1,12 +1,76 @@
 import { useEffect, useState } from "react";
-import { ipc } from "../../../app/ipc";
+import { Copy, Trash2 } from "lucide-react";
+import { ipc, on } from "../../../app/ipc";
 import { modelLabel, t } from "../../../app/strings";
-import type { InstalledModel } from "../../../app/types";
-import { Segmented, Switch } from "../../../components/common/controls";
+import type { DictationEntry, InstalledModel } from "../../../app/types";
+import { Segmented, Switch, textDir } from "../../../components/common/controls";
 import { Card, Row, SectionHeader } from "../../../components/settings/layout";
 import { ShortcutInput } from "../../../components/settings/ShortcutInput";
 import { useLmModels } from "./Ai";
 import { useS } from "./Basic";
+
+function HistoryCard({ enabled, onToggle }: { enabled: boolean; onToggle: (v: boolean) => void }) {
+  const [items, setItems] = useState<DictationEntry[]>([]);
+  const [copied, setCopied] = useState<string | null>(null);
+  const load = () => void ipc.dictationHistory().then(setItems).catch(() => undefined);
+  useEffect(() => {
+    load();
+    const sub = on("dictation://history", load);
+    return () => void sub.then((u) => u());
+  }, []);
+  const copy = (e: DictationEntry) => {
+    void navigator.clipboard.writeText(e.text).then(() => {
+      setCopied(e.id);
+      setTimeout(() => setCopied((c) => (c === e.id ? null : c)), 1500);
+    });
+  };
+  const remove = (id: string) => void ipc.dictationHistoryDelete(id).then(load);
+  const clear = () => void ipc.dictationHistoryClear().then(load);
+
+  return (
+    <Card
+      title={t("settings.dictation.history")}
+      actions={
+        items.length > 0 && (
+          <button className="btn btn-sm btn-danger" onClick={clear}>
+            {t("settings.dictation.historyClear")}
+          </button>
+        )
+      }
+    >
+      <Row label={t("settings.dictation.historyEnabled")} hint={t("settings.dictation.historyEnabledHint")} htmlFor="sw-hist">
+        <Switch id="sw-hist" label={t("settings.dictation.historyEnabled")} checked={enabled} onChange={onToggle} />
+      </Row>
+      {items.length === 0 ? (
+        <p className="settings-intro" style={{ margin: "8px 0 0" }}>
+          {t("settings.dictation.historyEmpty")}
+        </p>
+      ) : (
+        <div className="history-list">
+          {items.map((e) => (
+            <div key={e.id} className="history-item">
+              <div className="history-body">
+                <div className="history-text" dir={textDir(e.text)}>
+                  {e.text}
+                </div>
+                <div className="history-meta">
+                  <span>{new Date(e.createdAt).toLocaleString()}</span>
+                  {!e.inserted && <span className="badge err">{t("settings.dictation.historyNotInserted")}</span>}
+                </div>
+              </div>
+              <button className="icon-btn" title={copied === e.id ? t("settings.dictation.historyCopied") : t("settings.dictation.historyCopy")} aria-label={t("settings.dictation.historyCopy")} onClick={() => copy(e)}>
+                <Copy size={14} />
+              </button>
+              <button className="icon-btn danger" title={t("settings.dictation.historyDelete")} aria-label={t("settings.dictation.historyDelete")} onClick={() => remove(e.id)}>
+                <Trash2 size={14} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
+  );
+}
 
 export function DictationSection() {
   const [s, set] = useS();
@@ -60,6 +124,9 @@ export function DictationSection() {
         <Row label={t("settings.dictation.trailingSpace")} htmlFor="sw-space">
           <Switch id="sw-space" label={t("settings.dictation.trailingSpace")} checked={d.addTrailingSpace} onChange={(v) => set((x) => void (x.dictation.addTrailingSpace = v))} />
         </Row>
+        <Row label={t("settings.dictation.review")} hint={t("settings.dictation.reviewHint")} htmlFor="sw-review">
+          <Switch id="sw-review" label={t("settings.dictation.review")} checked={d.reviewBeforeInsert} onChange={(v) => set((x) => void (x.dictation.reviewBeforeInsert = v))} />
+        </Row>
         <Row label={t("settings.speech.micOnly")} hint={t("settings.speech.micOnlyHint")} htmlFor="sw-miconly-dict">
           <Switch id="sw-miconly-dict" label={t("settings.speech.micOnly")} checked={s.stt.micOnly} onChange={(v) => set((x) => void (x.stt.micOnly = v))} />
         </Row>
@@ -90,6 +157,7 @@ export function DictationSection() {
           {error && <span className="badge err">{t("status.disconnected")}</span>}
         </Row>
       </Card>
+      <HistoryCard enabled={d.historyEnabled} onToggle={(v) => set((x) => void (x.dictation.historyEnabled = v))} />
     </>
   );
 }

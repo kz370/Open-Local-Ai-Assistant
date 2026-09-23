@@ -1,4 +1,5 @@
 use super::CmdResult;
+use crate::database::dictation::DictationEntry;
 use crate::errors::AppError;
 use crate::services::audio::devices::{self, AudioDevice};
 use crate::services::language::Lang;
@@ -44,6 +45,41 @@ pub fn voice_stop(state: State<'_, AppState>, discard: bool) -> Option<ListenMod
 #[tauri::command]
 pub fn dictation_cancel(app: AppHandle) {
     crate::desktop::window::cancel_dictation(&app);
+}
+
+/// Stops listening and inserts what was heard so far (the overlay's "Insert now").
+#[tauri::command]
+pub fn dictation_insert_now(state: State<'_, AppState>) {
+    if state.voice.active_mode() == Some(ListenMode::Dictation) {
+        state.voice.stop(false);
+    }
+}
+
+/// Inserts the (possibly edited) result the overlay holds in review mode.
+#[tauri::command]
+pub async fn dictation_confirm(app: AppHandle, text: String) -> CmdResult<()> {
+    crate::confirm_review(app, text).await
+}
+
+/// Discards the current take (listening or under review) and listens again.
+#[tauri::command]
+pub async fn dictation_retry(app: AppHandle) {
+    crate::retry_dictation(app).await;
+}
+
+#[tauri::command]
+pub fn dictation_history(state: State<'_, AppState>) -> CmdResult<Vec<DictationEntry>> {
+    state.db.dictation_list()
+}
+
+#[tauri::command]
+pub fn dictation_history_delete(state: State<'_, AppState>, id: String) -> CmdResult<()> {
+    state.db.dictation_delete(&id)
+}
+
+#[tauri::command]
+pub fn dictation_history_clear(state: State<'_, AppState>) -> CmdResult<()> {
+    state.db.dictation_clear()
 }
 
 /// Clears the dictation overlay's dragged position, reverting it to the

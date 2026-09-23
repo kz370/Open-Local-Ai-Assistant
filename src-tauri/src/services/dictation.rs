@@ -25,6 +25,14 @@ pub struct DictationResult {
     pub correction_error: Option<String>,
 }
 
+/// A finished dictation waiting in the overlay for the user to edit and confirm.
+#[derive(Debug, Clone)]
+pub struct ReviewPending {
+    pub raw: String,
+    pub corrected: bool,
+    pub correction_error: Option<String>,
+}
+
 const CORRECTION_PROMPT: &str = "You are a dictation text corrector, not an assistant. \
 You receive text transcribed from speech. Fix spelling, grammar, punctuation and capitalization, \
 and remove filler words (um, uh, äh, ähm, يعني when used as filler). Keep the original language, meaning, \

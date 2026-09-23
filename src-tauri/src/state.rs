@@ -16,7 +16,7 @@ use crate::services::tts::TtsService;
 use crate::settings::SettingsStore;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicIsize};
 use std::sync::{Arc, Mutex};
 use tokio_util::sync::CancellationToken;
 
@@ -54,6 +54,10 @@ pub struct AppState {
     /// Tracks what dictation has live-typed so far this session (insert
     /// method "type" only); see `services::dictation::LiveTyper`.
     pub dictation_live_typer: crate::services::dictation::LiveTyper,
+    /// A finished dictation held in the overlay for editing (review mode).
+    pub dictation_review: Mutex<Option<crate::services::dictation::ReviewPending>>,
+    /// Window that had focus when dictation started (native handle, 0 = none).
+    pub dictation_target: AtomicIsize,
     pub shortcut_errors: Mutex<Vec<String>>,
 }
 
