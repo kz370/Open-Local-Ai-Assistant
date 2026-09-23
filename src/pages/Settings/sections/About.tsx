@@ -1,9 +1,17 @@
-import { useEffect, useState } from "react";
-import { AudioLines } from "lucide-react";
+import { useEffect, useState, type ComponentType } from "react";
+import { AudioLines, FolderOpen, Globe, Languages, MessageSquare, PenLine, ShieldCheck } from "lucide-react";
 import { ipc } from "../../../app/ipc";
 import { t } from "../../../app/strings";
 import type { AppInfo } from "../../../app/types";
-import { Card, Row, SectionHeader } from "../../../components/settings/layout";
+import { Card, SectionHeader } from "../../../components/settings/layout";
+
+const FEATURES: { key: string; icon: ComponentType<{ size?: number }> }[] = [
+  { key: "chat", icon: MessageSquare },
+  { key: "voice", icon: AudioLines },
+  { key: "dictation", icon: PenLine },
+  { key: "languages", icon: Languages },
+  { key: "tools", icon: Globe },
+];
 
 export function AboutSection() {
   const [info, setInfo] = useState<AppInfo | null>(null);
@@ -15,19 +23,56 @@ export function AboutSection() {
     <>
       <SectionHeader title={t("settings.sections.about")} />
       <Card>
-        <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "14px 0" }}>
-          <span className="brand-mark" aria-hidden style={{ width: 44, height: 44, borderRadius: 12 }}>
-            <AudioLines size={22} />
+        <div className="about-hero">
+          <span className="brand-mark about-logo" aria-hidden>
+            <AudioLines size={24} />
           </span>
-          <div>
-            <div style={{ fontSize: 16, fontWeight: 600 }}>{t("app.name")}</div>
+          <div style={{ minWidth: 0 }}>
+            <div className="about-name">
+              {t("app.name")}
+              {info && <span className="about-version">{t("settings.about.version", { v: info.version })}</span>}
+            </div>
             <div className="row-hint">{t("settings.about.tagline")}</div>
           </div>
         </div>
-        <Row label={t("settings.about.version")}>{info?.version ?? "—"}</Row>
-        {info && <Row label={t("settings.about.dataFolder")}>{info.paths.dataDir}</Row>}
+        <p className="about-intro">{t("settings.about.intro")}</p>
       </Card>
-      <p className="row-hint">{t("settings.about.privacy")}</p>
+
+      <Card title={t("settings.about.whatTitle")}>
+        <ul className="about-features">
+          {FEATURES.map(({ key, icon: Icon }) => (
+            <li key={key}>
+              <span className="about-feature-icon" aria-hidden>
+                <Icon size={16} />
+              </span>
+              <div>
+                <div className="about-feature-title">{t(`settings.about.${key}`)}</div>
+                <div className="row-hint">{t(`settings.about.${key}Hint`)}</div>
+              </div>
+            </li>
+          ))}
+        </ul>
+      </Card>
+
+      <Card title={t("settings.about.privacyTitle")}>
+        <div className="about-privacy">
+          <ShieldCheck size={16} aria-hidden />
+          <p>{t("settings.about.privacy")}</p>
+        </div>
+        {info && (
+          <div className="about-data">
+            <div className="about-feature-title">{t("settings.about.dataFolder")}</div>
+            <div className="about-path-row">
+              <code className="about-path" title={info.paths.dataDir}>
+                {info.paths.dataDir}
+              </code>
+              <button className="btn btn-sm" onClick={() => void ipc.openFolder("data")}>
+                <FolderOpen size={12} /> {t("settings.about.openFolder")}
+              </button>
+            </div>
+          </div>
+        )}
+      </Card>
     </>
   );
 }

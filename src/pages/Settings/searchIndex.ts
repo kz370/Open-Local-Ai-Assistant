@@ -7,7 +7,8 @@ export interface SettingEntry {
   sectionId: string;
 }
 
-const SKIP_KEYS = new Set(["title", "sections", "groups", "quickSearch"]);
+// "about" is prose about the app, not settings; its feature names would shadow real sections.
+const SKIP_KEYS = new Set(["title", "sections", "groups", "quickSearch", "about"]);
 
 function flatten(node: Dict, sectionId: string, out: SettingEntry[]) {
   for (const [key, val] of Object.entries(node)) {

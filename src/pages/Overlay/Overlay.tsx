@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { Check, CheckCircle2, LocateFixed, Mic, Pencil, RotateCcw, X, XCircle } from "lucide-react";
+import { Check, CheckCircle2, ChevronDown, Globe, Mic, Pencil, RotateCcw, X, XCircle } from "lucide-react";
 import { getCurrentWindow, PhysicalPosition } from "@tauri-apps/api/window";
 import { ipc, on } from "../../app/ipc";
 import { useSettings } from "../../app/settingsStore";
 import { errorMessage, t } from "../../app/strings";
-import type { DictationStateEvent, VoiceEvent } from "../../app/types";
+import type { DictationStateEvent, LanguageEntry, VoiceEvent } from "../../app/types";
 import { textDir } from "../../components/common/controls";
 import { LevelMeter } from "../../components/voice/LevelMeter";
 
@@ -78,6 +78,75 @@ function HeadBtn(props: { label: string; onClick: () => void; children: React.Re
 
 const quiet = () => undefined;
 
+/** Language pill with a scrolling list that drops over the text. A native
+ *  select's popup is clipped by the small overlay window and can't be styled. */
+function LanguageMenu(props: { value: string; languages: LanguageEntry[]; onChange: (code: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    menuRef.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest" });
+    const onDown = (e: PointerEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("pointerdown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  const nameOf = (e: LanguageEntry) => (e.builtIn ? t(`languages.${e.code}`) : e.displayName);
+  const options = [{ code: "auto", short: t("overlay.auto"), name: t("app.automatic") }, ...props.languages.map((e) => ({ code: e.code, short: e.code.toUpperCase(), name: nameOf(e) }))];
+  const current = options.find((o) => o.code === props.value) ?? options[0];
+
+  return (
+    <div ref={ref} className="overlay-lang-wrap" onPointerDown={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
+      <button
+        type="button"
+        className={`overlay-lang${open ? " open" : ""}`}
+        title={`${t("overlay.language")}: ${current.name}`}
+        aria-label={`${t("overlay.language")}: ${current.name}`}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+      >
+        <Globe size={12} aria-hidden />
+        {current.short}
+        <ChevronDown size={12} aria-hidden className="overlay-lang-chevron" />
+      </button>
+      {open && (
+        <div ref={menuRef} className="overlay-lang-menu" role="listbox" aria-label={t("overlay.language")}>
+          {options.map((o) => (
+            <button
+              key={o.code}
+              type="button"
+              role="option"
+              aria-selected={o.code === props.value}
+              className="overlay-lang-option"
+              title={o.name}
+              onClick={() => {
+                setOpen(false);
+                if (o.code !== props.value) props.onChange(o.code);
+              }}
+            >
+              <span className="overlay-lang-check" aria-hidden>
+                {o.code === props.value && <Check size={11} />}
+              </span>
+              <span className="overlay-lang-code">{o.short}</span>
+              <span className="overlay-lang-name">{o.name}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** Window shown while dictating into another application. Displays what you
  *  say live, then confirms the insertion. In review mode it holds the result
  *  as editable text until you insert or discard it. */
@@ -134,8 +203,12 @@ export function Overlay() {
   }, [reviewing]);
 
   const listening = state === "listening" || state === "idle";
-  let icon = <Mic size={16} className="ic-listening" />;
-  let label = t("overlay.speakNow");
+  let icon = (
+    <span className="overlay-rec" aria-hidden>
+      <Mic size={12} />
+    </span>
+  );
+  let label = t("overlay.listeningLabel");
   switch (state) {
     case "transcribing":
       icon = <span className="spinner" />;
@@ -167,7 +240,7 @@ export function Overlay() {
       break;
   }
 
-  const placeholder = mode === "toggle" ? t("overlay.listeningToggle") : t("overlay.listening");
+  const keysHint = mode === "toggle" ? t("overlay.hintToggle") : t("overlay.hint");
   const language = useSettings((st) => st.settings?.dictation.language || st.settings?.stt.language || "auto");
   const languages = useSettings((st) => st.settings?.language.entries ?? []);
   const changeLanguage = (code: string) => {
@@ -181,47 +254,21 @@ export function Overlay() {
 
   return (
     <div className={`overlay-card${state === "inserted" ? " done" : ""}`} role="status" aria-live="polite">
-      <div className="overlay-head" onPointerDown={drag.onPointerDown} onPointerMove={drag.onPointerMove} onPointerUp={drag.onPointerUp} style={{ cursor: "move" }}>
-        {icon}
+      {/* Header: what is happening, the language, and close. Drag to move;
+          double-click puts the overlay back in its default spot. */}
+      <div
+        className="overlay-head"
+        title={t("overlay.dragHint")}
+        onPointerDown={drag.onPointerDown}
+        onPointerMove={drag.onPointerMove}
+        onPointerUp={drag.onPointerUp}
+        onDoubleClick={() => void ipc.dictationResetOverlayPosition().catch(quiet)}
+      >
+        <span className="overlay-icon">{icon}</span>
         <span className="overlay-label">{label}</span>
-        {listening && <LevelMeter levels={levels} max={16} label={t("voice.level")} />}
+        {listening && <LevelMeter levels={levels} max={14} label={t("voice.level")} />}
         <span style={{ flex: 1 }} />
-        {(listening || reviewing) && (
-          <select
-            className="select overlay-lang"
-            value={language}
-            title={t("overlay.language")}
-            aria-label={t("overlay.language")}
-            onPointerDown={(e) => e.stopPropagation()}
-            onChange={(e) => changeLanguage(e.target.value)}
-          >
-            <option value="auto">{t("app.automatic")}</option>
-            {languages.map((e) => (
-              <option key={e.code} value={e.code} title={e.builtIn ? t(`languages.${e.code}`) : e.displayName}>
-                {e.code.toUpperCase()}
-              </option>
-            ))}
-          </select>
-        )}
-        {listening && (
-          <>
-            <button
-              type="button"
-              className="btn btn-sm btn-primary"
-              title={t("overlay.insertNowHint")}
-              onPointerDown={(e) => e.stopPropagation()}
-              onClick={() => void ipc.dictationInsertNow().catch(quiet)}
-            >
-              <Check size={13} /> {t("overlay.insertNow")}
-            </button>
-            <HeadBtn label={t("overlay.retryHint")} onClick={() => void ipc.dictationRetry().catch(quiet)}>
-              <RotateCcw size={13} />
-            </HeadBtn>
-          </>
-        )}
-        <HeadBtn label={t("overlay.resetPosition")} onClick={() => void ipc.dictationResetOverlayPosition().catch(quiet)}>
-          <LocateFixed size={13} />
-        </HeadBtn>
+        {(listening || reviewing) && <LanguageMenu value={language} languages={languages} onChange={changeLanguage} />}
         <HeadBtn label={`${t("voice.cancel")} (Esc)`} onClick={() => void ipc.dictationCancel().catch(quiet)}>
           <X size={14} />
         </HeadBtn>
@@ -246,19 +293,32 @@ export function Overlay() {
             }}
           />
           <div className="overlay-actions">
-            <button type="button" className="btn btn-sm" title={t("overlay.retryHint")} onClick={() => void ipc.dictationRetry().catch(quiet)}>
+            <span className="overlay-hint">{t("overlay.insertHint")}</span>
+            <button type="button" className="btn btn-sm btn-ghost" title={t("overlay.retryHint")} onClick={() => void ipc.dictationRetry().catch(quiet)}>
               <RotateCcw size={13} /> {t("overlay.retry")}
             </button>
-            <span className="overlay-hint">{t("overlay.insertHint")}</span>
             <button type="button" className="btn btn-sm btn-primary" onClick={confirm}>
               <Check size={13} /> {t("overlay.insert")}
             </button>
           </div>
         </>
       ) : (
-        <div className={`overlay-text${text ? "" : " empty"}`} ref={textRef} dir={text ? textDir(text) : "auto"}>
-          {text || placeholder}
-        </div>
+        <>
+          <div className={`overlay-text${text ? "" : " empty"}`} ref={textRef} dir={text ? textDir(text) : "auto"}>
+            {text || t("overlay.speakNow")}
+          </div>
+          {listening && (
+            <div className="overlay-actions">
+              <span className="overlay-hint">{keysHint}</span>
+              <button type="button" className="btn btn-sm btn-ghost" title={t("overlay.retryHint")} onClick={() => void ipc.dictationRetry().catch(quiet)}>
+                <RotateCcw size={13} /> {t("overlay.restart")}
+              </button>
+              <button type="button" className="btn btn-sm btn-primary" title={t("overlay.insertNowHint")} onClick={() => void ipc.dictationInsertNow().catch(quiet)}>
+                <Check size={13} /> {t("overlay.insert")}
+              </button>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

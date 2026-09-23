@@ -160,7 +160,7 @@ fn on_voice_event(app: &AppHandle, ev: VoiceEvent) {
                 }
             });
             let _ = app.emit("dictation://state", serde_json::json!({ "state": "error", "error": { "code": code, "detail": detail } }));
-            hide_overlay_later(app);
+            hide_overlay_later(app, LINGER_MSG_MS);
         }
         _ => {}
     }
@@ -180,10 +180,15 @@ pub(crate) fn preload_models(app: &AppHandle) {
     }
 }
 
-fn hide_overlay_later(app: &AppHandle) {
+/// How long the overlay lingers after a dictation ends: a quick glance at
+/// "Inserted", longer for a message that has to be read.
+const LINGER_OK_MS: u64 = 800;
+const LINGER_MSG_MS: u64 = 2200;
+
+fn hide_overlay_later(app: &AppHandle, ms: u64) {
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
-        tokio::time::sleep(std::time::Duration::from_millis(1800)).await;
+        tokio::time::sleep(std::time::Duration::from_millis(ms)).await;
         let state = app.state::<AppState>();
         if state.voice.active_mode() != Some(ListenMode::Dictation) && !state.dictation_busy.load(Ordering::Relaxed) {
             window::hide_overlay(&app);
@@ -217,9 +222,11 @@ async fn run_dictation(app: AppHandle, raw: String) {
     let mut text = raw.clone();
     let mut corrected = false;
     let mut correction_error = None;
+    let linger;
     if raw.is_empty() {
         retract_live_typed(&app).await;
         let _ = app.emit("dictation://state", serde_json::json!({ "state": "empty" }));
+        linger = LINGER_MSG_MS;
     } else {
         if settings.correction_enabled {
             match settings.correction_model.as_deref().filter(|m| !m.is_empty()) {
@@ -256,15 +263,16 @@ async fn run_dictation(app: AppHandle, raw: String) {
             let _ = app.emit("dictation://state", serde_json::json!({ "state": "review", "result": result }));
             return;
         }
-        insert_and_report(&app, raw, text, corrected, correction_error, true).await;
+        linger = if insert_and_report(&app, raw, text, corrected, correction_error, true).await { LINGER_OK_MS } else { LINGER_MSG_MS };
     }
     state.dictation_busy.store(false, Ordering::Relaxed);
-    hide_overlay_later(&app);
+    hide_overlay_later(&app, linger);
 }
 
 /// Types or pastes the final text, records it in the history and reports the
 /// outcome to the overlay. `live` means partials were typed while speaking.
-async fn insert_and_report(app: &AppHandle, raw: String, text: String, corrected: bool, correction_error: Option<String>, live: bool) {
+/// Returns whether the text was inserted.
+async fn insert_and_report(app: &AppHandle, raw: String, text: String, corrected: bool, correction_error: Option<String>, live: bool) -> bool {
     let state = app.state::<AppState>();
     let settings = state.settings.get().dictation;
     let final_text = dictation::finalize_text(&text, &settings);
@@ -288,12 +296,15 @@ async fn insert_and_report(app: &AppHandle, raw: String, text: String, corrected
         Ok(Ok(())) => {
             let result = dictation::DictationResult { raw, inserted: text, corrected, correction_error };
             let _ = app.emit("dictation://state", serde_json::json!({ "state": "inserted", "result": result }));
+            true
         }
         Ok(Err(e)) => {
             let _ = app.emit("dictation://state", serde_json::json!({ "state": "error", "error": e }));
+            false
         }
         Err(e) => {
             let _ = app.emit("dictation://state", serde_json::json!({ "state": "error", "error": { "code": "other", "detail": e.to_string() } }));
+            false
         }
     }
 }
@@ -313,13 +324,16 @@ pub(crate) async fn confirm_review(app: AppHandle, text: String) -> Result<(), e
     window::set_overlay_review(&app, false);
     window::restore_target(&app);
     tokio::time::sleep(std::time::Duration::from_millis(150)).await;
-    if text.is_empty() {
+    let linger = if text.is_empty() {
         let _ = app.emit("dictation://state", serde_json::json!({ "state": "empty" }));
+        LINGER_MSG_MS
+    } else if insert_and_report(&app, pending.raw, text, pending.corrected, pending.correction_error, false).await {
+        LINGER_OK_MS
     } else {
-        insert_and_report(&app, pending.raw, text, pending.corrected, pending.correction_error, false).await;
-    }
+        LINGER_MSG_MS
+    };
     state.dictation_busy.store(false, Ordering::Relaxed);
-    hide_overlay_later(&app);
+    hide_overlay_later(&app, linger);
     Ok(())
 }
 

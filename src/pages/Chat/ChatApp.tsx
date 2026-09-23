@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { History, Maximize2, Minimize2, Minus, Pin, PinOff, Settings2, SquarePen, Upload, X } from "lucide-react";
+import { History, Maximize2, Minimize2, Minus, Pin, PinOff, Settings, SquarePen, Upload, X } from "lucide-react";
 import { attachPaths } from "../../app/attach";
 import { useChat } from "../../app/chatStore";
 import { ipc, on } from "../../app/ipc";
@@ -295,7 +295,7 @@ export function ChatApp() {
             <History size={16} />
           </button>
           <button className="icon-btn" aria-label={t("app.settings")} title={`${t("app.settings")} (Ctrl+,)`} onClick={() => void ipc.openSettings().catch((err) => console.error("open settings failed", err))}>
-            <Settings2 size={16} />
+            <Settings size={16} />
           </button>
           <span className="header-sep" aria-hidden />
           <button
