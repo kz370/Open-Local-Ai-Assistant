@@ -82,11 +82,15 @@ const MENU_ROW = 27; // option height + gap
 const MENU_PAD = 10; // padding + border
 const MENU_MAX_ROWS = 8;
 const MENU_GAP = 6; // between the pill and the menu
+const MENU_W = 210; // matches .overlay-lang-menu
+const MENU_LEAVE_MS = 500; // grace before a pointer that left the overlay closes the menu
 
 /** Language pill with a dropdown list. The overlay window keeps invisible room
- *  above and below the card (see MENU_ROOM in window.rs); opening the menu
- *  uncovers it, so the list hangs outside the card at full size without the
- *  window moving. It opens downward, or upward when the screen ends below. */
+ *  above and below the card (see MENU_ROOM in window.rs) and is clipped to the
+ *  card; opening the menu adds the menu's outline to the clip, so the list
+ *  hangs outside the card at full size without the window moving. It opens
+ *  downward, or upward when the screen ends below. Clicks outside the card
+ *  and menu go to the app behind, so leaving them also closes the menu. */
 function LanguageMenu(props: { value: string; languages: LanguageEntry[]; onChange: (code: string) => void; resetKey: string }) {
   const [open, setOpen] = useState<{ top: number; right: number } | null>(null);
   const ref = useRef<HTMLDivElement>(null);
@@ -103,7 +107,7 @@ function LanguageMenu(props: { value: string; languages: LanguageEntry[]; onChan
     if (!openRef.current) return;
     openRef.current = false;
     setOpen(null);
-    void ipc.dictationOverlayMenu(false).catch(quiet);
+    void ipc.dictationOverlayMenu(null).catch(quiet);
   };
 
   const show = async () => {
@@ -113,10 +117,12 @@ function LanguageMenu(props: { value: string; languages: LanguageEntry[]; onChan
     const scr = window.screen as Screen & { availTop?: number };
     const screenBottom = (scr.availTop ?? 0) + scr.availHeight;
     const down = window.screenY + r.bottom + MENU_GAP + menuH <= screenBottom;
-    // Uncover the room first, so the menu's first frame isn't clipped.
-    await ipc.dictationOverlayMenu(true).catch(quiet);
+    const top = down ? r.bottom + MENU_GAP : r.top - MENU_GAP - menuH;
+    const right = document.documentElement.clientWidth - r.right;
+    // Unclip the menu's area first, so its first frame isn't cut off.
+    await ipc.dictationOverlayMenu([r.right - MENU_W, top, MENU_W, menuH]).catch(quiet);
     if (!openRef.current) return;
-    setOpen({ top: down ? r.bottom + MENU_GAP : r.top - MENU_GAP - menuH, right: document.documentElement.clientWidth - r.right });
+    setOpen({ top, right });
   };
 
   useEffect(() => {
@@ -126,11 +132,20 @@ function LanguageMenu(props: { value: string; languages: LanguageEntry[]; onChan
       if (!ref.current?.contains(e.target as Node)) close();
     };
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && close();
+    let leaveTimer: number | undefined;
+    const onLeave = () => (leaveTimer = window.setTimeout(close, MENU_LEAVE_MS));
+    const onEnter = () => window.clearTimeout(leaveTimer);
+    const root = document.documentElement;
     document.addEventListener("pointerdown", onDown);
     document.addEventListener("keydown", onKey);
+    root.addEventListener("mouseleave", onLeave);
+    root.addEventListener("mouseenter", onEnter);
     return () => {
+      window.clearTimeout(leaveTimer);
       document.removeEventListener("pointerdown", onDown);
       document.removeEventListener("keydown", onKey);
+      root.removeEventListener("mouseleave", onLeave);
+      root.removeEventListener("mouseenter", onEnter);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
