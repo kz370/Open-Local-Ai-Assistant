@@ -4,7 +4,7 @@ import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialo
 import { ipc, toAppError } from "../../../app/ipc";
 import { useSettings } from "../../../app/settingsStore";
 import { t } from "../../../app/strings";
-import type { LangSetting, Settings } from "../../../app/types";
+import type { Settings } from "../../../app/types";
 import { Segmented, Switch } from "../../../components/common/controls";
 import { Card, Row, SectionHeader } from "../../../components/settings/layout";
 import { ShortcutInput } from "../../../components/settings/ShortcutInput";
@@ -230,11 +230,9 @@ export function AppearanceSection() {
 
 export function LanguageSection() {
   const [s, set] = useS();
-  const options: { value: LangSetting; label: string }[] = [
+  const options: { value: string; label: string }[] = [
     { value: "auto", label: t("settings.language.responseAuto") },
-    { value: "en", label: t("languages.en") },
-    { value: "ar", label: t("languages.ar") },
-    { value: "de", label: t("languages.de") },
+    ...s.language.entries.map((e) => ({ value: e.code, label: e.builtIn ? t(`languages.${e.code}`) : e.displayName })),
   ];
   return (
     <>

@@ -94,6 +94,10 @@ impl VoiceSessions {
 
     pub fn start(&self, mode: ListenMode) -> AppResult<()> {
         let mut settings = self.settings.get();
+        // Dictation remembers its own language (chosen in the overlay).
+        if mode == ListenMode::Dictation && !settings.dictation.language.is_empty() {
+            settings.stt.language = settings.dictation.language.clone();
+        }
         // Resolve the language-entry's STT hint (usually == code, but lets a
         // user-added language differ) at this single choke point, which every
         // session-start path (push-to-talk, hands-free, dictation, test) goes

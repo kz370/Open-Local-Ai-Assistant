@@ -410,6 +410,9 @@ pub struct DictationSettings {
     /// "type" | "paste"
     pub insert_method: String,
     pub add_trailing_space: bool,
+    /// Language dictation listens for: "auto" or a language code. Empty means
+    /// "use the speech recognition language". Set from the overlay's dropdown.
+    pub language: String,
     /// Hold the result in the overlay for editing instead of inserting it at once.
     pub review_before_insert: bool,
     /// Keep a local list of past dictations (last 100).
@@ -430,6 +433,7 @@ impl Default for DictationSettings {
             correction_model: None,
             insert_method: "type".into(),
             add_trailing_space: true,
+            language: String::new(),
             review_before_insert: false,
             history_enabled: true,
             overlay_x: None,
@@ -535,6 +539,9 @@ impl Settings {
         }
         if !lang_ok(&self.stt.language, &self.language.entries) {
             self.stt.language = "auto".into();
+        }
+        if !self.dictation.language.is_empty() && !lang_ok(&self.dictation.language, &self.language.entries) {
+            self.dictation.language = String::new();
         }
         self.language.arabic_tashkeel_instruction = self.language.arabic_tashkeel_instruction.trim().chars().take(500).collect();
         if !matches!(self.general.theme.as_str(), "system" | "light" | "dark") {

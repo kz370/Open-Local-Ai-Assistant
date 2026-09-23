@@ -168,6 +168,15 @@ export function Overlay() {
   }
 
   const placeholder = mode === "toggle" ? t("overlay.listeningToggle") : t("overlay.listening");
+  const language = useSettings((st) => st.settings?.dictation.language || st.settings?.stt.language || "auto");
+  const languages = useSettings((st) => st.settings?.language.entries ?? []);
+  const changeLanguage = (code: string) => {
+    void ipc
+      .dictationSetLanguage(code)
+      // Mid-recording the recognizer is already built: restart on the new language.
+      .then(() => (listening ? ipc.dictationRetry() : undefined))
+      .catch(quiet);
+  };
   const confirm = () => void ipc.dictationConfirm(draft).catch(quiet);
 
   return (
@@ -177,6 +186,23 @@ export function Overlay() {
         <span className="overlay-label">{label}</span>
         {listening && <LevelMeter levels={levels} max={16} label={t("voice.level")} />}
         <span style={{ flex: 1 }} />
+        {(listening || reviewing) && (
+          <select
+            className="select overlay-lang"
+            value={language}
+            title={t("overlay.language")}
+            aria-label={t("overlay.language")}
+            onPointerDown={(e) => e.stopPropagation()}
+            onChange={(e) => changeLanguage(e.target.value)}
+          >
+            <option value="auto">{t("app.automatic")}</option>
+            {languages.map((e) => (
+              <option key={e.code} value={e.code} title={e.builtIn ? t(`languages.${e.code}`) : e.displayName}>
+                {e.code.toUpperCase()}
+              </option>
+            ))}
+          </select>
+        )}
         {listening && (
           <>
             <button

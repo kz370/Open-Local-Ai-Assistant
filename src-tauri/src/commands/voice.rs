@@ -67,6 +67,14 @@ pub async fn dictation_retry(app: AppHandle) {
     crate::retry_dictation(app).await;
 }
 
+/// Remembers the language chosen in the dictation overlay.
+#[tauri::command]
+pub fn dictation_set_language(app: AppHandle, state: State<'_, AppState>, language: String) -> CmdResult<()> {
+    let saved = state.settings.update(|s| s.dictation.language = language)?;
+    let _ = app.emit("settings://changed", &saved);
+    Ok(())
+}
+
 #[tauri::command]
 pub fn dictation_history(state: State<'_, AppState>) -> CmdResult<Vec<DictationEntry>> {
     state.db.dictation_list()

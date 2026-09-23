@@ -111,6 +111,8 @@ export interface Settings {
     correctionModel: string | null;
     insertMethod: "type" | "paste";
     addTrailingSpace: boolean;
+    /** "" = follow the speech recognition language. */
+    language: string;
     reviewBeforeInsert: boolean;
     historyEnabled: boolean;
     overlayX: number | null;

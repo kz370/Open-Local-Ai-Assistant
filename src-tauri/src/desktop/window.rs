@@ -568,7 +568,7 @@ pub fn open_settings(app: &AppHandle, section: Option<&str>) -> tauri::Result<()
 
 /// Logical size of the dictation overlay while listening, and while a result
 /// waits for review (taller, to hold the editable text and its buttons).
-const OVERLAY_W: f64 = 440.0;
+const OVERLAY_W: f64 = 480.0;
 const OVERLAY_H: f64 = 112.0;
 const OVERLAY_H_REVIEW: f64 = 176.0;
 
