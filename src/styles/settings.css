@@ -22,6 +22,12 @@
   font-weight: 600;
   padding: 2px 8px 12px;
 }
+/* Gear on the theme's brand gradient, so it follows the accent color. */
+.settings-mark {
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+}
 .settings-search {
   position: relative;
   margin: 0 2px 10px;
@@ -513,6 +519,110 @@
   accent-color: var(--accent);
 }
 
+/* ---------- About ---------- */
+.about-hero {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 0 10px;
+}
+.about-logo {
+  width: 48px;
+  height: 48px;
+  border-radius: 13px;
+}
+.about-name {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: var(--text-lg);
+  font-weight: 600;
+}
+.about-version {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--hairline);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-weight: 500;
+}
+.about-intro {
+  margin: 0 0 14px;
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+.about-features {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 4px 20px;
+  margin: 0;
+  padding: 10px 0;
+  list-style: none;
+}
+.about-features li {
+  display: flex;
+  gap: 12px;
+  padding: 8px 0;
+}
+.about-feature-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  background: var(--accent-soft);
+  color: var(--accent-soft-text);
+}
+.about-feature-title {
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+.about-privacy {
+  display: flex;
+  gap: 10px;
+  padding: 12px 0;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  line-height: 1.6;
+}
+.about-privacy svg {
+  flex: none;
+  margin-top: 3px;
+  color: var(--success);
+}
+.about-privacy p {
+  margin: 0;
+}
+.about-data {
+  padding: 12px 0 14px;
+  border-top: 1px solid var(--hairline);
+}
+.about-path-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+/* Long Windows paths wrap inside the box instead of running off the card. */
+.about-path {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--hairline);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  direction: ltr;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
 /* ---------- Dictation overlay ---------- */
 html.overlay,
 html.overlay body,
@@ -520,12 +630,13 @@ html.overlay #root {
   background: transparent !important;
 }
 .overlay-card {
+  position: relative;
   margin: 8px;
   height: calc(100% - 16px);
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 12px 14px;
+  gap: 6px;
+  padding: 10px 12px 10px 14px;
   border-radius: 18px;
   background: var(--popover);
   border: 1px solid var(--hairline);
@@ -539,40 +650,149 @@ html.overlay #root {
   display: flex;
   align-items: center;
   gap: 8px;
+  height: 26px;
   font-size: var(--text-sm);
   font-weight: 600;
   flex: none;
+  cursor: move;
 }
-.overlay-head .ic-listening {
-  color: var(--danger);
-  animation: pulse 1.2s infinite;
+.overlay-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
 }
+/* Recording indicator: red dot with a soft ring, so "live" reads at a glance. */
+.overlay-rec {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  color: #fff;
+  background: var(--danger);
+  animation: rec 1.6s infinite;
+}
+/* Never squeezed by the meter (which gives way first); only a long error
+   message gets an ellipsis. */
 .overlay-label {
-  white-space: nowrap;
+  flex: 0 1 auto;
   min-width: 0;
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .overlay-head .meter {
   height: 14px;
-  flex: none;
-  width: 72px;
+  flex: 1;
+  min-width: 0;
+  max-width: 120px;
+  gap: 2px;
   justify-content: flex-start;
+  overflow: hidden;
 }
 .overlay-head .meter span {
   width: 3px;
+  flex: none;
 }
 .overlay-lang {
-  width: auto;
-  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   height: 24px;
-  padding: 0 6px;
+  padding: 0 6px 0 8px;
+  border-radius: 999px;
+  border: 1px solid var(--hairline);
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font: inherit;
   font-size: var(--text-xs);
+  font-weight: 600;
+  cursor: pointer;
+}
+.overlay-lang:hover,
+.overlay-lang.open {
+  border-color: var(--border);
+  color: var(--text);
+}
+.overlay-lang-chevron {
+  opacity: 0.7;
+  transition: transform 120ms ease;
+}
+.overlay-lang.open .overlay-lang-chevron {
+  transform: rotate(180deg);
+}
+/* Vertical list under the pill, dropping over the transcript. Anchored to
+   .overlay-card (not the pill) and capped to the card's height so it always
+   fits inside the small overlay window; longer lists scroll. */
+.overlay-lang-menu {
+  position: absolute;
+  z-index: 5;
+  top: 40px;
+  bottom: 8px;
+  inset-inline-end: 10px;
+  width: 210px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  overflow-y: auto;
+  padding: 4px;
+  border-radius: 10px;
+  background: var(--popover);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-lg);
+  animation: fade-in 120ms ease;
+  cursor: default;
+}
+.overlay-lang-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  height: 26px;
+  padding: 0 8px;
+  border-radius: 6px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-xs);
+  font-weight: 400;
+  text-align: start;
+  cursor: pointer;
+}
+.overlay-lang-option:hover {
+  background: var(--surface-2);
+}
+.overlay-lang-option[aria-selected="true"] {
+  background: var(--accent-soft);
+  color: var(--accent-soft-text);
+}
+.overlay-lang-check {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 12px;
+}
+.overlay-lang-code {
+  flex: none;
+  min-width: 28px;
+  font-weight: 700;
+}
+.overlay-lang-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0.75;
 }
 .overlay-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   flex: none;
 }
 .overlay-edit {
@@ -692,22 +912,6 @@ html.overlay #root {
   font-size: var(--text-xs);
   color: var(--text-faint);
 }
-.overlay-status {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex: none;
-  min-width: 0;
-}
-.overlay-status .meter {
-  height: 14px;
-  flex: none;
-  width: 72px;
-  justify-content: flex-start;
-}
-.overlay-status .meter span {
-  width: 3px;
-}
 .overlay-hint {
   flex: 1;
   min-width: 0;
@@ -722,6 +926,7 @@ html.overlay #root {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  padding-inline-start: 30px;
   font-size: var(--text-md);
   line-height: 1.5;
   user-select: text;

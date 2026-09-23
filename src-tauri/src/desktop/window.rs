@@ -569,7 +569,7 @@ pub fn open_settings(app: &AppHandle, section: Option<&str>) -> tauri::Result<()
 /// Logical size of the dictation overlay while listening, and while a result
 /// waits for review (taller, to hold the editable text and its buttons).
 const OVERLAY_W: f64 = 480.0;
-const OVERLAY_H: f64 = 112.0;
+const OVERLAY_H: f64 = 140.0;
 const OVERLAY_H_REVIEW: f64 = 176.0;
 
 #[cfg(windows)]
@@ -758,28 +758,23 @@ pub fn hide_overlay(app: &AppHandle) {
     }
 }
 
-/// Cancels in-progress dictation (Esc / overlay X): drops audio, skips the
-/// insert, shows "cancelled" feedback. Also discards a result waiting for
-/// review. No-op otherwise.
+/// Closes the overlay right away (Esc / overlay X). Whatever is in flight is
+/// dropped: listening stops without inserting, a result waiting for review is
+/// discarded, and a transcript still being transcribed or corrected is
+/// cancelled when it arrives. Closing an overlay that only shows a finished
+/// result ("Inserted", an error) just hides it.
 pub fn cancel_dictation(app: &AppHandle) {
     let state = app.state::<AppState>();
     if !discard_review(app) {
-        if state.voice.active_mode() != Some(ListenMode::Dictation) {
-            return;
-        }
+        // Also covers the transcribing/correcting stretch, when nothing is
+        // listening yet run_dictation still has to see the cancel. A stale flag
+        // is harmless: the next session clears it on start.
         state.dictation_cancel.store(true, Ordering::Relaxed);
-        state.voice.stop(true);
-    }
-    let _ = app.emit("dictation://state", serde_json::json!({"state": "cancelled"}));
-    // Let "cancelled" paint, then hide unless a new session started.
-    let app2 = app.clone();
-    tauri::async_runtime::spawn(async move {
-        tokio::time::sleep(std::time::Duration::from_millis(1400)).await;
-        let s = app2.state::<AppState>();
-        if s.voice.active_mode() != Some(ListenMode::Dictation) && !s.dictation_busy.load(Ordering::Relaxed) {
-            hide_overlay(&app2);
+        if state.voice.active_mode() == Some(ListenMode::Dictation) {
+            state.voice.stop(true);
         }
-    });
+    }
+    hide_overlay(app);
 }
 
 #[cfg(test)]

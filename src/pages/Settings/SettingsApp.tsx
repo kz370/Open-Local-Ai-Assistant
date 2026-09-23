@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useState, type ComponentType } from "react";
-import { Activity, AudioLines, Info, Bot, Globe, Keyboard, Languages, MemoryStick, Mic, Palette, PenLine, Plug, Search, Settings2, Shield, Volume2 } from "lucide-react";
+import { Activity, Info, Bot, Globe, Keyboard, Languages, MemoryStick, Mic, Palette, PenLine, Plug, Search, Settings, Settings2, Shield, Volume2 } from "lucide-react";
 import { useSettingsHighlight } from "../../app/settingsHighlight";
 import { on } from "../../app/ipc";
 import { t } from "../../app/strings";
@@ -129,8 +129,8 @@ export function SettingsApp() {
     <div className="settings-shell">
       <nav className="settings-nav" aria-label={t("settings.title")}>
         <div className="settings-nav-title">
-          <span className="brand-mark" aria-hidden>
-            <AudioLines size={11} />
+          <span className="brand-mark settings-mark" aria-hidden>
+            <Settings size={14} />
           </span>
           {t("settings.title")}
         </div>
