@@ -554,6 +554,13 @@ html.overlay #root {
 .overlay-head .meter span {
   width: 3px;
 }
+.overlay-lang {
+  width: auto;
+  min-height: 24px;
+  height: 24px;
+  padding: 0 6px;
+  font-size: var(--text-xs);
+}
 .overlay-actions {
   display: flex;
   align-items: center;

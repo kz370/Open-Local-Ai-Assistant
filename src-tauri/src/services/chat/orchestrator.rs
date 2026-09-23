@@ -234,6 +234,16 @@ impl ChatEngine {
             .or(conv_lang);
         let forced = Lang::from_code(&settings.language.response_language);
         let response_lang = forced.or(detected).unwrap_or(Lang::En);
+        // A user-added language has no built-in support: it is forced through the prompt only.
+        let custom_language = match forced {
+            Some(_) => None,
+            None => settings
+                .language
+                .entries
+                .iter()
+                .find(|e| e.code == settings.language.response_language)
+                .map(|e| e.display_name.clone()),
+        };
 
         let user_message = Message {
             id: new_id(),
@@ -314,6 +324,7 @@ impl ChatEngine {
         let system = build_system_prompt(&PromptContext {
             date: chrono::Local::now(),
             forced_language: forced,
+            custom_language: custom_language.as_deref(),
             tools: &tool_desc,
             has_web_tool,
             voice_mode: speak,
@@ -322,7 +333,7 @@ impl ChatEngine {
             tashkeel_enabled: settings.language.arabic_tashkeel_enabled,
             tashkeel_instruction: &settings.language.arabic_tashkeel_instruction,
         });
-        let note = turn_note(chrono::Local::now(), forced, detected, needs_fresh_info(&text).then(|| freshness_hint(has_web_tool)));
+        let note = turn_note(chrono::Local::now(), forced, detected.filter(|_| custom_language.is_none()), needs_fresh_info(&text).then(|| freshness_hint(has_web_tool)));
 
         let ctx_tokens = settings
             .ai

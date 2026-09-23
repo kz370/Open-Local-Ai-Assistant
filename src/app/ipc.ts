@@ -114,6 +114,7 @@ export const ipc = {
   dictationInsertNow: () => invoke<void>("dictation_insert_now"),
   dictationConfirm: (text: string) => invoke<void>("dictation_confirm", { text }),
   dictationRetry: () => invoke<void>("dictation_retry"),
+  dictationSetLanguage: (language: string) => invoke<void>("dictation_set_language", { language }),
   dictationHistory: () => invoke<DictationEntry[]>("dictation_history"),
   dictationHistoryDelete: (id: string) => invoke<void>("dictation_history_delete", { id }),
   dictationHistoryClear: () => invoke<void>("dictation_history_clear"),

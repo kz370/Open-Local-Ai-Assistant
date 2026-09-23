@@ -13,6 +13,9 @@ pub struct PromptContext<'a> {
     pub date: chrono::DateTime<chrono::Local>,
     /// Forced response language, or None for automatic.
     pub forced_language: Option<Lang>,
+    /// Display name of a user-added response language (not one of the built-in
+    /// three), when that one is forced.
+    pub custom_language: Option<&'a str>,
     /// (llm-facing tool name, description) of enabled tools.
     pub tools: &'a [(String, String)],
     pub has_web_tool: bool,
@@ -37,14 +40,15 @@ pub fn build_system_prompt(ctx: &PromptContext) -> String {
     p.push_str(&format!("Today's date: {} ({}).\n", ctx.date.format("%Y-%m-%d"), ctx.date.format("%A")));
 
     p.push_str("\n## Language\n");
-    match ctx.forced_language {
-        Some(l) => p.push_str(&format!("Always respond in {}, regardless of the language the user writes in.\n", l.english_name())),
-        None => p.push_str("Respond in the same language as the user's latest message (English, Arabic or German).\n"),
+    match (ctx.forced_language, ctx.custom_language) {
+        (Some(l), _) => p.push_str(&format!("Always respond in {}, regardless of the language the user writes in.\n", l.english_name())),
+        (None, Some(name)) => p.push_str(&format!("Always respond in {name}, regardless of the language the user writes in.\n")),
+        (None, None) => p.push_str("Respond in the same language as the user's latest message (English, Arabic or German).\n"),
     }
     p.push_str("Keep code, commands, URLs and technical identifiers unchanged.\n");
     // Included whenever Arabic may be answered, not only when the latest
     // message is Arabic, so switching language does not change the prompt.
-    let may_be_arabic = matches!(ctx.forced_language, None | Some(Lang::Ar));
+    let may_be_arabic = ctx.custom_language.is_none() && matches!(ctx.forced_language, None | Some(Lang::Ar));
     if may_be_arabic {
         p.push_str(
             "### Arabic quality (when responding in Arabic)\n\
@@ -158,6 +162,7 @@ mod tests {
         PromptContext {
             date: chrono::Local::now(),
             forced_language: forced,
+            custom_language: None,
             tools,
             has_web_tool: web,
             voice_mode: false,
@@ -171,6 +176,9 @@ mod tests {
     #[test]
     fn language_directives() {
         assert!(build_system_prompt(&ctx(&[], Some(Lang::De), Some(Lang::Ar), false)).contains("Always respond in German"));
+        let french = PromptContext { custom_language: Some("French"), ..ctx(&[], None, None, false) };
+        let p = build_system_prompt(&french);
+        assert!(p.contains("Always respond in French") && !p.contains("Arabic quality"));
         let note = turn_note(chrono::Local::now(), None, Some(Lang::Ar), None);
         assert!(note.contains("respond in Arabic") && note.contains("local time"));
         assert!(!turn_note(chrono::Local::now(), Some(Lang::De), Some(Lang::Ar), None).contains("Arabic"));

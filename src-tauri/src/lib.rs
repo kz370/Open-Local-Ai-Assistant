@@ -480,6 +480,7 @@ pub fn run() {
             commands::voice::dictation_insert_now,
             commands::voice::dictation_confirm,
             commands::voice::dictation_retry,
+            commands::voice::dictation_set_language,
             commands::voice::dictation_history,
             commands::voice::dictation_history_delete,
             commands::voice::dictation_history_clear,
