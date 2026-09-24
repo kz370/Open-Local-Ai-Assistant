@@ -157,6 +157,23 @@ describe("settings dashboard", () => {
     expect(screen.getByText(/needs an ONNX export/)).toBeInTheDocument();
   });
 
+  it("shows only voices of the preferred gender in the voice picker", async () => {
+    const base = vi.mocked(invoke).getMockImplementation()!;
+    const st = (sid: number, name: string, gender: string) => ({ id: `supertonic-3-int8:${sid}`, modelId: "supertonic-3-int8", name, language: "*", speakerId: sid, engine: "supertonic", quality: 3, gender });
+    vi.mocked(invoke).mockImplementation(async (cmd: string, args?: unknown) =>
+      cmd === "tts_voices" ? [st(0, "Sarah (female, calm)", "female"), st(5, "Alex (male, lively)", "male")] : base(cmd, args as never),
+    );
+    location.hash = "#/settings/voice";
+    render(<SettingsApp />);
+    const options = () => Array.from(document.querySelectorAll("#sel-voice option")).map((o) => o.textContent);
+    await waitFor(() => expect(options()).toContain("Alex (male, lively)"));
+    expect(options()).toContain("Sarah (female, calm)");
+
+    fireEvent.click(screen.getByRole("radio", { name: "Male" }));
+    await waitFor(() => expect(options()).not.toContain("Sarah (female, calm)"));
+    expect(options()).toContain("Alex (male, lively)");
+  });
+
   it("shows model short names and lets you set one", async () => {
     location.hash = "#/settings/ai";
     const { container } = render(<SettingsApp />);
