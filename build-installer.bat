@@ -90,6 +90,21 @@ if not exist "%ROOT%dist\index.html" (
 )
 
 
+rem sherpa-onnx (the speech engine) comes as a prebuilt archive that its build
+rem script downloads into target\, so every cargo clean downloads it again.
+rem Keep a copy in .build-cache\ and let the build script use that instead.
+rem The version comes from Cargo.lock, so an upgrade downloads the new one.
+set "SHERPA_CACHE=%ROOT%.build-cache\sherpa-onnx"
+set "SHERPA_VER="
+set "SHERPA_ONNX_ARCHIVE_DIR="
+for /f %%v in ('powershell -NoProfile -Command "$m = [regex]::Match((Get-Content -Raw '%ROOT%src-tauri\Cargo.lock'), 'name = .sherpa-onnx-sys.\r?\nversion = .([0-9.]+)'); if ($m.Success) { $m.Groups[1].Value }"') do set "SHERPA_VER=%%v"
+set "SHERPA_ARCHIVE=sherpa-onnx-v%SHERPA_VER%-win-x64-shared-MT-Release-lib.tar.bz2"
+if defined SHERPA_VER if exist "%SHERPA_CACHE%\%SHERPA_ARCHIVE%" (
+  set "SHERPA_ONNX_ARCHIVE_DIR=%SHERPA_CACHE%"
+  echo       sherpa-onnx %SHERPA_VER%: using the cached copy, no download
+)
+
+
 echo [2/4] Building release exe (%JOBS% build jobs)...
 pushd "%ROOT%src-tauri"
 cargo build --release --jobs %JOBS%
@@ -102,6 +117,13 @@ if not "%BUILD_ERR%"=="0" (
 if not exist "%EXE%" (
   echo [x] Build finished but %EXE% is missing.
   goto :fail
+)
+
+rem Save the sherpa-onnx archive for the next clean build.
+set "SHERPA_BUILT=%ROOT%src-tauri\target\sherpa-onnx-prebuilt\%SHERPA_ARCHIVE%"
+if defined SHERPA_VER if not exist "%SHERPA_CACHE%\%SHERPA_ARCHIVE%" if exist "%SHERPA_BUILT%" (
+  if not exist "%SHERPA_CACHE%" mkdir "%SHERPA_CACHE%"
+  copy /y "%SHERPA_BUILT%" "%SHERPA_CACHE%\" >nul && echo       sherpa-onnx %SHERPA_VER%: saved to .build-cache for next time
 )
 
 
