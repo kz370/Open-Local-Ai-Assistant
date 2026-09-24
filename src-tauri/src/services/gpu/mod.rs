@@ -333,9 +333,17 @@ pub fn activate(data_dir: &Path, enabled: bool) -> bool {
         .env(RELAUNCH_MARKER, "1")
         .spawn()
     {
-        Ok(_) => {
+        Ok(child) => {
             tracing::info!(exe = %copy.display(), "restarting with the GPU pack");
-            true
+            // Development builds wait for the copy (see `supervise`); release
+            // builds hand over to it and exit right away.
+            #[cfg(all(windows, debug_assertions))]
+            std::process::exit(supervise(child));
+            #[cfg(not(all(windows, debug_assertions)))]
+            {
+                drop(child);
+                true
+            }
         }
         Err(e) => {
             tracing::warn!(error = %e, "could not restart with the GPU pack, staying on the CPU");
@@ -343,6 +351,42 @@ pub fn activate(data_dir: &Path, enabled: bool) -> bool {
             false
         }
     }
+}
+
+/// Development builds only: waits until the GPU copy exits and returns its
+/// exit code, for this process to exit with. `tauri dev` watches the process it launched; if that one
+/// quit right after the relaunch, `tauri dev` would take the app for closed
+/// and stop the Vite server the copy loads its pages from ("can't reach this
+/// page"). A job object ends the copy together with this process, so stopping
+/// `tauri dev` or a Rust rebuild never leaves a stale copy running.
+#[cfg(all(windows, debug_assertions))]
+fn supervise(mut child: std::process::Child) -> i32 {
+    use std::os::windows::io::AsRawHandle;
+    use windows::Win32::Foundation::HANDLE;
+    use windows::Win32::System::JobObjects::{
+        AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation, SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+        JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+    };
+    // SAFETY: plain Win32 calls on handles owned by this process. The job
+    // handle is deliberately never closed: the system closes it when this
+    // process ends, which is what ends the copy.
+    let tied = unsafe {
+        CreateJobObjectW(None, windows::core::PCWSTR::null()).and_then(|job| {
+            let mut info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
+            info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+            SetInformationJobObject(
+                job,
+                JobObjectExtendedLimitInformation,
+                &info as *const _ as *const core::ffi::c_void,
+                std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+            )?;
+            AssignProcessToJobObject(job, HANDLE(child.as_raw_handle()))
+        })
+    };
+    if let Err(e) = tied {
+        tracing::warn!(error = %e, "could not tie the GPU copy to this process");
+    }
+    child.wait().ok().and_then(|s| s.code()).unwrap_or(1)
 }
 
 /// Copies this executable into the pack folder, refreshing an older copy so an
