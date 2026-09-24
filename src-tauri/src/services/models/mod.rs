@@ -16,15 +16,20 @@ pub const COMPLETE_MARKER: &str = ".complete";
 /// The multilingual voice every language falls back to.
 pub const BUILT_IN_VOICE: &str = "supertonic-3-int8";
 
+/// The speech recognizer every install starts with: the best quality for its
+/// size, so speech input always works.
+pub const BUILT_IN_STT: &str = "whisper-small";
+
 /// Voice activity detection; Whisper-style recognizers and hands-free need it.
 pub const BUILT_IN_VAD: &str = "silero-vad";
 
 /// Silero VAD ships inside the exe (~630 KB) instead of being downloaded.
 const BUNDLED_VAD: &[u8] = include_bytes!("../../../assets/silero_vad.onnx");
 
-/// Models the app never deletes: the fallback voice, so the assistant always
-/// has one, and the VAD that non-streaming dictation depends on.
-pub const PROTECTED_MODELS: &[&str] = &[BUILT_IN_VOICE, BUILT_IN_VAD];
+/// Models the app never deletes: the starter speech recognizer and fallback
+/// voice, so the assistant can always listen and speak, and the VAD that
+/// non-streaming dictation depends on.
+pub const PROTECTED_MODELS: &[&str] = &[BUILT_IN_STT, BUILT_IN_VOICE, BUILT_IN_VAD];
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -66,7 +71,7 @@ impl Recommendation {
 /// later; Whisper tiny/base are not offered (users can place them by hand).
 pub fn recommend(_hw: &HardwareInfo) -> Recommendation {
     Recommendation {
-        stt: "whisper-small",
+        stt: BUILT_IN_STT,
         vad: BUILT_IN_VAD,
         tts: BUILT_IN_VOICE,
     }
