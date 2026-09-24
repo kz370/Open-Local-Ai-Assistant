@@ -472,6 +472,7 @@
       "extracting": "Installing…",
       "cancel": "Cancel",
       "delete": "Delete",
+      "deleteConfirm": "Delete “{{name}}” ({{size}})? It has to be downloaded again to use it.",
       "consent": "Models are downloaded from Hugging Face and GitHub only when you click Download. They run fully offline afterwards.",
       "size": "{{size}}",
       "openFolder": "Open models folder",

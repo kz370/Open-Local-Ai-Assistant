@@ -3,7 +3,7 @@ import { CheckCircle2, FolderOpen, Trash2 } from "lucide-react";
 import { ipc, on, toAppError } from "../../app/ipc";
 import { formatBytes, languageName, t } from "../../app/strings";
 import type { AppErrorPayload, CatalogEntry, DownloadProgress, InstalledModel } from "../../app/types";
-import { ErrorNotice } from "../common/controls";
+import { Dialog, ErrorNotice } from "../common/controls";
 import { Card } from "./layout";
 
 export function useModelCatalog() {
@@ -37,6 +37,7 @@ export function ModelManager({ kinds, title, languageFilter }: { kinds: ("stt" |
   const { catalog, installed, progress, refresh } = useModelCatalog();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [error, setError] = useState<AppErrorPayload | null>(null);
+  const [deleting, setDeleting] = useState<CatalogEntry | null>(null);
 
   const matchesLanguage = (languages: string[]) => !languageFilter || languages.includes("*") || languages.includes(languageFilter);
   const entries = useMemo(() => catalog.filter((c) => kinds.includes(c.kind) && matchesLanguage(c.languages)), [catalog, kinds, languageFilter]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -48,6 +49,17 @@ export function ModelManager({ kinds, title, languageFilter }: { kinds: ("stt" |
   }, [entries.map((e) => `${e.id}:${e.installed}:${e.downloading}`).join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const selectedSize = entries.filter((e) => selected.has(e.id)).reduce((a, e) => a + e.downloadBytes, 0);
+
+  const remove = async (entry: CatalogEntry) => {
+    setDeleting(null);
+    setError(null);
+    try {
+      await ipc.modelsDelete(entry.id);
+    } catch (e) {
+      setError(toAppError(e));
+    }
+    await refresh();
+  };
 
   const download = async () => {
     setError(null);
@@ -134,7 +146,7 @@ export function ModelManager({ kinds, title, languageFilter }: { kinds: ("stt" |
                   </>
                 )}
                 {e.installed && e.deletable && (
-                  <button className="icon-btn danger" aria-label={`${t("settings.models.delete")} ${e.name}`} title={t("settings.models.delete")} onClick={() => void ipc.modelsDelete(e.id).then(refresh)}>
+                  <button className="icon-btn danger" aria-label={`${t("settings.models.delete")} ${e.name}`} title={t("settings.models.delete")} onClick={() => setDeleting(e)}>
                     <Trash2 size={14} />
                   </button>
                 )}
@@ -162,6 +174,29 @@ export function ModelManager({ kinds, title, languageFilter }: { kinds: ("stt" |
           {t("settings.models.downloadSelected", { size: formatBytes(selectedSize) })}
         </button>
       </div>
+      {deleting && (
+        <Dialog
+          title={t("settings.models.delete")}
+          onClose={() => setDeleting(null)}
+          actions={
+            <>
+              <button className="btn" onClick={() => setDeleting(null)}>
+                {t("app.cancel")}
+              </button>
+              <button className="btn btn-primary" onClick={() => void remove(deleting)}>
+                {t("settings.models.delete")}
+              </button>
+            </>
+          }
+        >
+          <p>
+            {t("settings.models.deleteConfirm", {
+              name: deleting.name,
+              size: formatBytes(installed.find((m) => m.id === deleting.id)?.sizeBytes ?? deleting.downloadBytes),
+            })}
+          </p>
+        </Dialog>
+      )}
     </Card>
   );
 }

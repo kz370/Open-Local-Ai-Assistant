@@ -157,19 +157,20 @@ async fn custom_model_folder_transcribes() {
 
 /// Drives the hands-free pipeline (VAD -> transcription -> events) with
 /// recorded speech instead of a microphone.
-#[tokio::test]
-async fn hands_free_pipeline_transcribes_utterances() {
+/// Feeds a synthesized sentence plus trailing silence through a listening
+/// session, like the microphone would, and returns every event it emitted.
+async fn run_pipeline(mode: local_ai_assistant_lib::services::stt::session::ListenMode) -> Option<Vec<local_ai_assistant_lib::services::stt::session::VoiceEvent>> {
     let Ok(dir) = std::env::var("LA_MODELS_DIR") else {
-        eprintln!("LA_MODELS_DIR not set; skipping hands-free pipeline test");
-        return;
+        eprintln!("LA_MODELS_DIR not set; skipping {mode:?} pipeline test");
+        return None;
     };
     use local_ai_assistant_lib::services::audio::capture::CaptureEvent;
-    use local_ai_assistant_lib::services::stt::session::{run_session_for_test, ListenMode, VoiceEvent};
+    use local_ai_assistant_lib::services::stt::session::{run_session_for_test, VoiceEvent};
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Mutex;
 
     let store = Arc::new(ModelStore::new(dir.into()));
-    for id in ["whisper-base", "silero-vad", "supertonic-3-int8"] {
+    for id in ["whisper-small", "silero-vad", "supertonic-3-int8"] {
         if !store.is_installed(id) {
             let m = catalog::find(id).unwrap();
             download::install(&store, m, CancellationToken::new(), &|_| {}).await.expect("install");
@@ -182,7 +183,6 @@ async fn hands_free_pipeline_transcribes_utterances() {
     let stt = SttService::new(store.clone(), hw.clone());
     let vad_path = stt.vad_model_path().expect("silero vad installed");
 
-    // Two spoken sentences with a pause between them.
     let (speech, rate) = tts.synthesize("Hello assistant, what is the weather today?", Lang::En, hw.inference_threads()).unwrap();
     let pcm = sherpa_onnx::LinearResampler::create(rate as i32, 16_000).unwrap().resample(&speech, true);
 
@@ -191,6 +191,7 @@ async fn hands_free_pipeline_transcribes_utterances() {
     let events: Arc<Mutex<Vec<VoiceEvent>>> = Arc::new(Mutex::new(Vec::new()));
     let sink = events.clone();
     let stop_feeder = stop.clone();
+    // Starts before the session, so the audio arrives while the model loads.
     std::thread::spawn(move || {
         // Feed the audio in 20 ms chunks like the microphone would, then silence.
         for chunk in pcm.chunks(320) {
@@ -201,33 +202,62 @@ async fn hands_free_pipeline_transcribes_utterances() {
             let _ = tx.send(CaptureEvent::Samples(vec![0.0; 320]));
             std::thread::sleep(std::time::Duration::from_millis(2));
         }
-        std::thread::sleep(std::time::Duration::from_secs(4));
+        // Keep listening until the session has shown text (or give up).
+        for _ in 0..150 {
+            if stop_feeder.load(Ordering::Relaxed) {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
         stop_feeder.store(true, Ordering::Relaxed);
     });
 
     let stt_settings = settings.get().stt;
-    run_session_for_test(
-        &stt,
-        &stt_settings,
-        ListenMode::HandsFree,
-        &rx,
-        Some(&vad_path),
-        Arc::new(move |ev| sink.lock().unwrap().push(ev)),
-        stop,
-    );
+    let stop_on_text = stop.clone();
+    let emit = Arc::new(move |ev: VoiceEvent| {
+        if matches!(&ev, VoiceEvent::Partial { text, .. } | VoiceEvent::Transcript { text, .. } if !text.is_empty()) {
+            stop_on_text.store(true, Ordering::Relaxed);
+        }
+        sink.lock().unwrap().push(ev);
+    });
+    run_session_for_test(&stt, &stt_settings, mode, &rx, Some(&vad_path), emit, stop);
+    let seen = std::mem::take(&mut *events.lock().unwrap());
+    Some(seen)
+}
 
-    let seen = events.lock().unwrap();
-    let transcripts: Vec<String> = seen
+fn transcripts(events: &[local_ai_assistant_lib::services::stt::session::VoiceEvent]) -> Vec<String> {
+    use local_ai_assistant_lib::services::stt::session::VoiceEvent;
+    events
         .iter()
         .filter_map(|e| match e {
             VoiceEvent::Transcript { text, .. } => Some(text.clone()),
             _ => None,
         })
-        .collect();
+        .collect()
+}
+
+#[tokio::test]
+async fn hands_free_pipeline_transcribes_utterances() {
+    use local_ai_assistant_lib::services::stt::session::ListenMode;
+    let Some(seen) = run_pipeline(ListenMode::HandsFree).await else { return };
+    let transcripts = transcripts(&seen);
     eprintln!("hands-free transcripts: {transcripts:?}");
     assert!(!transcripts.is_empty(), "hands-free produced no transcript; events: {:?}", seen.len());
     let joined = transcripts.join(" ").to_lowercase();
     assert!(joined.contains("weather"), "unexpected transcript: {joined}");
+}
+
+#[tokio::test]
+async fn dictation_pipeline_shows_utterances_live_and_once() {
+    use local_ai_assistant_lib::services::stt::session::{ListenMode, VoiceEvent};
+    let Some(seen) = run_pipeline(ListenMode::Dictation).await else { return };
+    let partial = seen.iter().any(|e| matches!(e, VoiceEvent::Partial { text, .. } if text.to_lowercase().contains("weather")));
+    assert!(partial, "the finished utterance was not shown while listening");
+    let transcripts = transcripts(&seen);
+    eprintln!("dictation transcripts: {transcripts:?}");
+    assert_eq!(transcripts.len(), 1, "{transcripts:?}");
+    let text = transcripts[0].to_lowercase();
+    assert_eq!(text.matches("weather").count(), 1, "utterance transcribed twice or lost: {text}");
 }
 
 /// Checks that the default microphone actually delivers audio events.

@@ -61,11 +61,12 @@ impl Recommendation {
     }
 }
 
-/// Starter set: the smallest models that still work well, so the first
-/// download is quick. Bigger models can be installed from Settings later.
+/// Starter set: the smallest catalog models that still work well, so the
+/// first download stays quick. Bigger models can be installed from Settings
+/// later; Whisper tiny/base are not offered (users can place them by hand).
 pub fn recommend(_hw: &HardwareInfo) -> Recommendation {
     Recommendation {
-        stt: "whisper-base",
+        stt: "whisper-small",
         vad: BUILT_IN_VAD,
         tts: BUILT_IN_VOICE,
     }
@@ -392,9 +393,9 @@ mod tests {
     #[test]
     fn recommends_the_small_starter_set() {
         let rec = recommend(&HardwareInfo::default());
-        assert_eq!(rec.stt, "whisper-base");
+        assert_eq!(rec.stt, "whisper-small");
         let total: u64 = rec.ids().iter().filter_map(|id| catalog::find(id)).map(|m| m.download_size()).sum();
-        assert!(total < 400_000_000, "starter download should stay small, got {total}");
+        assert!(total < 550_000_000, "starter download should stay small, got {total}");
         for id in rec.ids() {
             assert!(catalog::find(id).is_some(), "{id}");
         }

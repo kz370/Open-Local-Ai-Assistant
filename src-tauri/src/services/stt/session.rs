@@ -205,9 +205,10 @@ fn run_session(stt: &SttService, ctx: &SessionCtx, rx: &Receiver<CaptureEvent>, 
         },
         None => None,
     };
+    let Some(backlog) = ctx.warm_up(stt, rx) else { return };
     let result = stt.with_recognizer(&ctx.settings, |rec, model| {
         tracing::info!(mode = ?ctx.mode, model = %model.id, streaming = rec.is_streaming(), vad = vad.is_some(), "listening session started");
-        ctx.run(rec, rx, vad)
+        ctx.run(rec, rx, vad, backlog)
     });
     if let Err(e) = result {
         tracing::warn!(error = %e, "speech session could not start");
@@ -351,13 +352,60 @@ impl SessionCtx {
         (self.emit)(VoiceEvent::Transcript { mode: self.mode, text, language, audio_ms, elapsed_ms });
     }
 
+    /// Meter update; a muted microphone shows no level.
+    fn emit_level(&self, v: f32, bands: Vec<f32>) {
+        let muted = self.mic_muted();
+        (self.emit)(VoiceEvent::Level { mode: self.mode, value: if muted { 0.0 } else { v }, bands: if muted { vec![0.0; bands.len()] } else { bands } });
+    }
+
+    /// Loads the speech model on a helper thread while this one keeps the
+    /// level meter moving and collects the audio heard meanwhile (a cold
+    /// load takes seconds, and the overlay looked frozen during it). Returns
+    /// that audio, or `None` when the session cannot go on.
+    fn warm_up(&self, stt: &SttService, rx: &Receiver<CaptureEvent>) -> Option<Vec<f32>> {
+        let settings = &self.settings;
+        let hands_free = self.mode == ListenMode::HandsFree;
+        std::thread::scope(|scope| {
+            let loading = scope.spawn(move || stt.with_recognizer(settings, |_, _| ()));
+            let mut backlog = Vec::new();
+            let mut failed = false;
+            while !loading.is_finished() {
+                match rx.recv_timeout(Duration::from_millis(50)) {
+                    Ok(CaptureEvent::Level(v, bands)) => self.emit_level(v, bands),
+                    Ok(CaptureEvent::Samples(s)) => {
+                        if !self.input_muted(hands_free) {
+                            backlog.extend_from_slice(&s);
+                        }
+                    }
+                    Ok(CaptureEvent::Error(e)) => {
+                        (self.emit)(VoiceEvent::Error { mode: self.mode, code: "audio".into(), detail: e });
+                        failed = true;
+                        break;
+                    }
+                    Err(RecvTimeoutError::Timeout) => {}
+                    Err(RecvTimeoutError::Disconnected) => break,
+                }
+            }
+            match loading.join() {
+                Ok(Ok(())) if !failed => Some(backlog),
+                Ok(Ok(())) => None,
+                Ok(Err(e)) => {
+                    tracing::warn!(error = %e, "speech session could not start");
+                    (self.emit)(VoiceEvent::Error { mode: self.mode, code: e.code().into(), detail: e.to_string() });
+                    None
+                }
+                Err(_) => {
+                    (self.emit)(VoiceEvent::Error { mode: self.mode, code: "stt_unavailable".into(), detail: "the speech model could not be loaded".into() });
+                    None
+                }
+            }
+        })
+    }
+
     fn run_level_only(&self, rx: &Receiver<CaptureEvent>) {
         while !self.stopped() {
             match rx.recv_timeout(Duration::from_millis(100)) {
-                Ok(CaptureEvent::Level(v, bands)) => {
-                    let muted = self.mic_muted();
-                    (self.emit)(VoiceEvent::Level { mode: self.mode, value: if muted { 0.0 } else { v }, bands: if muted { vec![0.0; bands.len()] } else { bands } })
-                }
+                Ok(CaptureEvent::Level(v, bands)) => self.emit_level(v, bands),
                 Ok(CaptureEvent::Error(e)) => {
                     (self.emit)(VoiceEvent::Error { mode: self.mode, code: "audio".into(), detail: e });
                     return;
@@ -369,16 +417,19 @@ impl SessionCtx {
         }
     }
 
-    fn run(&self, rec: &Recognizer, rx: &Receiver<CaptureEvent>, vad: Option<sherpa_onnx::VoiceActivityDetector>) {
+    /// `backlog` is the audio heard while the model was loading; it is
+    /// processed first, even when the user already stopped.
+    fn run(&self, rec: &Recognizer, rx: &Receiver<CaptureEvent>, vad: Option<sherpa_onnx::VoiceActivityDetector>, backlog: Vec<f32>) {
+        let backlog = (!backlog.is_empty()).then_some(CaptureEvent::Samples(backlog));
         if rec.is_streaming() {
-            self.run_streaming(rec, rx);
+            self.run_streaming(rec, rx, backlog);
         } else {
-            self.run_buffered(rec, rx, vad);
+            self.run_buffered(rec, rx, vad, backlog);
         }
     }
 
     /// Streaming recognizers: text appears while the user is still speaking.
-    fn run_streaming(&self, rec: &Recognizer, rx: &Receiver<CaptureEvent>) {
+    fn run_streaming(&self, rec: &Recognizer, rx: &Receiver<CaptureEvent>, mut backlog: Option<CaptureEvent>) {
         let Some(mut session) = rec.stream_session() else { return };
         let started = Instant::now();
         let mut last_partial = String::new();
@@ -387,16 +438,19 @@ impl SessionCtx {
         let hands_free = self.mode == ListenMode::HandsFree;
         let mut silence = SilenceGuard::new(self.mode, &self.settings);
 
-        while !self.stopped() && started.elapsed() < MAX_RECORDING && !silence.expired() {
-            match rx.recv_timeout(Duration::from_millis(100)) {
+        while backlog.is_some() || (!self.stopped() && started.elapsed() < MAX_RECORDING && !silence.expired()) {
+            let event = match backlog.take() {
+                Some(e) => Ok(e),
+                None => rx.recv_timeout(Duration::from_millis(100)),
+            };
+            match event {
                 Ok(CaptureEvent::Level(v, bands)) => {
-                    // A muted microphone shows no level, and its silence must
-                    // not count toward the idle timeout: the user is still here.
-                    let muted = self.mic_muted();
-                    if muted || v > SPEECH_LEVEL {
+                    // A muted microphone's silence must not count toward the
+                    // idle timeout: the user is still here.
+                    if self.mic_muted() || v > SPEECH_LEVEL {
                         silence.heard_speech();
                     }
-                    (self.emit)(VoiceEvent::Level { mode: self.mode, value: if muted { 0.0 } else { v }, bands: if muted { vec![0.0; bands.len()] } else { bands } });
+                    self.emit_level(v, bands);
                 }
                 Ok(CaptureEvent::Samples(s)) => {
                     if self.input_muted(hands_free) {
@@ -463,7 +517,7 @@ impl SessionCtx {
     }
 
     /// Non-streaming recognizers: the VAD splits speech into utterances.
-    fn run_buffered(&self, rec: &Recognizer, rx: &Receiver<CaptureEvent>, vad: Option<sherpa_onnx::VoiceActivityDetector>) {
+    fn run_buffered(&self, rec: &Recognizer, rx: &Receiver<CaptureEvent>, vad: Option<sherpa_onnx::VoiceActivityDetector>, mut backlog: Option<CaptureEvent>) {
         let started = Instant::now();
         let hands_free = self.mode == ListenMode::HandsFree;
         let mut buffer: Vec<f32> = Vec::new(); // audio not yet covered by a finished utterance
@@ -473,116 +527,149 @@ impl SessionCtx {
         let mut samples_seen = 0u64;
         let mut silence = SilenceGuard::new(self.mode, &self.settings);
 
-        while !self.stopped() && (hands_free || started.elapsed() < MAX_RECORDING) && !silence.expired() {
-            match rx.recv_timeout(Duration::from_millis(100)) {
-                Ok(CaptureEvent::Level(v, bands)) => {
-                    // A muted microphone shows no level, and its silence must
-                    // not count toward the idle timeout: the user is still here.
-                    let muted = self.mic_muted();
-                    if muted || v > SPEECH_LEVEL {
-                        silence.heard_speech();
-                    }
-                    (self.emit)(VoiceEvent::Level { mode: self.mode, value: if muted { 0.0 } else { v }, bands: if muted { vec![0.0; bands.len()] } else { bands } });
-                }
-                Ok(CaptureEvent::Samples(s)) => {
-                    if self.input_muted(hands_free) {
-                        silence.heard_speech();
-                        pending.clear();
-                        if let (Some(vad), false) = (vad.as_ref(), was_speaking) {
-                            vad.reset();
-                        }
-                        was_speaking = true;
-                        continue;
-                    }
-                    if was_speaking {
-                        if let Some(vad) = vad.as_ref() {
-                            vad.reset();
-                        }
-                        was_speaking = false;
-                    }
-                    samples_seen += s.len() as u64;
-                    if !hands_free {
-                        buffer.extend_from_slice(&s);
-                    }
-                    let Some(vad) = vad.as_ref() else { continue };
-                    pending.extend_from_slice(&s);
-                    let mut offset = 0;
-                    while pending.len() - offset >= VAD_WINDOW {
-                        vad.accept_waveform(&pending[offset..offset + VAD_WINDOW]);
-                        offset += VAD_WINDOW;
-                    }
-                    pending.drain(..offset);
-                    while !vad.is_empty() {
-                        let segment = vad.front().map(|s| s.samples().to_vec());
-                        vad.pop();
-                        let Some(segment) = segment else { continue };
-                        let seg_ms = segment.len() as u64 * 1000 / 16_000;
-                        if seg_ms < super::MIN_AUDIO_MS {
-                            continue;
-                        }
-                        // Transcribing blocks this loop, so no level events go out
-                        // meanwhile: say so, or the call screen looks frozen.
-                        if hands_free {
-                            self.emit_state("transcribing");
-                        }
-                        let t0 = Instant::now();
-                        let text = super::clean_transcript(&rec.transcribe(&segment));
-                        if text.is_empty() {
-                            if hands_free {
-                                self.emit_state("listening");
-                            }
-                            continue;
-                        }
-                        silence.heard_speech();
-                        if hands_free {
-                            tracing::info!(chars = text.chars().count(), audio_ms = seg_ms, "utterance transcribed");
-                            self.emit_transcript(&text, seg_ms, t0.elapsed().as_millis() as u64);
-                            self.emit_state("listening");
-                        } else {
-                            // Utterance finished: show it live and drop its audio
-                            // from the buffer so it is not transcribed twice.
-                            if !committed.is_empty() {
-                                committed.push(' ');
-                            }
-                            committed.push_str(&text);
-                            self.emit_partial(&committed);
-                            let consumed = (segment.len() + 16_000 / 2).min(buffer.len());
-                            buffer.drain(..consumed);
+        std::thread::scope(|scope| {
+            // Outside hands-free, finished utterances are decoded on a worker so
+            // this loop keeps the level meter and the VAD running meanwhile;
+            // decoding inline froze the dictation overlay for seconds at a time.
+            let (utterances, results) = if hands_free {
+                (None, None)
+            } else {
+                let (seg_tx, seg_rx) = std::sync::mpsc::channel::<Vec<f32>>();
+                let (text_tx, text_rx) = std::sync::mpsc::channel::<String>();
+                scope.spawn(move || {
+                    for segment in seg_rx {
+                        if text_tx.send(super::clean_transcript(&rec.transcribe(&segment))).is_err() {
+                            break;
                         }
                     }
-                }
-                Ok(CaptureEvent::Error(e)) => {
-                    (self.emit)(VoiceEvent::Error { mode: self.mode, code: "audio".into(), detail: e });
-                    break;
-                }
-                Err(RecvTimeoutError::Timeout) => {}
-                Err(RecvTimeoutError::Disconnected) => break,
-            }
-        }
+                });
+                (Some(seg_tx), Some(text_rx))
+            };
 
-        while let Ok(CaptureEvent::Samples(s)) = rx.try_recv() {
-            samples_seen += s.len() as u64;
-            if !hands_free {
-                buffer.extend_from_slice(&s);
-            }
-        }
-        if hands_free || self.discard.load(Ordering::Relaxed) {
-            return;
-        }
-        self.emit_state("transcribing");
-        let t0 = Instant::now();
-        let mut text = committed;
-        if buffer.len() as u64 * 1000 / 16_000 >= super::MIN_AUDIO_MS {
-            let tail = super::clean_transcript(&rec.transcribe(&buffer));
-            if !tail.is_empty() {
-                if !text.is_empty() {
-                    text.push(' ');
+            while backlog.is_some() || (!self.stopped() && (hands_free || started.elapsed() < MAX_RECORDING) && !silence.expired()) {
+                if let Some(results) = &results {
+                    let before = committed.len();
+                    for text in results.try_iter().filter(|t| !t.is_empty()) {
+                        silence.heard_speech();
+                        append(&mut committed, &text);
+                    }
+                    if committed.len() != before {
+                        self.emit_partial(&committed);
+                    }
                 }
-                text.push_str(&tail);
+                let event = match backlog.take() {
+                    Some(e) => Ok(e),
+                    None => rx.recv_timeout(Duration::from_millis(100)),
+                };
+                match event {
+                    Ok(CaptureEvent::Level(v, bands)) => {
+                        // A muted microphone's silence must not count toward the
+                        // idle timeout: the user is still here.
+                        if self.mic_muted() || v > SPEECH_LEVEL {
+                            silence.heard_speech();
+                        }
+                        self.emit_level(v, bands);
+                    }
+                    Ok(CaptureEvent::Samples(s)) => {
+                        if self.input_muted(hands_free) {
+                            silence.heard_speech();
+                            pending.clear();
+                            if let (Some(vad), false) = (vad.as_ref(), was_speaking) {
+                                vad.reset();
+                            }
+                            was_speaking = true;
+                            continue;
+                        }
+                        if was_speaking {
+                            if let Some(vad) = vad.as_ref() {
+                                vad.reset();
+                            }
+                            was_speaking = false;
+                        }
+                        samples_seen += s.len() as u64;
+                        if !hands_free {
+                            buffer.extend_from_slice(&s);
+                        }
+                        let Some(vad) = vad.as_ref() else { continue };
+                        pending.extend_from_slice(&s);
+                        let mut offset = 0;
+                        while pending.len() - offset >= VAD_WINDOW {
+                            vad.accept_waveform(&pending[offset..offset + VAD_WINDOW]);
+                            offset += VAD_WINDOW;
+                        }
+                        pending.drain(..offset);
+                        while !vad.is_empty() {
+                            let segment = vad.front().map(|s| s.samples().to_vec());
+                            vad.pop();
+                            let Some(segment) = segment else { continue };
+                            let seg_ms = segment.len() as u64 * 1000 / 16_000;
+                            if seg_ms < super::MIN_AUDIO_MS {
+                                continue;
+                            }
+                            if let Some(utterances) = &utterances {
+                                // Utterance finished: drop its audio from the buffer so
+                                // it is not transcribed twice; its text shows up live
+                                // once the worker has it.
+                                let consumed = (segment.len() + 16_000 / 2).min(buffer.len());
+                                buffer.drain(..consumed);
+                                let _ = utterances.send(segment);
+                                continue;
+                            }
+                            // Transcribing blocks this loop, so no level events go out
+                            // meanwhile: say so, or the call screen looks frozen.
+                            self.emit_state("transcribing");
+                            let t0 = Instant::now();
+                            let text = super::clean_transcript(&rec.transcribe(&segment));
+                            if !text.is_empty() {
+                                silence.heard_speech();
+                                tracing::info!(chars = text.chars().count(), audio_ms = seg_ms, "utterance transcribed");
+                                self.emit_transcript(&text, seg_ms, t0.elapsed().as_millis() as u64);
+                            }
+                            self.emit_state("listening");
+                        }
+                    }
+                    Ok(CaptureEvent::Error(e)) => {
+                        (self.emit)(VoiceEvent::Error { mode: self.mode, code: "audio".into(), detail: e });
+                        break;
+                    }
+                    Err(RecvTimeoutError::Timeout) => {}
+                    Err(RecvTimeoutError::Disconnected) => break,
+                }
             }
-        }
-        self.emit_transcript(&text, samples_seen * 1000 / 16_000, t0.elapsed().as_millis() as u64);
+
+            while let Ok(CaptureEvent::Samples(s)) = rx.try_recv() {
+                samples_seen += s.len() as u64;
+                if !hands_free {
+                    buffer.extend_from_slice(&s);
+                }
+            }
+            // No more utterances: the worker stops once the queued ones are done.
+            drop(utterances);
+            if hands_free || self.discard.load(Ordering::Relaxed) {
+                return;
+            }
+            self.emit_state("transcribing");
+            let t0 = Instant::now();
+            for text in results.into_iter().flatten().filter(|t| !t.is_empty()) {
+                append(&mut committed, &text);
+            }
+            if buffer.len() as u64 * 1000 / 16_000 >= super::MIN_AUDIO_MS {
+                append(&mut committed, &super::clean_transcript(&rec.transcribe(&buffer)));
+            }
+            self.emit_transcript(&committed, samples_seen * 1000 / 16_000, t0.elapsed().as_millis() as u64);
+        });
     }
+}
+
+/// Adds an utterance to the text dictated so far.
+fn append(text: &mut String, utterance: &str) {
+    if utterance.is_empty() {
+        return;
+    }
+    if !text.is_empty() {
+        text.push(' ');
+    }
+    text.push_str(utterance);
 }
 
 #[cfg(test)]
