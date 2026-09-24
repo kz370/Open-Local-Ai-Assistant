@@ -52,7 +52,7 @@ rem Cargo never deletes old build output, so target\ and target-test\ only
 rem grow (they reached 146 GB once). Wipe them when they pass the limit;
 rem the next build is then a full ~10-15 minute rebuild. Set
 rem CACHE_LIMIT_GB beforehand to change the limit.
-if not defined CACHE_LIMIT_GB set CACHE_LIMIT_GB=15
+if not defined CACHE_LIMIT_GB set CACHE_LIMIT_GB=8
 set "CACHE_GB=0"
 for /f %%s in ('powershell -NoProfile -Command "$d = @('%ROOT%src-tauri\target','%ROOT%src-tauri\target-test') | Where-Object { Test-Path $_ }; if ($d) { [int]((Get-ChildItem $d -Recurse -Force -File -ErrorAction SilentlyContinue | Measure-Object Length -Sum).Sum / 1GB) } else { 0 }"') do set "CACHE_GB=%%s"
 echo       Rust build cache: %CACHE_GB% GB (limit %CACHE_LIMIT_GB% GB)
