@@ -269,8 +269,9 @@ pub async fn models_download(app: AppHandle, state: State<'_, AppState>, ids: Ve
             };
             let result = download::install(&store, m, token, &progress).await;
             state.downloads.lock().unwrap_or_else(|p| p.into_inner()).remove(m.id);
-            if result.is_ok() {
-                state.stt.unload();
+            // A new model may now be the automatic pick: swap it in.
+            if result.is_ok() && state.stt.loaded_model().is_some() {
+                super::memory::reload_stt(&app2);
             }
         }
         let _ = app2.emit("models://changed", ());
@@ -360,8 +361,16 @@ pub fn models_delete(app: AppHandle, state: State<'_, AppState>, id: String) -> 
     if crate::services::models::PROTECTED_MODELS.contains(&id.as_str()) {
         return Err(AppError::Invalid("built-in models cannot be deleted".into()));
     }
-    state.stt.unload();
+    // Only the model in memory has to go first (its files are in use); then
+    // the next pick is loaded so speech keeps working without a wait.
+    let in_memory = state.stt.loaded_model().as_deref() == Some(id.as_str());
+    if in_memory {
+        state.stt.unload();
+    }
     state.models.delete(&id)?;
+    if in_memory {
+        super::memory::reload_stt(&app);
+    }
     let _ = app.emit("models://changed", ());
     Ok(())
 }

@@ -72,6 +72,47 @@ async fn tts_stt_roundtrip_three_languages() {
     }
 }
 
+/// Chat and dictation often use different languages: the loaded Whisper model
+/// follows each switch in place (no reload), and forcing the wrong language
+/// really changes the output, so the switch is not a no-op.
+#[tokio::test]
+async fn whisper_switches_language_in_place() {
+    let Ok(dir) = std::env::var("LA_MODELS_DIR") else {
+        eprintln!("LA_MODELS_DIR not set; skipping language switch test");
+        return;
+    };
+    let store = Arc::new(ModelStore::new(dir.into()));
+    for id in MODELS {
+        if !store.is_installed(id) {
+            download::install(&store, catalog::find(id).unwrap(), CancellationToken::new(), &|_| {}).await.expect("install");
+        }
+    }
+    let settings = Arc::new(SettingsStore::load(Arc::new(Db::open_in_memory().unwrap())).unwrap());
+    let hw = hardware::detect();
+    let tts = TtsService::new(store.clone(), settings.clone(), hw.clone(), Arc::new(|_| {}));
+    let stt = SttService::new(store.clone(), hw.clone());
+    let (speech, rate) = tts.synthesize("Guten Morgen, wie ist das Wetter heute in Berlin?", Lang::De, hw.inference_threads()).unwrap();
+    let pcm = sherpa_onnx::LinearResampler::create(rate as i32, 16_000).unwrap().resample(&speech, true);
+
+    let mut stt_settings = settings.get().stt;
+    stt_settings.model = "whisper-small".into();
+    let mut english = 0;
+    for language in ["en", "de", "auto", "en", "de"] {
+        stt_settings.language = language.into();
+        let text = stt.transcribe(&pcm, &stt_settings).expect("transcribe").text.to_lowercase();
+        eprintln!("[{language}] {text}");
+        if language == "en" {
+            // Whisper usually translates when told the speech is English,
+            // but not always, so one English answer is proof enough.
+            english += text.contains("weather") as usize;
+        } else {
+            assert!(text.contains("wetter"), "[{language}] {text}");
+        }
+    }
+    assert!(english > 0, "forcing English never changed the output");
+    assert_eq!(stt.loaded_model().as_deref(), Some("whisper-small"));
+}
+
 /// One multilingual voice (Supertonic 3) speaks all three languages: each
 /// sentence is spoken with it and transcribed back. Run it against a models
 /// folder whose only voice is Supertonic, so nothing else gets picked.

@@ -207,6 +207,17 @@ pub fn load_all(app: &AppHandle, only_autoload: bool) {
     }
 }
 
+/// Brings the speech model the current settings pick into memory in the
+/// background, replacing the loaded one, so the next session starts at once.
+pub fn reload_stt(app: &AppHandle) {
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        if let Err(e) = load(&app, "stt").await {
+            tracing::info!(error = %e, "speech model not reloaded");
+        }
+    });
+}
+
 #[tauri::command]
 pub async fn memory_load(app: AppHandle, key: String) -> CmdResult<()> {
     if key == "all" {
