@@ -101,4 +101,4 @@ gh release upload "%TAG%" "%SETUPPATH%" "%ZIPPATH%" --clobber || (echo Upload fa
 
 del /f /q "%ZIPPATH%" >nul 2>&1
 echo Done. Uploaded %SETUP% and %ZIP% to %TAG%.
-endlocal
+endlocal & exit /b 0
