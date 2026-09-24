@@ -15,6 +15,8 @@ use tauri::{AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, Physical
 pub const MAIN: &str = "main";
 pub const BUBBLE: &str = "bubble";
 pub const SETTINGS: &str = "settings";
+/// Default settings window height: fits the full sidebar without scrolling.
+const SETTINGS_H: f64 = 820.0;
 pub const OVERLAY: &str = "overlay";
 
 const MARGIN: i32 = 16;
@@ -504,9 +506,17 @@ pub fn ensure_settings(app: &AppHandle) -> tauri::Result<WebviewWindow> {
         return Ok(w);
     }
     tracing::info!("open_settings creating new window");
+    // Tall enough that the whole sidebar fits without scrolling, but never
+    // taller than the screen (leaves room for the taskbar and title bar).
+    let height = app
+        .primary_monitor()
+        .ok()
+        .flatten()
+        .map(|m| (m.size().height as f64 / m.scale_factor() - 120.0).max(520.0))
+        .map_or(SETTINGS_H, |avail| avail.min(SETTINGS_H));
     let w = match WebviewWindowBuilder::new(app, SETTINGS, WebviewUrl::App("index.html#/settings/general".into()))
         .title("Open Local Assistant — Settings")
-        .inner_size(1000.0, 720.0)
+        .inner_size(1000.0, height)
         .min_inner_size(720.0, 520.0)
         .max_inner_size(1400.0, 1000.0)
         .center()
