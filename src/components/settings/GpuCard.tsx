@@ -115,7 +115,7 @@ export function GpuCard() {
         </div>
       )}
       {progress?.state === "error" && progress.error && <p className="row-hint">{progress.error}</p>}
-      {error && <ErrorNotice error={error} actions={<button className="btn btn-sm" onClick={() => setError(null)}>{t("app.close")}</button>} />}
+      {error && <ErrorNotice error={error} actions={<button className="btn btn-sm" onClick={() => setError(null)}>{t("app.dismiss")}</button>} />}
       {confirmRemove && (
         <Dialog
           title={t("settings.gpu.remove")}

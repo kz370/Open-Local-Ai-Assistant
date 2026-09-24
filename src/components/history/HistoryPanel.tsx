@@ -93,13 +93,13 @@ export function HistoryPanel({ onClose }: { onClose: () => void }) {
       <div className="history-head">
         <Search size={15} aria-hidden style={{ color: "var(--text-faint)", flex: "none" }} />
         <input ref={searchRef} className="input" type="search" placeholder={t("history.search")} aria-label={t("history.search")} value={query} onChange={(e) => setQuery(e.target.value)} dir="auto" />
-        <button className="icon-btn" aria-label={t("app.close")} title={t("app.close")} onClick={onClose}>
+        <button className="icon-btn" aria-label={t("app.dismiss")} title={t("app.dismiss")} onClick={onClose}>
           <X size={16} />
         </button>
       </div>
       {error && (
         <div style={{ padding: "8px 10px 0" }}>
-          <ErrorNotice error={error} actions={<button className="btn btn-sm" onClick={() => setError(null)}>{t("app.close")}</button>} />
+          <ErrorNotice error={error} actions={<button className="btn btn-sm" onClick={() => setError(null)}>{t("app.dismiss")}</button>} />
         </div>
       )}
       {notice && (

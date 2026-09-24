@@ -13,7 +13,7 @@ use crate::services::language::{detect, Lang};
 use crate::settings::{SettingsStore, SttSettings};
 use serde::{Deserialize, Serialize};
 use std::cell::Cell;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -34,8 +34,9 @@ pub enum ListenMode {
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum VoiceEvent {
-    /// "listening" | "transcribing" | "idle"
-    State { mode: ListenMode, state: String, device: Option<String>, streaming: bool },
+    /// "listening" | "transcribing" | "idle". `session` numbers the listening
+    /// session, so a late "idle" of an old one cannot end the next one in the UI.
+    State { mode: ListenMode, session: u64, state: String, device: Option<String>, streaming: bool },
     /// `bands` is the voice spectrum (see `audio::spectrum`), all zero when muted.
     Level { mode: ListenMode, value: f32, bands: Vec<f32> },
     /// Live text while speaking (not final).
@@ -66,6 +67,8 @@ pub struct VoiceSessions {
     active: Mutex<Option<Active>>,
     /// The previous session's thread, joined by the next session (never by the UI).
     previous: Mutex<Option<std::thread::JoinHandle<()>>>,
+    /// Number of the last session started (see `VoiceEvent::State::session`).
+    sessions: AtomicU64,
 }
 
 const MAX_RECORDING: Duration = Duration::from_secs(300);
@@ -73,7 +76,7 @@ const VAD_WINDOW: usize = 512;
 
 impl VoiceSessions {
     pub fn new(stt: Arc<SttService>, settings: Arc<SettingsStore>, emit: VoiceEmit, speaking: SpeakingProbe) -> Self {
-        Self { stt, settings, emit, speaking, muted: Arc::new(AtomicBool::new(false)), active: Mutex::new(None), previous: Mutex::new(None) }
+        Self { stt, settings, emit, speaking, muted: Arc::new(AtomicBool::new(false)), active: Mutex::new(None), previous: Mutex::new(None), sessions: AtomicU64::new(0) }
     }
 
     pub fn set_muted(&self, muted: bool) {
@@ -92,7 +95,8 @@ impl VoiceSessions {
         guard.as_ref().map(|a| a.mode)
     }
 
-    pub fn start(&self, mode: ListenMode) -> AppResult<()> {
+    /// Starts listening; returns the new session's number.
+    pub fn start(&self, mode: ListenMode) -> AppResult<u64> {
         let mut settings = self.settings.get();
         // Dictation remembers its own language (chosen in the overlay).
         if mode == ListenMode::Dictation && !settings.dictation.language.is_empty() {
@@ -131,15 +135,18 @@ impl VoiceSessions {
         let (stt, emit, speaking, muted) = (self.stt.clone(), self.emit.clone(), self.speaking.clone(), self.muted.clone());
         let stt_settings = settings.stt.clone();
         let (stop2, discard2) = (stop.clone(), discard.clone());
+        let session = self.sessions.fetch_add(1, Ordering::SeqCst) + 1;
 
-        emit(VoiceEvent::State { mode, state: "listening".into(), device: Some(device), streaming });
+        emit(VoiceEvent::State { mode, session, state: "listening".into(), device: Some(device), streaming });
 
         let thread = std::thread::Builder::new()
             .name("voice-session".into())
             .spawn(move || {
                 let mut capture = capture;
+                let started = Instant::now();
                 let ctx = SessionCtx {
                     mode,
+                    session,
                     emit: emit.clone(),
                     speaking,
                     muted,
@@ -150,12 +157,22 @@ impl VoiceSessions {
                 };
                 run_session(&stt, &ctx, &rx, vad_path.as_deref());
                 capture.stop();
-                emit(VoiceEvent::State { mode, state: "idle".into(), device: None, streaming });
+                // `stopped` false means the session ended by itself (silence
+                // timeout, microphone error or disconnect), not by a stop request.
+                tracing::info!(
+                    mode = ?mode,
+                    session,
+                    secs = started.elapsed().as_secs_f32(),
+                    stopped = ctx.stop.load(Ordering::Relaxed),
+                    discarded = ctx.discard.load(Ordering::Relaxed),
+                    "listening session ended"
+                );
+                emit(VoiceEvent::State { mode, session, state: "idle".into(), device: None, streaming });
             })
             .map_err(|e| AppError::Audio(e.to_string()))?;
 
         *self.active.lock().unwrap_or_else(|p| p.into_inner()) = Some(Active { mode, stop, discard, thread });
-        Ok(())
+        Ok(session)
     }
 
     /// Stops the active session. With `discard`, recorded audio is dropped
@@ -210,6 +227,7 @@ pub fn run_session_for_test(
 ) {
     let ctx = SessionCtx {
         mode,
+        session: 0,
         emit,
         speaking: Arc::new(|| false),
         muted: Arc::new(AtomicBool::new(false)),
@@ -243,6 +261,7 @@ fn create_vad(path: &std::path::Path, settings: &SttSettings) -> Option<sherpa_o
 
 struct SessionCtx {
     mode: ListenMode,
+    session: u64,
     emit: VoiceEmit,
     speaking: SpeakingProbe,
     /// Mirrors [`VoiceSessions::set_muted`].
@@ -317,7 +336,7 @@ impl SessionCtx {
     }
 
     fn emit_state(&self, state: &str) {
-        (self.emit)(VoiceEvent::State { mode: self.mode, state: state.into(), device: None, streaming: false });
+        (self.emit)(VoiceEvent::State { mode: self.mode, session: self.session, state: state.into(), device: None, streaming: false });
     }
 
     fn emit_partial(&self, text: &str) {
@@ -573,6 +592,7 @@ mod tests {
     fn ctx(speaking: bool) -> SessionCtx {
         SessionCtx {
             mode: ListenMode::Dictation,
+            session: 1,
             emit: Arc::new(|_| {}),
             speaking: Arc::new(move || speaking),
             muted: Arc::new(AtomicBool::new(false)),

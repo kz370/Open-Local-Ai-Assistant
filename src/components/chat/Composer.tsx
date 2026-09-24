@@ -73,7 +73,7 @@ export const Composer = forwardRef<ComposerHandle, { onVoiceSetup: () => void; a
               </button>
             )}
             <button className="btn btn-sm btn-ghost" onClick={voice.clearError}>
-              {t("app.close")}
+              {t("app.dismiss")}
             </button>
           </span>
         </div>
@@ -89,7 +89,7 @@ export const Composer = forwardRef<ComposerHandle, { onVoiceSetup: () => void; a
         <div className="voice-notice" role="alert">
           <span>{attachmentErrors.join(" · ")}</span>
           <button className="btn btn-sm btn-ghost" onClick={dismissAttachmentErrors}>
-            {t("app.close")}
+            {t("app.dismiss")}
           </button>
         </div>
       )}
@@ -97,7 +97,7 @@ export const Composer = forwardRef<ComposerHandle, { onVoiceSetup: () => void; a
         <div className="voice-notice" role="status">
           <span>{voiceNotice}</span>
           <button className="btn btn-sm btn-ghost" onClick={() => setVoiceNotice(null)}>
-            {t("app.close")}
+            {t("app.dismiss")}
           </button>
         </div>
       )}

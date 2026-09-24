@@ -114,7 +114,8 @@ export const ipc = {
 
   // voice
   audioDevices: () => invoke<{ inputs: AudioDevice[]; outputs: AudioDevice[] }>("audio_devices"),
-  voiceStart: (mode: ListenMode) => invoke<void>("voice_start", { mode }),
+  /** Returns the number of the new listening session. */
+  voiceStart: (mode: ListenMode) => invoke<number>("voice_start", { mode }),
   voiceStop: (discard: boolean) => invoke<ListenMode | null>("voice_stop", { discard }),
   dictationCancel: () => invoke<void>("dictation_cancel"),
   dictationInsertNow: () => invoke<void>("dictation_insert_now"),

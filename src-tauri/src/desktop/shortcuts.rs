@@ -124,7 +124,7 @@ pub fn start_dictation(app: &AppHandle) {
     state.dictation_cancel.store(false, std::sync::atomic::Ordering::Relaxed);
     window::remember_target(app);
     match state.voice.start(ListenMode::Dictation) {
-        Ok(()) => window::show_overlay(app),
+        Ok(_) => window::show_overlay(app),
         Err(e) => {
             window::show_overlay(app);
             let _ = app.emit("dictation://state", serde_json::json!({"state": "error", "error": e}));

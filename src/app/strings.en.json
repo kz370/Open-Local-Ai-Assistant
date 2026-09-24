@@ -2,6 +2,7 @@
   "app": {
     "name": "Open Local Assistant",
     "close": "Close to tray",
+    "dismiss": "Close",
     "hide": "Hide",
     "minimize": "Minimize to bubble",
     "maximize": "Maximize",

@@ -746,7 +746,14 @@ fn set_overlay_region(app: &AppHandle, w: &WebviewWindow, clip: bool) {
 fn set_overlay_region(_app: &AppHandle, _w: &WebviewWindow, _clip: bool) {}
 
 fn apply_overlay_region(app: &AppHandle, w: &WebviewWindow) {
-    set_overlay_region(app, w, true);
+    // Queued behind the window changes just requested (show, focusable, size).
+    // From a background thread (the dictation hotkey) those only run later on
+    // the main thread and add the frame styles back; clipping before them would
+    // leave the classic Windows border around the card.
+    let (app2, w2) = (app.clone(), w.clone());
+    if app.run_on_main_thread(move || set_overlay_region(&app2, &w2, true)).is_err() {
+        set_overlay_region(app, w, true);
+    }
 }
 
 /// Adds the open language menu (`Some(logical x, y, w, h)` in the window) to

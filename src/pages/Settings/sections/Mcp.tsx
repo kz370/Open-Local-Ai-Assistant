@@ -247,7 +247,7 @@ export function McpSection() {
       <SectionHeader title={t("settings.sections.mcp")} intro={t("settings.mcp.intro")} />
       {error && (
         <div style={{ maxWidth: 820, marginBottom: 12 }}>
-          <ErrorNotice error={error} actions={<button className="btn btn-sm" onClick={() => setError(null)}>{t("app.close")}</button>} />
+          <ErrorNotice error={error} actions={<button className="btn btn-sm" onClick={() => setError(null)}>{t("app.dismiss")}</button>} />
         </div>
       )}
       <Card>
