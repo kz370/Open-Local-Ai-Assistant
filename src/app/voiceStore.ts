@@ -10,6 +10,10 @@ export const SPECTRUM_BANDS = 24;
 
 interface VoiceState {
   mode: ListenMode | null;
+  /** Newest listening session seen; state events of older ones are stale. */
+  session: number;
+  /** Newest session that has already ended. */
+  ended: number;
   phase: "idle" | "listening" | "transcribing";
   level: number;
   levels: number[];
@@ -57,6 +61,8 @@ let subscription: Promise<void> | null = null;
 
 export const useVoice = create<VoiceState>((set, get) => ({
   mode: null,
+  session: 0,
+  ended: 0,
   phase: "idle",
   level: 0,
   levels: new Array(BARS).fill(0),
@@ -78,8 +84,10 @@ export const useVoice = create<VoiceState>((set, get) => ({
   startPushToTalk: async () => {
     set({ error: null, lastTranscript: null });
     try {
-      await ipc.voiceStart("pushToTalk");
-      set({ mode: "pushToTalk", phase: "listening", handsFree: false });
+      const session = await ipc.voiceStart("pushToTalk");
+      // A session that already ended (its idle came first) stays ended.
+      if (session < get().session || session <= get().ended) return;
+      set({ session, mode: "pushToTalk", phase: "listening", handsFree: false });
     } catch (e) {
       set({ error: toAppError(e), mode: null, phase: "idle" });
     }
@@ -98,8 +106,9 @@ export const useVoice = create<VoiceState>((set, get) => ({
     }
     set({ error: null });
     try {
-      await ipc.voiceStart("handsFree");
-      set({ handsFree: true, muted: false, mode: "handsFree", phase: "listening" });
+      const session = await ipc.voiceStart("handsFree");
+      if (session < get().session || session <= get().ended) return;
+      set({ session, handsFree: true, muted: false, mode: "handsFree", phase: "listening" });
     } catch (e) {
       set({ error: toAppError(e), handsFree: false });
     }
@@ -135,8 +144,12 @@ export const useVoice = create<VoiceState>((set, get) => ({
       if (ev.mode === "dictation" || ev.mode === "test") return;
       switch (ev.type) {
         case "state":
+          // Starting a session stops the previous one, and that one's "idle"
+          // can arrive after the new session is already running.
+          if (ev.session < get().session) break;
+          if (ev.session > get().session) set({ session: ev.session });
           if (ev.state === "idle") {
-            set((s) => ({ phase: "idle", level: 0, bands: [], mode: s.handsFree && ev.mode === "handsFree" ? null : s.mode === ev.mode ? null : s.mode, handsFree: ev.mode === "handsFree" ? false : s.handsFree }));
+            set((s) => ({ ended: Math.max(s.ended, ev.session), phase: "idle", level: 0, bands: [], mode: s.handsFree && ev.mode === "handsFree" ? null : s.mode === ev.mode ? null : s.mode, handsFree: ev.mode === "handsFree" ? false : s.handsFree }));
           } else {
             set({ phase: ev.state, mode: ev.mode, handsFree: ev.mode === "handsFree" ? true : get().handsFree, ...(ev.device ? { device: ev.device } : {}) });
           }

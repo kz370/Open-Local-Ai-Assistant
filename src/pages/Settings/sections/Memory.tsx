@@ -62,7 +62,7 @@ export function MemorySection() {
       <SectionHeader title={t("settings.sections.memory")} intro={t("settings.memory.intro")} />
       {error && (
         <div style={{ maxWidth: 820, marginBottom: 12 }}>
-          <ErrorNotice error={error} actions={<button className="btn btn-sm" onClick={() => setError(null)}>{t("app.close")}</button>} />
+          <ErrorNotice error={error} actions={<button className="btn btn-sm" onClick={() => setError(null)}>{t("app.dismiss")}</button>} />
         </div>
       )}
       <Card>

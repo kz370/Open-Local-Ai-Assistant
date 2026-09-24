@@ -275,7 +275,7 @@ export type ExplainEvent = { type: "delta"; text: string } | { type: "done" } | 
 export type ListenMode = "pushToTalk" | "handsFree" | "dictation" | "test";
 
 export type VoiceEvent =
-  | { type: "state"; mode: ListenMode; state: "listening" | "transcribing" | "idle"; device: string | null; streaming: boolean }
+  | { type: "state"; mode: ListenMode; session: number; state: "listening" | "transcribing" | "idle"; device: string | null; streaming: boolean }
   | { type: "partial"; mode: ListenMode; text: string }
   | { type: "level"; mode: ListenMode; value: number; bands: number[] }
   | { type: "transcript"; mode: ListenMode; text: string; language: string | null; audioMs: number; elapsedMs: number }

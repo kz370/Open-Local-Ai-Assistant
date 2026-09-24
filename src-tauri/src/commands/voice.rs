@@ -27,7 +27,8 @@ pub async fn audio_devices() -> CmdResult<AudioDevices> {
 }
 
 #[tauri::command]
-pub fn voice_start(state: State<'_, AppState>, mode: ListenMode) -> CmdResult<()> {
+/// Returns the session number its `voice://event` state events carry.
+pub fn voice_start(state: State<'_, AppState>, mode: ListenMode) -> CmdResult<u64> {
     if mode != ListenMode::Test {
         state.tts.stop_all();
     }
