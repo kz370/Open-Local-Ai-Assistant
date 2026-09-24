@@ -204,6 +204,8 @@ pub fn models_catalog(state: State<'_, AppState>) -> Vec<CatalogEntry> {
     let downloading = state.downloads.lock().unwrap_or_else(|p| p.into_inner());
     CATALOG
         .iter()
+        // Ships inside the exe, so there is nothing to download or manage.
+        .filter(|m| m.id != crate::services::models::BUILT_IN_VAD)
         .map(|m| CatalogEntry {
             model: m,
             download_bytes: m.download_size(),

@@ -47,6 +47,9 @@ fn init_state(app: &AppHandle) -> Result<AppState, Box<dyn std::error::Error>> {
     lmstudio.set_api_key(s.ai.api_key.clone());
     let resolver = Arc::new(ModelResolver::with_hardware(lmstudio.clone(), hardware.clone()));
     let models = Arc::new(ModelStore::new(paths.models_dir.clone()));
+    if let Err(e) = models.install_bundled() {
+        tracing::warn!(error = %e, "could not install the bundled VAD model");
+    }
     models.set_extra_dirs(s.stt.extra_model_dirs.iter().map(std::path::PathBuf::from).collect());
 
     let handle = app.clone();

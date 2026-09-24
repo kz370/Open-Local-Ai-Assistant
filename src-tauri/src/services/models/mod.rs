@@ -19,6 +19,9 @@ pub const BUILT_IN_VOICE: &str = "supertonic-3-int8";
 /// Voice activity detection; Whisper-style recognizers and hands-free need it.
 pub const BUILT_IN_VAD: &str = "silero-vad";
 
+/// Silero VAD ships inside the exe (~630 KB) instead of being downloaded.
+const BUNDLED_VAD: &[u8] = include_bytes!("../../../assets/silero_vad.onnx");
+
 /// Models the app never deletes: the fallback voice, so the assistant always
 /// has one, and the VAD that non-streaming dictation depends on.
 pub const PROTECTED_MODELS: &[&str] = &[BUILT_IN_VOICE, BUILT_IN_VAD];
@@ -169,6 +172,22 @@ impl ModelStore {
 
     pub fn find_installed(&self, id: &str) -> Option<InstalledModel> {
         self.installed().into_iter().find(|m| m.id == id)
+    }
+
+    /// Writes the VAD shipped inside the exe into the models folder, so it is
+    /// never downloaded and comes back if the folder was removed by hand.
+    pub fn install_bundled(&self) -> std::io::Result<()> {
+        let dir = self.model_dir(BUILT_IN_VAD);
+        let file = dir.join("silero_vad.onnx");
+        if self.is_installed(BUILT_IN_VAD) && file.is_file() {
+            return Ok(());
+        }
+        std::fs::create_dir_all(&dir)?;
+        std::fs::write(&file, BUNDLED_VAD)?;
+        std::fs::write(
+            dir.join(COMPLETE_MARKER),
+            serde_json::json!({"id": BUILT_IN_VAD, "installedAt": chrono::Utc::now().to_rfc3339(), "bundled": true}).to_string(),
+        )
     }
 
     pub fn delete(&self, id: &str) -> std::io::Result<()> {
@@ -414,6 +433,21 @@ mod tests {
         assert!(store.delete("../evil").is_err());
         store.delete("whisper-small").unwrap();
         assert!(!store.is_installed("whisper-small"));
+    }
+
+    #[test]
+    fn bundled_vad_matches_catalog_and_restores_itself() {
+        use sha2::{Digest, Sha256};
+        let expected = catalog::find(BUILT_IN_VAD).unwrap().files[0].sha256.unwrap();
+        assert_eq!(hex::encode(Sha256::digest(BUNDLED_VAD)), expected);
+
+        let root = tempfile::tempdir().unwrap();
+        let store = ModelStore::new(root.path().to_path_buf());
+        store.install_bundled().unwrap();
+        assert!(store.is_installed(BUILT_IN_VAD));
+        std::fs::remove_dir_all(store.model_dir(BUILT_IN_VAD)).unwrap();
+        store.install_bundled().unwrap();
+        assert!(store.find_installed(BUILT_IN_VAD).is_some());
     }
 
     #[test]
