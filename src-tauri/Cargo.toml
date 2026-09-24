@@ -77,6 +77,15 @@ opt-level = 3
 panic = "abort"
 strip = true
 
+# Keep dev/test builds small: full debug info (big .pdb files per binary, and
+# every tests/*.rs is its own binary) is what grows target\ to 100+ GB.
+# Line tables still give file:line in panics and backtraces.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
+
 [dev-dependencies]
 axum = "0.8.9"
 tempfile = "3.27.0"

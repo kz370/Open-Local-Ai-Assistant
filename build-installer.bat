@@ -45,6 +45,23 @@ set /a JOBS=%NUMBER_OF_PROCESSORS% / 2
 if %JOBS% LSS 1 set JOBS=1
 
 
+rem Cargo never deletes old build output, so target\ and target-test\ only
+rem grow (they reached 146 GB once). Wipe them when they pass the limit;
+rem the next build is then a full ~10-15 minute rebuild. Set
+rem CACHE_LIMIT_GB beforehand to change the limit.
+if not defined CACHE_LIMIT_GB set CACHE_LIMIT_GB=30
+set "CACHE_GB=0"
+for /f %%s in ('powershell -NoProfile -Command "$d = @('%ROOT%src-tauri\target','%ROOT%src-tauri\target-test') | Where-Object { Test-Path $_ }; if ($d) { [int]((Get-ChildItem $d -Recurse -Force -File -ErrorAction SilentlyContinue | Measure-Object Length -Sum).Sum / 1GB) } else { 0 }"') do set "CACHE_GB=%%s"
+echo       Rust build cache: %CACHE_GB% GB (limit %CACHE_LIMIT_GB% GB)
+if %CACHE_GB% GTR %CACHE_LIMIT_GB% (
+  echo       Over the limit - cleaning it, this build starts from scratch...
+  pushd "%ROOT%src-tauri"
+  cargo clean
+  if exist target-test cargo clean --target-dir target-test
+  popd
+)
+
+
 echo [1/4] Building frontend...
 if not exist "%ROOT%node_modules" goto :npm_install 
 goto :skip_npm
