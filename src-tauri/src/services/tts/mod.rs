@@ -275,7 +275,13 @@ impl TtsService {
     /// Synthesizes text to 16-bit-range float PCM (for tests / warm-up).
     pub fn synthesize(&self, text: &str, lang: Lang, threads: i32) -> AppResult<(Vec<f32>, u32)> {
         let voice = self.voice_for(lang).ok_or_else(|| AppError::Tts(format!("no local voice installed for {}", lang.english_name())))?;
-        let speed = self.settings.get().tts.speed;
+        let tts = self.settings.get().tts;
+        let speed = tts.speed;
+        // Sound cues reach only a voice that performs them; others would read them out.
+        let text = &speech_text::sound_tags(text, voice.engine == Engine::Supertonic && tts.expressive_sounds);
+        if text.is_empty() {
+            return Ok((Vec::new(), 24_000));
+        }
         let engine = self.engine(&voice.model_id, threads)?;
         let mut gen = sherpa_onnx::GenerationConfig { speed, sid: voice.speaker_id, ..Default::default() };
         if voice.engine == Engine::Supertonic {
@@ -313,13 +319,13 @@ impl TtsService {
         let id = self.player.enqueue(Clip { samples, sample_rate: rate, tag: job.tag.clone() })?;
         self.queued.lock().unwrap_or_else(|p| p.into_inner()).insert(
             id,
-            QueuedSentence { tag: job.tag.clone(), text: job.text.clone(), duration_ms },
+            QueuedSentence { tag: job.tag.clone(), text: speech_text::sound_tags(&job.text, false), duration_ms },
         );
         Ok(())
     }
 
     fn sentence_lang(&self, sentence: &str, fallback: Option<Lang>) -> Lang {
-        detect(sentence)
+        detect(&speech_text::sound_tags(sentence, false))
             .filter(|d| d.confidence >= 0.5 || fallback.is_none())
             .map(|d| d.lang)
             .or(fallback)
@@ -390,6 +396,13 @@ impl TtsService {
 }
 
 impl SpeechSink for TtsService {
+    fn expressive(&self) -> bool {
+        // Any Supertonic language counts, so the system prompt stays the same
+        // whichever language the next reply is in; other voices drop the cues.
+        self.settings.get().tts.expressive_sounds
+            && [Lang::En, Lang::Ar, Lang::De].into_iter().any(|l| self.voice_for(l).is_some_and(|v| v.engine == Engine::Supertonic))
+    }
+
     fn begin(&self, turn_id: &str) {
         self.generation.fetch_add(1, Ordering::SeqCst);
         self.player.stop(None);

@@ -193,18 +193,6 @@ pub static CATALOG: &[CatalogModel] = &[
         license: "OpenRAIL-M",
         gender: "mixed",
     },
-    CatalogModel {
-        id: "kokoro-en-v0_19",
-        kind: ModelKind::Tts,
-        engine: Engine::Kokoro,
-        name: "Kokoro English (natural neural voices)",
-        languages: &["en"],
-        files: &[RemoteFile { url: url!(GH_TTS, "/kokoro-en-v0_19.tar.bz2"), sha256: Some("912804855a04745fa77a30be545b3f9a5d15c4d66db00b88cbcd4921df605ac7"), dest: "", archive: true, size_bytes: 319_600_000 }],
-        quality: 5,
-        min_ram_gb: 4,
-        license: "Apache-2.0",
-        gender: "mixed",
-    },
 ];
 
 pub fn find(id: &str) -> Option<&'static CatalogModel> {

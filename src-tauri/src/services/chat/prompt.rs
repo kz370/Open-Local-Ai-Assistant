@@ -29,7 +29,18 @@ pub struct PromptContext<'a> {
     pub tashkeel_enabled: bool,
     /// Replaces the default tashkeel-enabled instruction when non-empty.
     pub tashkeel_instruction: &'a str,
+    /// Spoken replies may carry sound cues (see `SpeechSink::expressive`).
+    pub expressive_sounds: bool,
+    /// Replaces [`DEFAULT_EXPRESSIVE_INSTRUCTION`] when non-empty.
+    pub expressive_instruction: &'a str,
 }
+
+/// How the model is told about the sound cues Supertonic voices perform.
+pub const DEFAULT_EXPRESSIVE_INSTRUCTION: &str = "Your voice can perform three sound cues written as tags: <laugh>, <sigh> and <breath>. \
+Use one only where a person talking would naturally make that sound, for example <laugh> right after something \
+genuinely funny, or <sigh> before admitting bad news. Put it between sentences, never inside a word or a number. \
+At most one or two per reply, and none in serious, factual or sad answers unless it truly fits. \
+Never use other tags and never describe sounds in words or brackets.";
 
 pub fn build_system_prompt(ctx: &PromptContext) -> String {
     let mut p = String::new();
@@ -104,6 +115,11 @@ pub fn build_system_prompt(ctx: &PromptContext) -> String {
             "The answer will be spoken aloud. Use short natural sentences, avoid tables, long lists, \
              markdown symbols and code unless explicitly requested.\n",
         );
+        if ctx.expressive_sounds {
+            let custom = ctx.expressive_instruction.trim();
+            p.push_str(if custom.is_empty() { DEFAULT_EXPRESSIVE_INSTRUCTION } else { custom });
+            p.push('\n');
+        }
     } else {
         p.push_str("Use Markdown when it helps readability. Keep answers focused.\n");
     }
@@ -190,6 +206,8 @@ mod tests {
             custom_prompt: "Be brief.",
             tashkeel_enabled: false,
             tashkeel_instruction: "",
+            expressive_sounds: false,
+            expressive_instruction: "",
         }
     }
 
@@ -213,6 +231,20 @@ mod tests {
         if a.date.date_naive() == b.date.date_naive() {
             assert_eq!(build_system_prompt(&a), build_system_prompt(&b));
         }
+    }
+
+    #[test]
+    fn sound_cues_only_for_spoken_replies_with_a_voice_that_performs_them() {
+        let spoken = PromptContext { voice_mode: true, expressive_sounds: true, ..ctx(&[], None, None, false) };
+        assert!(build_system_prompt(&spoken).contains("<laugh>, <sigh> and <breath>"));
+        let custom = PromptContext { expressive_instruction: "  Laugh with <laugh> when joking.  ", ..ctx(&[], None, None, false) };
+        let custom = PromptContext { voice_mode: true, expressive_sounds: true, ..custom };
+        let p = build_system_prompt(&custom);
+        assert!(p.contains("Laugh with <laugh> when joking.\n") && !p.contains("<sigh> and <breath>"));
+        let off = PromptContext { voice_mode: true, ..ctx(&[], None, None, false) };
+        assert!(!build_system_prompt(&off).contains("<laugh>"));
+        let typed = PromptContext { expressive_sounds: true, ..ctx(&[], None, None, false) };
+        assert!(!build_system_prompt(&typed).contains("<laugh>"));
     }
 
     #[test]

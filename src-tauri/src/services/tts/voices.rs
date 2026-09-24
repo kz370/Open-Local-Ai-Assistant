@@ -22,7 +22,20 @@ pub struct VoiceInfo {
 
 /// `VoiceInfo::language` of a voice that speaks every supported language.
 pub const MULTILINGUAL: &str = "*";
-const SUPERTONIC_SPEAKERS: i32 = 10;
+/// Supertonic speakers in voice.bin order (the style files sorted by name:
+/// F1-F5, then M1-M5), with the tone Supertone describes for each.
+const SUPERTONIC_SPEAKERS: &[(&str, &str, &str)] = &[
+    ("Sarah", "female", "calm"),
+    ("Lily", "female", "bright"),
+    ("Jessica", "female", "announcer"),
+    ("Olivia", "female", "confident"),
+    ("Emily", "female", "gentle"),
+    ("Alex", "male", "lively"),
+    ("James", "male", "deep"),
+    ("Robert", "male", "authoritative"),
+    ("Sam", "male", "soft"),
+    ("Daniel", "male", "warm"),
+];
 
 impl VoiceInfo {
     pub fn speaks(&self, lang: Lang) -> bool {
@@ -118,15 +131,13 @@ pub fn list_voices(installed: &[InstalledModel]) -> Vec<VoiceInfo> {
                 }
             }
             Engine::Supertonic => {
-                // voice.bin holds the styles in file-name order: F1-F5, M1-M5.
-                for sid in 0..SUPERTONIC_SPEAKERS {
-                    let (gender, n) = if sid < 5 { ("female", sid + 1) } else { ("male", sid - 4) };
+                for (sid, &(name, gender, tone)) in SUPERTONIC_SPEAKERS.iter().enumerate() {
                     out.push(VoiceInfo {
                         id: format!("{}:{sid}", m.id),
                         model_id: m.id.clone(),
-                        name: format!("{} - {gender} {n}", m.name),
+                        name: format!("{name} ({gender}, {tone})"),
                         language: MULTILINGUAL.into(),
-                        speaker_id: sid,
+                        speaker_id: sid as i32,
                         engine: m.engine,
                         quality,
                         gender: gender.into(),
@@ -228,6 +239,9 @@ mod tests {
     fn multilingual_voice_speaks_every_language() {
         let only = list_voices(&[installed("supertonic-3-int8", Engine::Supertonic, "*")]);
         assert_eq!(only.len(), 10);
+        assert_eq!(only[0].name, "Sarah (female, calm)");
+        assert_eq!(only[5].name, "Alex (male, lively)");
+        assert_eq!(only[5].gender, "male");
         for lang in [Lang::En, Lang::Ar, Lang::De] {
             assert_eq!(select_voice(&only, lang, "auto", "any").unwrap().engine, Engine::Supertonic);
         }

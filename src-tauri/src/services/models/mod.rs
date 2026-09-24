@@ -13,9 +13,11 @@ use std::path::{Path, PathBuf};
 
 pub const COMPLETE_MARKER: &str = ".complete";
 
-/// The multilingual voice every language falls back to. It cannot be deleted
-/// from the app, so the assistant always has a voice.
+/// The multilingual voice every language falls back to.
 pub const BUILT_IN_VOICE: &str = "supertonic-3-int8";
+
+/// Voices the app never deletes, so the assistant always has one.
+pub const PROTECTED_MODELS: &[&str] = &[BUILT_IN_VOICE];
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]

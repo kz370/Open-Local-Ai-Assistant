@@ -209,7 +209,7 @@ pub fn models_catalog(state: State<'_, AppState>) -> Vec<CatalogEntry> {
             installed: state.models.is_installed(m.id),
             recommended: rec.contains(&m.id),
             downloading: downloading.contains_key(m.id),
-            deletable: m.id != crate::services::models::BUILT_IN_VOICE,
+            deletable: !crate::services::models::PROTECTED_MODELS.contains(&m.id),
         })
         .collect()
 }
@@ -354,8 +354,8 @@ pub fn models_cancel(state: State<'_, AppState>, id: String) {
 
 #[tauri::command]
 pub fn models_delete(app: AppHandle, state: State<'_, AppState>, id: String) -> CmdResult<()> {
-    if id == crate::services::models::BUILT_IN_VOICE {
-        return Err(AppError::Invalid("the built-in voice cannot be deleted".into()));
+    if crate::services::models::PROTECTED_MODELS.contains(&id.as_str()) {
+        return Err(AppError::Invalid("built-in voices cannot be deleted".into()));
     }
     state.stt.unload();
     state.models.delete(&id)?;
