@@ -700,6 +700,37 @@ fn strip_frame_styles(raw: isize) {
     }
 }
 
+/// Lets the overlay take keyboard focus (review) or not (listening, so the app
+/// being dictated into keeps it). The window library's `set_focusable`
+/// rewrites every window style and redraws the frame, which flashed the
+/// classic Windows border around the clipped card for a frame; only the
+/// "no activate" flag is flipped here. The library still sees the overlay as
+/// not focusable, so its next style update (showing it) puts the flag back,
+/// which is also what listening needs.
+#[cfg(windows)]
+fn set_overlay_activatable(app: &AppHandle, _w: &WebviewWindow, activatable: bool) {
+    use windows::Win32::UI::WindowsAndMessaging::{GetWindowLongPtrW, SetWindowLongPtrW, GWL_EXSTYLE, WS_EX_NOACTIVATE};
+    let raw = overlay_hwnd(app);
+    if raw == 0 {
+        return;
+    }
+    let hwnd = hwnd_of(raw);
+    // SAFETY: plain Win32 calls on the overlay's own window handle.
+    unsafe {
+        let ex = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+        let flag = WS_EX_NOACTIVATE.0 as isize;
+        let next = if activatable { ex & !flag } else { ex | flag };
+        if next != ex {
+            SetWindowLongPtrW(hwnd, GWL_EXSTYLE, next);
+        }
+    }
+}
+
+#[cfg(not(windows))]
+fn set_overlay_activatable(_app: &AppHandle, w: &WebviewWindow, activatable: bool) {
+    let _ = w.set_focusable(activatable);
+}
+
 /// Clips the overlay window to the card plus its shadow margin, and the open
 /// language menu plus its shadow, each with rounded corners following the
 /// element's own (`clip`); or removes the clip while the overlay is hidden.
@@ -745,15 +776,16 @@ fn set_overlay_region(app: &AppHandle, w: &WebviewWindow, clip: bool) {
 #[cfg(not(windows))]
 fn set_overlay_region(_app: &AppHandle, _w: &WebviewWindow, _clip: bool) {}
 
-fn apply_overlay_region(app: &AppHandle, w: &WebviewWindow) {
-    // Queued behind the window changes just requested (show, focusable, size).
-    // From a background thread (the dictation hotkey) those only run later on
-    // the main thread and add the frame styles back; clipping before them would
-    // leave the classic Windows border around the card.
-    let (app2, w2) = (app.clone(), w.clone());
-    if app.run_on_main_thread(move || set_overlay_region(&app2, &w2, true)).is_err() {
-        set_overlay_region(app, w, true);
-    }
+/// Runs an overlay transition in one go on the main thread. Window changes
+/// requested from another thread (the dictation hotkey, the dictation flow)
+/// only run later on the main thread; mixed with the region changes made right
+/// away, the window was briefly shown unclipped or with its frame styles back,
+/// which flashes a classic Windows border around the card. On the main thread
+/// the whole transition happens before the window is painted again (window
+/// calls made there run at once instead of being queued).
+fn on_main(app: &AppHandle, f: impl FnOnce() + Send + 'static) {
+    // Fails only while the app is shutting down; the overlay no longer matters then.
+    let _ = app.run_on_main_thread(f);
 }
 
 /// Adds the open language menu (`Some(logical x, y, w, h)` in the window) to
@@ -761,7 +793,8 @@ fn apply_overlay_region(app: &AppHandle, w: &WebviewWindow) {
 pub fn set_overlay_menu(app: &AppHandle, menu: Option<[f64; 4]>) {
     *MENU_RECT.lock().unwrap_or_else(|p| p.into_inner()) = menu;
     if let Some(w) = app.get_webview_window(OVERLAY) {
-        apply_overlay_region(app, &w);
+        let app2 = app.clone();
+        on_main(app, move || set_overlay_region(&app2, &w, true));
     }
 }
 
@@ -769,11 +802,14 @@ pub fn set_overlay_menu(app: &AppHandle, menu: Option<[f64; 4]>) {
 /// focusable review size (an editable result needs the keyboard).
 pub fn set_overlay_review(app: &AppHandle, review: bool) {
     let Ok(w) = create_overlay(app) else { return };
+    let app2 = app.clone();
+    on_main(app, move || overlay_review_now(&app2, &w, review));
+}
+
+fn overlay_review_now(app: &AppHandle, w: &WebviewWindow, review: bool) {
     suppress_persistence();
     *MENU_RECT.lock().unwrap_or_else(|p| p.into_inner()) = None;
-    // Unclipped while its styles change (see strip_frame_styles); clipped again below.
-    set_overlay_region(app, &w, false);
-    let _ = w.set_focusable(review);
+    set_overlay_activatable(app, w, review);
     let card_h = if review { OVERLAY_H_REVIEW } else { OVERLAY_H };
     // The card's top stays put: the window grows downward, room and all.
     let _ = w.set_size(overlay_window_size(card_h));
@@ -782,13 +818,13 @@ pub fn set_overlay_review(app: &AppHandle, review: bool) {
         let scale = w.scale_factor().unwrap_or(1.0);
         if let (Ok(pos), Ok(Some(m))) = (w.outer_position(), w.current_monitor()) {
             let area = m.work_area();
-            let room = room_px(&w);
+            let room = room_px(w);
             let size = ((OVERLAY_W * scale).round() as u32, (OVERLAY_H_REVIEW * scale).round() as u32);
             let (x, y) = clamp_into((area.position.x, area.position.y), (area.size.width, area.size.height), (pos.x, pos.y + room), size);
             let _ = w.set_position(PhysicalPosition::new(x, y - room));
         }
     }
-    apply_overlay_region(app, &w);
+    set_overlay_region(app, w, true);
     if review {
         focus_hwnd(overlay_hwnd(app));
         let _ = w.set_focus();
@@ -864,20 +900,25 @@ fn default_overlay_position(w: &WebviewWindow) -> Option<(i32, i32)> {
 /// monitor is no longer connected).
 pub fn show_overlay(app: &AppHandle) {
     let Ok(w) = create_overlay(app) else { return };
+    let app2 = app.clone();
+    on_main(app, move || show_overlay_now(&app2, &w));
+}
+
+fn show_overlay_now(app: &AppHandle, w: &WebviewWindow) {
     let saved = app.state::<AppState>().settings.get().dictation;
     suppress_persistence();
     *MENU_RECT.lock().unwrap_or_else(|p| p.into_inner()) = None;
     let _ = w.set_size(overlay_window_size(OVERLAY_H));
     let pos = match (saved.overlay_x, saved.overlay_y) {
-        (Some(x), Some(y)) if on_any_monitor(&w, x, y) => Some((x, y)),
-        _ => default_overlay_position(&w),
+        (Some(x), Some(y)) if on_any_monitor(w, x, y) => Some((x, y)),
+        _ => default_overlay_position(w),
     };
     if let Some((x, y)) = pos {
-        let _ = w.set_position(PhysicalPosition::new(x, y - room_px(&w)));
+        let _ = w.set_position(PhysicalPosition::new(x, y - room_px(w)));
     }
     let _ = w.show();
     // After showing: that re-adds the frame styles the region needs gone.
-    apply_overlay_region(app, &w);
+    set_overlay_region(app, w, true);
 }
 
 /// Clears the dragged overlay position and moves it back to the default spot
@@ -896,9 +937,12 @@ pub fn reset_overlay_position(app: &AppHandle) {
 
 pub fn hide_overlay(app: &AppHandle) {
     if let Some(w) = app.get_webview_window(OVERLAY) {
-        let _ = w.hide();
-        // Showing it again changes its styles; that must not happen while clipped.
-        set_overlay_region(app, &w, false);
+        let app2 = app.clone();
+        on_main(app, move || {
+            let _ = w.hide();
+            // Showing it again changes its styles; that must not happen while clipped.
+            set_overlay_region(&app2, &w, false);
+        });
     }
 }
 
