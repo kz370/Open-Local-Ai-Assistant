@@ -577,11 +577,12 @@ pub fn open_settings(app: &AppHandle, section: Option<&str>) -> tauri::Result<()
     Ok(())
 }
 
-/// Logical size of the dictation overlay while listening, and while a result
-/// waits for review (taller, to hold the editable text and its buttons).
+/// Logical size of the dictation overlay card. Listening and review share it,
+/// so the card does not jump when a result opens for editing.
 const OVERLAY_W: f64 = 480.0;
-const OVERLAY_H: f64 = 140.0;
-const OVERLAY_H_REVIEW: f64 = 176.0;
+const OVERLAY_H: f64 = 176.0;
+/// Gap between the card and the taskbar at the default spot (logical px).
+const OVERLAY_BOTTOM_GAP: f64 = 6.0;
 
 #[cfg(windows)]
 fn hwnd_of(raw: isize) -> windows::Win32::Foundation::HWND {
@@ -798,8 +799,8 @@ pub fn set_overlay_menu(app: &AppHandle, menu: Option<[f64; 4]>) {
     }
 }
 
-/// Switches the overlay between its compact listening size and the taller,
-/// focusable review size (an editable result needs the keyboard).
+/// Switches the overlay between listening (it never takes focus, so the app
+/// being dictated into keeps it) and review (focusable: the result is edited).
 pub fn set_overlay_review(app: &AppHandle, review: bool) {
     let Ok(w) = create_overlay(app) else { return };
     let app2 = app.clone();
@@ -810,20 +811,7 @@ fn overlay_review_now(app: &AppHandle, w: &WebviewWindow, review: bool) {
     suppress_persistence();
     *MENU_RECT.lock().unwrap_or_else(|p| p.into_inner()) = None;
     set_overlay_activatable(app, w, review);
-    let card_h = if review { OVERLAY_H_REVIEW } else { OVERLAY_H };
-    // The card's top stays put: the window grows downward, room and all.
-    let _ = w.set_size(overlay_window_size(card_h));
-    if review {
-        // Growing must not push the card off the bottom of the screen.
-        let scale = w.scale_factor().unwrap_or(1.0);
-        if let (Ok(pos), Ok(Some(m))) = (w.outer_position(), w.current_monitor()) {
-            let area = m.work_area();
-            let room = room_px(w);
-            let size = ((OVERLAY_W * scale).round() as u32, (OVERLAY_H_REVIEW * scale).round() as u32);
-            let (x, y) = clamp_into((area.position.x, area.position.y), (area.size.width, area.size.height), (pos.x, pos.y + room), size);
-            let _ = w.set_position(PhysicalPosition::new(x, y - room));
-        }
-    }
+    // The open language menu (if any) was dropped from the visible area above.
     set_overlay_region(app, w, true);
     if review {
         focus_hwnd(overlay_hwnd(app));
@@ -891,7 +879,9 @@ fn default_overlay_position(w: &WebviewWindow) -> Option<(i32, i32)> {
     let scale = m.scale_factor();
     let (cw, ch) = ((OVERLAY_W * scale).round() as i32, (OVERLAY_H * scale).round() as i32);
     let x = area.position.x + (area.size.width as i32 - cw) / 2;
-    let y = area.position.y + area.size.height as i32 - ch - 40;
+    // The visible card sits CARD_MARGIN inside its box; leave only a small gap
+    // between it and the taskbar.
+    let y = area.position.y + area.size.height as i32 - ch + ((CARD_MARGIN - OVERLAY_BOTTOM_GAP) * scale).round() as i32;
     Some((x, y))
 }
 
@@ -904,13 +894,29 @@ pub fn show_overlay(app: &AppHandle) {
     on_main(app, move || show_overlay_now(&app2, &w));
 }
 
+/// Keeps a saved card spot fully inside its monitor's work area (the card may
+/// have been dragged there when it was smaller, or on another resolution).
+fn card_on_screen(w: &WebviewWindow, x: i32, y: i32) -> (i32, i32) {
+    let Ok(monitors) = w.available_monitors() else { return (x, y) };
+    let Some(m) = monitors.iter().find(|m| {
+        let (p, s) = (m.position(), m.size());
+        x >= p.x && y >= p.y && x < p.x + s.width as i32 && y < p.y + s.height as i32
+    }) else {
+        return (x, y);
+    };
+    let scale = m.scale_factor();
+    let size = ((OVERLAY_W * scale).round() as u32, (OVERLAY_H * scale).round() as u32);
+    let area = m.work_area();
+    clamp_into((area.position.x, area.position.y), (area.size.width, area.size.height), (x, y), size)
+}
+
 fn show_overlay_now(app: &AppHandle, w: &WebviewWindow) {
     let saved = app.state::<AppState>().settings.get().dictation;
     suppress_persistence();
     *MENU_RECT.lock().unwrap_or_else(|p| p.into_inner()) = None;
     let _ = w.set_size(overlay_window_size(OVERLAY_H));
     let pos = match (saved.overlay_x, saved.overlay_y) {
-        (Some(x), Some(y)) if on_any_monitor(w, x, y) => Some((x, y)),
+        (Some(x), Some(y)) if on_any_monitor(w, x, y) => Some(card_on_screen(w, x, y)),
         _ => default_overlay_position(w),
     };
     if let Some((x, y)) = pos {
