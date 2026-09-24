@@ -1557,6 +1557,7 @@ html.launcher-window #root {
   border-inline-start: 2px solid var(--accent);
   color: var(--text-muted);
   font-size: var(--text-sm);
+  user-select: text;
   display: -webkit-box;
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
@@ -1569,6 +1570,7 @@ html.launcher-window #root {
   padding: 6px 12px 10px;
   font-size: var(--text-sm);
   line-height: 1.55;
+  user-select: text;
 }
 .explain-body > :first-child {
   margin-top: 4px;

@@ -95,6 +95,12 @@ describe("selected text menu", () => {
     const dialog = screen.getByRole("dialog", { name: "Explanation" });
     expect(dialog).toHaveTextContent("Plants turn light into energy.");
 
+    const writeText = vi.fn(async () => undefined);
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    fireEvent.click(screen.getByRole("button", { name: "Copy" }));
+    expect(writeText).toHaveBeenCalledWith("Plants turn light into energy.");
+    expect(screen.getByRole("button", { name: "Copied" })).toBeInTheDocument();
+
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
     expect(screen.queryByRole("dialog")).toBeNull();
   });

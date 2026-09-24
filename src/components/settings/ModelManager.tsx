@@ -133,7 +133,7 @@ export function ModelManager({ kinds, title, languageFilter }: { kinds: ("stt" |
                     </button>
                   </>
                 )}
-                {e.installed && (
+                {e.installed && e.deletable && (
                   <button className="icon-btn danger" aria-label={`${t("settings.models.delete")} ${e.name}`} title={t("settings.models.delete")} onClick={() => void ipc.modelsDelete(e.id).then(refresh)}>
                     <Trash2 size={14} />
                   </button>

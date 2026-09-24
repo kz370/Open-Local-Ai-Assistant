@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Copy, Lightbulb, MessageSquare, Volume2, X } from "lucide-react";
+import { Check, Copy, Lightbulb, MessageSquare, Volume2, X } from "lucide-react";
 import { useChat } from "../../app/chatStore";
 import { ipc, newId } from "../../app/ipc";
 import { useSettings } from "../../app/settingsStore";
@@ -241,6 +241,13 @@ function ExplainPopover({ explanation: x, onSpeak, onAskInChat, onClose }: { exp
     return () => document.removeEventListener("keydown", key);
   }, [onClose]);
 
+  const [copied, setCopied] = useState(false);
+  const copy = () => {
+    void navigator.clipboard.writeText(x.content.trim());
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1500);
+  };
+
   const done = x.status === "done" && x.content.trim().length > 0;
   return (
     <div
@@ -274,6 +281,9 @@ function ExplainPopover({ explanation: x, onSpeak, onAskInChat, onClose }: { exp
       </div>
       {done && (
         <div className="explain-actions">
+          <button className="btn btn-sm" onClick={copy}>
+            {copied ? <Check size={12} /> : <Copy size={12} />} {copied ? t("app.copied") : t("chat.selection.copy")}
+          </button>
           <button className="btn btn-sm" onClick={onSpeak}>
             <Volume2 size={12} /> {t("chat.selection.speak")}
           </button>
