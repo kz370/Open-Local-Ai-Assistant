@@ -46,6 +46,8 @@ if errorlevel 1 (
 rem Cap the build at half the CPU threads so the PC stays usable.
 set /a JOBS=%NUMBER_OF_PROCESSORS% / 2
 if %JOBS% LSS 1 set JOBS=1
+rem CI sets BUILD_JOBS to use every core of its build machine.
+if defined BUILD_JOBS set JOBS=%BUILD_JOBS%
 
 
 rem Cargo never deletes old build output, so target\ and target-test\ only

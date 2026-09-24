@@ -43,7 +43,7 @@ Get the latest version from the [Releases](../../releases) page:
 
 ### "Windows protected your PC"
 
-The builds are not code-signed yet. A code-signing certificate costs money every year, and this is a free app, so Windows SmartScreen doesn't recognise it and shows a warning. To run it, click **More info → Run anyway**. If you'd rather not, you can [build it yourself](#building-from-source) from this code.
+The builds are not code-signed yet. A code-signing certificate costs money every year, and this is a free app, so Windows SmartScreen doesn't recognise it and shows a warning. To run it, click **More info → Run anyway**. If you'd rather not, you can [build it yourself](#building-from-source) from this code. We have applied for free code signing for open-source projects; see the [code signing policy](#code-signing-policy).
 
 To check that your download wasn't changed along the way, compare its SHA-256 hash with the one shown next to the file on the [Releases](../../releases) page. In PowerShell:
 
@@ -159,6 +159,8 @@ There is no account and no telemetry. Conversations, settings, API keys and logs
 
 Speech recognition (including dictation) and the assistant's voice always run on your PC, whichever AI provider you use. Only the optional dictation grammar cleanup uses the AI model.
 
+The full details, including every service the app can connect to, are in the [privacy policy](PRIVACY.md).
+
 ## Uninstall
 
 Use **Settings → Apps → Installed apps → Open Local Assistant → Uninstall**. To also delete your conversations and downloaded models, remove `%APPDATA%\com.localassistant.app`.
@@ -266,6 +268,16 @@ LA_LIVE_LMSTUDIO=1 cargo test --test lmstudio_live -- --nocapture
 ## Contributing
 
 Bug reports and pull requests are welcome. For bigger changes, please open an issue first so we can agree on the approach. Run `npm test` and `cargo test` before sending a pull request.
+
+## Code signing policy
+
+Windows releases are not code-signed yet. The project has applied to the [SignPath Foundation](https://signpath.org) for free code signing for open-source projects. Once approved, release files will be signed as described here.
+
+- **What gets signed:** only the setup exe and the portable exe built from this repository by its GitHub Actions workflow ([`.github/workflows/build.yml`](.github/workflows/build.yml)). Files built on a developer's own PC are never signed.
+- **Committers and reviewers:** [kz370](https://github.com/kz370). Changes from anyone else are merged only after review by a committer.
+- **Approvers:** [kz370](https://github.com/kz370). Every release is approved by hand before it is signed.
+- **Accounts:** the project's GitHub and SignPath accounts use two-factor authentication.
+- **Privacy:** see the [privacy policy](PRIVACY.md). The app sends nothing anywhere except for the features listed there, which the user chooses or starts.
 
 ## License
 
