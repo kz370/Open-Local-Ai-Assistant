@@ -25,9 +25,9 @@ dist-ssr
 
 # Rust test build output
 src-tauri/target-test
-release/Open Local Assistant.exe
-release/Open-Local-Assistant-0.1.0-setup.exe
-release/onnxruntime.dll
-release/sherpa-onnx-cxx-api.dll
-release/sherpa-onnx-c-api.dll
-release/onnxruntime_providers_shared.dll
+
+# build-installer.bat output (published as GitHub release assets, not committed)
+release/
+
+# upload-release.bat commit message, rewritten for each release
+commit-message.txt

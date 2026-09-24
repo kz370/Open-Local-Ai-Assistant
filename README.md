@@ -1,66 +1,217 @@
-# Open Local Assistant
+<p align="center">
+  <img src="docs/icon.png" width="96" alt="Open Local Assistant icon">
+</p>
 
-A small, fast, local-first desktop AI assistant. It lives in a floating window (bottom-right by default), runs in the system tray, and opens with a global shortcut. You can type or talk to it in **English, Arabic or German**, and it can answer out loud with natural local voices.
+<h1 align="center">Open Local Assistant</h1>
 
-<!--
-  Screenshots: none checked in yet. To add some, run the app, capture the
-  chat window, the hands-free call screen and the Settings pages, save them
-  under docs/screenshots/, and reference them here, e.g.:
-  ![Chat window](docs/screenshots/chat.png)
--->
+<p align="center">
+  A free, private desktop AI assistant for Windows. You can type or talk to it, and it can answer out loud.<br>
+  It runs fully on your own PC through <a href="https://lmstudio.ai">LM Studio</a>, or on a hosted AI provider if you choose one. No sign-up, no telemetry.
+</p>
 
-- **LLM:** LM Studio only (its local OpenAI-compatible server). No other LLM backend, no cloud fallback.
-- **Windows:** a small floating bubble sits on your desktop. Click it (or press `Ctrl+Space`) to open the chat. `−` puts the chat back into the bubble, `X` closes it to the tray, and the app quits only from the tray menu. Only one instance runs at a time.
-- **Speech recognition:** any sherpa-onnx compatible local model — Whisper, NeMo/Parakeet/Nemotron transducers (including streaming ones that show text live), NeMo CTC, SenseVoice, Moonshine and Paraformer — via [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx).
-- **Text-to-speech:** local neural voices. Supertonic 3 (129 MB) is the default: one multilingual model with 10 voices (5 female, 5 male) that speaks English, Arabic and German. You can prefer male or female voices, and add other voices from a model folder (Piper, Kokoro, Kitten).
-- **Selected text:** select words in a reply and right-click to copy them, have them read aloud, or have them explained, either as a follow-up in the chat or in a popup next to the selection (Settings → AI).
-- **Models in memory:** a settings page shows which models are loaded right now (speech recognition, each voice, the LM Studio chat model) with Load / Unload buttons, and an option to load them all in the background when the app starts.
-- **GPU acceleration:** an optional CUDA pack (Settings → System) speeds up the local speech models on an NVIDIA GPU; on by default once installed, with an automatic fallback to the CPU.
-- **Hands-free calls:** a phone-call style screen with live captions, the spoken word highlighted as it's read, and pause/mute/end controls — for talking to the assistant without touching the keyboard.
-- **Tools:** generic MCP (Model Context Protocol) client with explicit per-tool permissions. Built-in web search uses SearXNG (your own instance or a public one from searx.space) with DuckDuckGo as the fallback.
-- **Dictation:** a global hotkey (`Ctrl+Alt+Space`) types what you say into any application. A small window shows the text live while you speak, with optional grammar cleanup by a small LM Studio model you pick.
-- **Privacy:** conversations, settings and logs stay on disk locally. There is no telemetry. Logs contain no conversation content unless you turn that on.
+<p align="center">
+  <img src="docs/screenshots/chat-web-search.png" width="420" alt="Chat window answering a question with web sources">
+</p>
+
+**Free and open source** under the [GPL-3.0 license](LICENSE). Download the Windows installer or the portable version from the [Releases](../../releases) page, or [build it yourself](#building-from-source).
+
+**Early release (0.1.0), Windows only.** Expect rough edges. Bug reports, ideas and pull requests are welcome in [Issues](../../issues).
+
+---
+
+## Features
+
+- **Local or hosted AI, your choice.** Use [LM Studio](https://lmstudio.ai) to keep everything on your PC. If your PC can't run models, connect OpenRouter, Google Gemini or Hugging Face with your own API key. A "free models only" filter hides models that cost money.
+- **Floating chat window.** Press `Ctrl+Space` to open it. When you close it, it goes to the system tray.
+- **Voice in and out.** Speak your question and hear the answer read back with local neural voices.
+- **Hands-free calls.** A phone-call style screen with live captions, so you can talk without using the keyboard.
+- **Dictation in any app.** Press a hotkey, speak, and the text is typed into Notepad, your browser, or whatever app has focus.
+- **One voice model for every language.** A single small multilingual voice model (Supertonic 3, 123 MB, 31 languages) speaks English, Arabic, German and more. Arabic text is shown right-to-left.
+- **Right-click any reply.** Select text in an answer, then right-click to hear it read aloud, get a short explanation in a pop-up, or ask about it as the next message in the same chat.
+- **Web search with sources.** For "latest / today" questions the assistant searches the web and lists the pages it used.
+- **MCP tools.** You can connect Model Context Protocol servers. Anything that writes data or runs commands asks you first.
+- **Optional NVIDIA GPU pack** to speed up speech recognition and the voices.
+
+## Download
+
+Get the latest version from the [Releases](../../releases) page:
+
+| File | What it is |
+| --- | --- |
+| `Open-Local-Assistant-<version>-setup.exe` | **Installer (recommended).** Installs to `C:\Program Files\Open Local Assistant` and adds a Start menu entry and an uninstaller. |
+| `Open-Local-Assistant-<version>-portable-win-x64.zip` | **Portable version.** Extract the folder anywhere and run `Open Local Assistant.exe`. Keep the four `.dll` files next to the `.exe`. |
+
+### "Windows protected your PC"
+
+The builds are not code-signed yet. A code-signing certificate costs money every year, and this is a free app, so Windows SmartScreen doesn't recognise it and shows a warning. To run it, click **More info → Run anyway**. If you'd rather not, you can [build it yourself](#building-from-source) from this code.
+
+To check that your download wasn't changed along the way, compare its SHA-256 hash with the one shown next to the file on the [Releases](../../releases) page. In PowerShell:
+
+```powershell
+Get-FileHash .\Open-Local-Assistant-<version>-setup.exe
+```
 
 ## Requirements
 
-- Windows 10/11 (the primary target; the code also builds for macOS and Linux)
-- [LM Studio](https://lmstudio.ai) with the local server running (default `http://localhost:1234/v1`) and at least one model downloaded
-- For development: Node 20+, Rust (stable, MSVC toolchain on Windows), and the WebView2 runtime
+- Windows 10 or 11, 64-bit
+- One AI provider:
+  - **Local:** [LM Studio](https://lmstudio.ai) with at least one model downloaded and the **local server** turned on (default `http://localhost:1234`), or
+  - **Hosted:** an API key from OpenRouter, Google Gemini or Hugging Face (free models are available)
+- A microphone for voice features (optional)
+- An NVIDIA GPU (optional)
+
+### What PC do I need?
+
+- **Hosted provider:** almost any Windows 10/11 PC. The AI runs on the provider's servers.
+- **Local models through LM Studio:** as a rough guide, 16 GB of RAM for small models (3–4B). For 7–8B models, which answer noticeably better, an NVIDIA GPU with 8 GB or more of video memory keeps replies fast. Without a GPU, replies still work but come more slowly.
+- **Voice features:** run on the CPU on any modern PC. The optional NVIDIA GPU pack makes them faster.
+
+Local models are private but less capable than the big cloud assistants such as ChatGPT or Claude. They work well for everyday questions, writing help, explanations and dictation.
+
+## Getting started
+
+1. Pick your AI provider:
+   - **Local:** install and open LM Studio, download a model, then start the local server from the **Developer** tab.
+   - **Hosted:** create an API key at OpenRouter, Google AI Studio (Gemini) or Hugging Face.
+2. Run the installer and launch **Open Local Assistant**.
+3. The setup wizard finds LM Studio, your microphones and speakers. It also offers voice models that suit your hardware. Nothing is downloaded until you click **Download**.
+4. Using a hosted provider? Open **Settings → AI provider**, choose the provider and paste your API key. The key is stored only on your PC.
+5. Press `Ctrl+Space` and ask something.
+
+<p align="center">
+  <img src="docs/screenshots/chat.png" width="380" alt="Empty chat window with starter prompts">
+  &nbsp;
+  <img src="docs/screenshots/model-picker.png" width="380" alt="Model picker listing LM Studio models">
+</p>
+
+If you leave the model on **Auto**, the app uses the model that is already loaded in LM Studio. If none is loaded, it picks one that fits your GPU memory. You can also pick a model yourself at any time.
+
+## Voice
+
+<p align="center">
+  <img src="docs/screenshots/hands-free-call.png" width="380" alt="Hands-free call screen">
+</p>
+
+- **Push-to-talk:** hold `Ctrl+Shift+Space` while you speak.
+- **Hands-free:** click the waveform button next to the message box. The call screen listens, answers, and highlights each word as it is spoken. You can pause, mute or end the call at any time.
+- **Dictation:** press `Ctrl+Alt+Space` in any app. A small overlay shows your words live, and pressing the hotkey again inserts the text.
+
+<p align="center">
+  <img src="docs/screenshots/dictation-overlay.png" width="480" alt="Dictation overlay while listening">
+</p>
+
+## Right-click a reply
+
+Select any part of the assistant's answer and right-click it.
+
+<p align="center">
+  <img src="docs/screenshots/explain-demo.gif" width="380" alt="Selecting a word in a reply, right-clicking it and choosing Explain, then the explanation appearing in a pop-up">
+</p>
+
+- **Speak** reads the selected text out loud.
+- **Explain** opens a small pop-up with a short explanation of just that part, without leaving the answer.
+- **Ask in chat** (in the pop-up) sends the selection as your next message, so the assistant explains it in more detail in the same conversation.
+
+<p align="center">
+  <img src="docs/screenshots/explain-popup.png" width="380" alt="Explanation pop-up for the selected text">
+  &nbsp;
+  <img src="docs/screenshots/explain-in-chat.png" width="380" alt="Selected text explained as the next message in the same chat">
+</p>
+
+## Keyboard shortcuts
+
+| Action | Default |
+| --- | --- |
+| Open / focus the assistant | `Ctrl+Space` |
+| Push-to-talk (hold) | `Ctrl+Shift+Space` |
+| Dictation into any app | `Ctrl+Alt+Space` |
+| New conversation / History / Settings | `Ctrl+N` / `Ctrl+H` / `Ctrl+,` |
+
+You can change all of them in **Settings → Keyboard Shortcuts**.
+
+## Settings at a glance
+
+| | |
+| --- | --- |
+| ![AI provider settings](docs/screenshots/settings-ai-provider.png) | ![Loaded models](docs/screenshots/settings-loaded-models.png) |
+| **AI provider:** LM Studio or a hosted provider, API key, connection test, and a short display name for each model. | **Loaded models:** see what is in memory, load or unload it, and choose what loads at startup. |
+| ![Assistant voice settings](docs/screenshots/settings-assistant-voice.png) | ![Dictation settings](docs/screenshots/settings-dictation.png) |
+| **Assistant voice:** one multilingual voice model for all languages, a voice for each language, speed, volume and the GPU pack. | **Dictation:** hotkey behaviour, typing or pasting, review before inserting, and grammar cleanup. |
+
+![MCP & Tools settings](docs/screenshots/settings-mcp-tools.png)
+
+**MCP & Tools:** add MCP servers or import them from LM Studio. Safe mode is on by default, so risky tools always ask before they run.
+
+## Using your own speech models
+
+The app runs speech models in the [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) format, such as Whisper, Parakeet/NeMo, SenseVoice, Moonshine, Kokoro and Piper. To add your own:
+
+- copy the model folder into `%APPDATA%\com.localassistant.app\models`, or
+- open **Settings → Voice input → Model folders → Add folder** and choose any folder. Hugging Face cache folders work too.
+
+## Privacy
+
+There is no account and no telemetry. Conversations, settings, API keys and logs are stored only on your PC, in `%APPDATA%\com.localassistant.app`. Nothing is sent anywhere except:
+
+- your messages to the AI provider you chose. With LM Studio they stay on your PC. With OpenRouter, Google Gemini or Hugging Face they go to that company's servers, and the app shows a notice saying so,
+- web searches, and only when the assistant uses the search tool,
+- model downloads, and only when you click **Download**.
+
+Speech recognition (including dictation) and the assistant's voice always run on your PC, whichever AI provider you use. Only the optional dictation grammar cleanup uses the AI model.
+
+## Uninstall
+
+Use **Settings → Apps → Installed apps → Open Local Assistant → Uninstall**. To also delete your conversations and downloaded models, remove `%APPDATA%\com.localassistant.app`.
+
+## Troubleshooting
+
+- **"LM Studio is unavailable"**: start the local server in LM Studio, then click **Test connection** in Settings → AI provider.
+- **No models listed for a hosted provider**: check the API key in Settings → AI provider, then click **Refresh models**.
+- **Replies are slow with LM Studio**: try a smaller model, or check that LM Studio is using your GPU. See [What PC do I need?](#what-pc-do-i-need)
+- **Found a bug?** Open an [issue](../../issues) and say what you did, what you expected, and your Windows version.
+- **No voice in a language**: open Settings → Assistant voice → Voice models and make sure the Supertonic 3 multilingual model is installed.
+- **The app doesn't open**: it may already be running. Look for its icon in the system tray, or press `Ctrl+Space`.
+- **Portable version won't start**: make sure the four `.dll` files are in the same folder as the `.exe`.
+
+---
+
+## Building from source
+
+### Requirements
+
+- Windows 10/11. It's the main target; the code should also build on macOS and Linux, but that isn't tested.
+- [Node.js](https://nodejs.org) 20 or newer
+- [Rust](https://rustup.rs) (stable, with the MSVC toolchain on Windows)
+- The WebView2 runtime (already included in Windows 11)
+- [Inno Setup 6](https://jrsoftware.org/isdl.php), only if you want to make the installer
 
 The first build downloads the prebuilt static sherpa-onnx libraries from the sherpa-onnx GitHub releases. This happens at build time only.
 
-## Getting started
+### Run in development
 
 ```bash
 npm install
 npm run tauri dev
 ```
 
-On first launch, a setup wizard does the following:
+### Build the installer and the portable version
 
-1. Scans for LM Studio, models, microphones, speakers and installed voice models.
-2. Lets you choose the response language (Automatic by default).
-3. Offers to download voice models recommended for your hardware. Nothing is downloaded unless you click **Download**. Files come from pinned Hugging Face or GitHub URLs and are checked against SHA-256 hashes.
+```bat
+build-installer.bat
+```
 
-### Using your own models
+This builds the frontend and the release exe, then writes these to `release\`:
 
-Two ways:
+- `Open Local Assistant.exe` plus the four speech `.dll` files (the portable version)
+- `Open-Local-Assistant-<version>-setup.exe` (needs Inno Setup)
 
-- Copy a compatible sherpa-onnx model folder into `%APPDATA%\com.localassistant.app\models`.
-- Or open **Settings → Speech Recognition → Model folders → Add folder** and point at any folder, for example `H:\Models\…` or `C:\Users\<you>\.cache\huggingface\hub`. Sub-folders are scanned, including the Hugging Face `models--org--name/snapshots/<hash>` layout.
+`build-installer.bat install` skips the installer and copies the app straight into `C:\Program Files\Open Local Assistant` (asks for administrator rights).
 
-Each model shows its type (Whisper, streaming transducer, Kokoro, Piper, …) and the exact folder it was loaded from. Folders the app cannot run — PyTorch/safetensors exports such as Qwen3-TTS or Chatterbox, and GGUF files, which belong in LM Studio — are listed separately with the reason, because the local speech engine needs ONNX exports.
+### Publish a release (maintainers)
 
-### Default shortcuts
-
-| Action | Shortcut |
-| --- | --- |
-| Open / focus assistant | `Ctrl+Space` |
-| Push-to-talk (hold) | `Ctrl+Shift+Space` |
-| Dictation into other apps | `Ctrl+Alt+Space` |
-| New conversation / History / Settings (in window) | `Ctrl+N` / `Ctrl+H` / `Ctrl+,` |
-
-All shortcuts can be changed in **Settings → Keyboard Shortcuts**.
+1. Write the release notes in `release-notes\v<version>.md`.
+2. Write the commit message in `commit-message.txt` (git-ignored).
+3. Run `upload-release.bat`. It commits and pushes this repo, creates or updates the GitHub release `v<version>`, and uploads the setup exe and a zip of the portable version from `release\`.
 
 ## Architecture
 
@@ -69,15 +220,16 @@ src/                         React + TypeScript UI (English only)
   app/                       typed IPC, zustand stores, UI strings
   components/ pages/         chat window, settings dashboard, setup wizard, dictation overlay
 src-tauri/src/
-  services/ai/               LM Studio client (SSE streaming, tool calls), automatic model selection
+  services/ai/               OpenAI-compatible client (SSE streaming, tool calls), automatic model selection
   services/chat/             orchestrator (history, tool rounds, permissions), prompt, freshness detection
-  services/stt/              Whisper transcription, listening sessions (push-to-talk, hands-free VAD, dictation)
+  services/stt/              speech recognition, listening sessions (push-to-talk, hands-free VAD, dictation)
   services/tts/              sentence buffer, per-sentence language → voice selection, synthesis queue
   services/audio/            cpal capture (16 kHz mono) and playback queue
   services/language/         English/Arabic/German detection for typed and spoken text
   services/mcp/              MCP manager (stdio + streamable HTTP), permission policy, source extraction
   services/models/           voice model catalog, discovery, consented downloads
-  services/dictation.rs      correction with a small LM Studio model, text insertion
+  services/search/           web search (SearXNG with DuckDuckGo fallback)
+  services/dictation.rs      grammar cleanup with a small model, text insertion
   services/gpu/              optional CUDA pack for the speech models (download, install, activate)
   capabilities/              LocalCapabilityManager (scan of everything available locally)
   database/                  SQLite (conversations, messages + FTS5, settings, MCP config)
@@ -86,37 +238,35 @@ src-tauri/src/
 
 ### Key behaviours
 
-- **Model selection:** loaded models win. Otherwise the app scores models by whether they fit in VRAM (or RAM on machines without a GPU), how practical their parameter count is, whether they support tool use, their context size and their quantization. It does not simply pick the largest model. You can always choose a model manually. If you loaded the model in LM Studio yourself (for example with speculative decoding / a draft model attached), the app leaves it as is; it only loads a model itself when none is loaded yet.
-- **Current information:** the system prompt tells the model to use a web-search tool for "latest / current / today…" questions. If no search tool is enabled, the model must say it cannot verify current information. Sources shown in the UI come only from URLs the tools actually returned.
-- **Stable system prompt:** the system prompt is identical from one turn to the next — the clock, the per-message language and the freshness hint are appended to the latest user message instead of the top of the prompt. This keeps LM Studio's own prompt cache valid, so it only has to read your new message each turn instead of re-reading the whole conversation.
-- **Tool security:** search, fetch and read tools are allowed by default. Tools that write data, and tools that can't be classified, always ask for confirmation. Command-execution tools are disabled by default, and they can never be set to run without confirmation. MCP servers are never installed or enabled automatically.
-- **Streaming speech:** LLM tokens are buffered into complete sentences. Code blocks are skipped, and decimals, abbreviations and URLs don't end a sentence. Each sentence is spoken as soon as it is complete, in a voice that matches its detected language. In the chat window, replies spoken automatically show pause/stop controls; clicking "Read aloud" shows a spinner until playback actually starts.
-- **Hands-free call screen:** shows the whole reply with the word being spoken highlighted (not a single scrolling line), and Stop / Pause / Mute / End controls. Pausing keeps the rest of the answer queued and starts listening again, so speaking up takes over. A glow-and-dots "Thinking…" / "Transcribing…" state covers the moments the model or the speech engine is working.
-- **GPU acceleration:** an optional CUDA pack accelerates the local speech models (STT and TTS) on an NVIDIA GPU; it is on by default once installed (Settings → System), and falls back to the CPU automatically if a GPU start fails. The tiny voice-activity detector always runs on the CPU regardless (a GPU round-trip costs more than the calculation itself).
-- **Live dictation:** streaming models show words as you speak; with Whisper-style models each finished sentence appears as soon as the pause detector closes it.
-- **Model names:** give any LM Studio model a short name in Settings → AI, and the chat's model picker and header use it instead of the full id.
-- **Generation stats:** each reply can show its speed (tokens/second), token count and context window usage underneath it (Settings → AI → "Show speed and context per reply", on by default). Saved per message, so it also shows on replies you loaded from history.
+- **Model selection:** loaded models win. Otherwise the app scores LM Studio models by whether they fit in VRAM (or RAM on machines without a GPU), how practical their parameter count is, whether they support tool use, their context size and their quantization. It does not simply pick the largest model. You can always choose a model manually. If you loaded the model in LM Studio yourself (for example with a draft model for speculative decoding), the app leaves it as is. It only loads a model itself when none is loaded yet.
+- **Current information:** the system prompt tells the model to use a web-search tool for "latest / current / today" questions. If no search tool is enabled, the model must say it cannot verify current information. Sources shown in the UI come only from URLs the tools actually returned.
+- **Stable system prompt:** the system prompt is identical from one turn to the next. The clock, the per-message language and the freshness hint are added to the latest user message instead. This keeps LM Studio's prompt cache valid, so it only reads your new message each turn instead of the whole conversation.
+- **Tool security:** search, fetch and read tools are allowed by default. Tools that write data, and tools that can't be classified, always ask for confirmation. Command-execution tools are off by default and can never be set to run without confirmation. MCP servers are never installed or turned on automatically.
+- **Streaming speech:** tokens are buffered into complete sentences. Code blocks are skipped, and decimals, abbreviations and URLs don't end a sentence. Each sentence is spoken as soon as it is complete, in a voice that matches its detected language.
+- **GPU acceleration:** the optional CUDA pack speeds up the local speech models on an NVIDIA GPU. It is on by default once installed and falls back to the CPU if the GPU fails to start. The small voice-activity detector always runs on the CPU, because a GPU round-trip costs more than the calculation itself.
 
 ## Tests
 
 ```bash
-# Rust unit + integration tests (LM Studio mock server, MCP fixture server over stdio, DB, language, TTS buffering…)
+# Rust unit and integration tests (LM Studio mock server, MCP fixture server over stdio, DB, language, TTS buffering)
 cd src-tauri && cargo test
 
 # Frontend tests (RTL rendering, streaming chat store, tool UI, shortcuts, every UI string key exists)
 npm test
 
-# Optional: real voice models (downloads ~560 MB into the given folder)
+# Optional: real voice models (downloads about 560 MB into the given folder)
 LA_MODELS_DIR=/path/to/models cargo test --test voice_models -- --nocapture
 
 # Optional: live test against your running LM Studio (streaming, 3 languages, web-search tool use)
 LA_LIVE_LMSTUDIO=1 cargo test --test lmstudio_live -- --nocapture
 ```
 
-## Build an installer
+## Contributing
 
-```bash
-npm run tauri build
-```
+Bug reports and pull requests are welcome. For bigger changes, please open an issue first so we can agree on the approach. Run `npm test` and `cargo test` before sending a pull request.
 
-This produces NSIS and MSI installers in `src-tauri/target/release/bundle/`.
+## License
+
+Open Local Assistant is free software, released under the [GNU General Public License v3.0](LICENSE). You can use, study, change and share it. If you share a changed version, you must release its source code under the same license.
+
+It uses [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) and [ONNX Runtime](https://github.com/microsoft/onnxruntime), which have their own licenses. Voice and speech models downloaded by the app are covered by their own licenses too.
