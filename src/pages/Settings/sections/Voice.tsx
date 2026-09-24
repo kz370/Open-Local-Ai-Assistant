@@ -8,7 +8,6 @@ import { ErrorNotice, openExternal, Segmented, Switch } from "../../../component
 import { GpuCard } from "../../../components/settings/GpuCard";
 import { Card, Row, SectionHeader } from "../../../components/settings/layout";
 import { ModelManager } from "../../../components/settings/ModelManager";
-import { SilmaCard } from "../../../components/settings/SilmaCard";
 import { LevelMeter } from "../../../components/voice/LevelMeter";
 import { useS } from "./Basic";
 
@@ -301,7 +300,7 @@ function useVoices() {
   useEffect(() => {
     const load = () => void ipc.ttsVoices().then(setVoices);
     load();
-    const subs = [on("models://changed", load), on("silma://status", load)];
+    const subs = [on("models://changed", load)];
     return () => subs.forEach((s) => void s.then((u) => u()));
   }, []);
   return voices;
@@ -357,7 +356,8 @@ export function VoiceSection() {
   }, [s.language.entries, activeLang]);
 
   const entry = s.language.entries.find((e) => e.code === activeLang) ?? s.language.entries[0];
-  const list = voices.filter((v) => v.language === entry?.code);
+  // "*" = a multilingual voice. Speech only routes the built-in languages.
+  const list = voices.filter((v) => v.language === entry?.code || (entry?.builtIn && v.language === "*"));
 
   const updateEntry = (code: string, patch: Partial<LanguageEntry>) =>
     set((d) => {
@@ -369,7 +369,6 @@ export function VoiceSection() {
     <>
       <SectionHeader title={t("settings.sections.voice")} />
       <GpuCard />
-      <SilmaCard />
       <Card>
         <Row label={t("settings.voice.provider")}>
           <span className="badge ok">{t("settings.speech.local")}</span>

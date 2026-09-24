@@ -56,17 +56,6 @@ pub async fn save_settings(app: AppHandle, state: State<'_, AppState>, settings:
             state.tts.unload_model(&id);
         }
     }
-    if before.silma.hardware != saved.silma.hardware {
-        state.silma.set_force_cpu(saved.silma.hardware == "cpu");
-        state.silma.stop();
-    }
-    // Picking a voice for a language loads SILMA now rather than on the first sentence.
-    let voices_changed = before.language.entries != saved.language.entries;
-    if voices_changed && state.silma.is_installed() && state.tts.uses_silma() {
-        if let Err(e) = state.silma.start() {
-            tracing::warn!(error = %e, "SILMA could not start");
-        }
-    }
     if before.tts.output_device != saved.tts.output_device || before.tts.volume != saved.tts.volume {
         state.tts.apply_settings();
     }

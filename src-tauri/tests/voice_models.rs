@@ -15,7 +15,7 @@ use local_ai_assistant_lib::settings::SettingsStore;
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 
-const MODELS: &[&str] = &["whisper-small", "silero-vad", "kokoro-int8-en-v0_19", "piper-de_DE-thorsten-medium-int8", "piper-ar_JO-kareem-medium"];
+const MODELS: &[&str] = &["whisper-small", "silero-vad", "supertonic-3-int8"];
 
 fn words(s: &str) -> Vec<String> {
     s.to_lowercase()
@@ -64,6 +64,51 @@ async fn tts_stt_roundtrip_three_languages() {
 
         let result = stt.transcribe(&pcm, &settings.get().stt).expect("transcribe");
         eprintln!("[{lang}] tts {synth_ms} ms, stt {} ms: {:?} -> detected {:?}", result.elapsed_ms, result.text, result.language);
+        assert_eq!(result.language.as_deref(), Some(lang.code()), "language detection for {lang}");
+        let got = words(&result.text);
+        for w in expect_words {
+            assert!(got.iter().any(|g| g.contains(&w.to_lowercase())), "[{lang}] expected '{w}' in {:?}", result.text);
+        }
+    }
+}
+
+/// One multilingual voice (Supertonic 3) speaks all three languages: each
+/// sentence is spoken with it and transcribed back. Run it against a models
+/// folder whose only voice is Supertonic, so nothing else gets picked.
+#[tokio::test]
+async fn multilingual_voice_speaks_three_languages() {
+    let Ok(dir) = std::env::var("LA_MULTILINGUAL_MODELS_DIR") else {
+        eprintln!("LA_MULTILINGUAL_MODELS_DIR not set; skipping multilingual voice test");
+        return;
+    };
+    let store = Arc::new(ModelStore::new(dir.into()));
+    for id in ["whisper-small", "supertonic-3-int8"] {
+        if !store.is_installed(id) {
+            download::install(&store, catalog::find(id).unwrap(), CancellationToken::new(), &|_| {}).await.expect("install");
+        }
+    }
+    let db = Arc::new(Db::open_in_memory().unwrap());
+    let settings = Arc::new(SettingsStore::load(db).unwrap());
+    let hw = hardware::detect();
+    let tts = TtsService::new(store.clone(), settings.clone(), hw.clone(), Arc::new(|_| {}));
+    let stt = SttService::new(store.clone(), hw.clone());
+
+    let cases = [
+        (Lang::En, "Hello, how are you today? I would like to organize my files.", vec!["organize", "files"]),
+        (Lang::De, "Guten Tag. Wie kann ich meine Dateien organisieren?", vec!["dateien", "organisieren"]),
+        (Lang::Ar, "مرحبا، كيف حالك اليوم؟", vec!["اليوم"]),
+    ];
+    for (lang, text, expect_words) in cases {
+        let voice = tts.selected_voice(lang).expect("voice");
+        assert_eq!(voice.model_id, "supertonic-3-int8");
+        let t0 = std::time::Instant::now();
+        let (samples, rate) = tts.synthesize(text, lang, hw.inference_threads()).expect("synthesize");
+        let synth_ms = t0.elapsed().as_millis();
+        assert!(samples.len() > rate as usize / 2, "audio too short");
+        let mut pcm = sherpa_onnx::LinearResampler::create(rate as i32, 16_000).unwrap().resample(&samples, true);
+        pcm.extend(std::iter::repeat(0.0).take(8_000));
+        let result = stt.transcribe(&pcm, &settings.get().stt).expect("transcribe");
+        eprintln!("[{lang}] tts {synth_ms} ms ({} s audio): {:?} -> detected {:?}", samples.len() / rate as usize, result.text, result.language);
         assert_eq!(result.language.as_deref(), Some(lang.code()), "language detection for {lang}");
         let got = words(&result.text);
         for w in expect_words {
@@ -124,7 +169,7 @@ async fn hands_free_pipeline_transcribes_utterances() {
     use std::sync::Mutex;
 
     let store = Arc::new(ModelStore::new(dir.into()));
-    for id in ["whisper-base", "silero-vad", "kokoro-int8-en-v0_19"] {
+    for id in ["whisper-base", "silero-vad", "supertonic-3-int8"] {
         if !store.is_installed(id) {
             let m = catalog::find(id).unwrap();
             download::install(&store, m, CancellationToken::new(), &|_| {}).await.expect("install");

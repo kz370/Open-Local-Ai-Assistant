@@ -98,7 +98,7 @@ export const MessageBubble = memo(function MessageBubble({ message: m, developer
         </div>
       )}
       {m.content && (
-        <div className="bubble" dir={dir} lang={lang}>
+        <div className="bubble" dir={dir} lang={lang} data-message-id={m.id}>
           <Markdown text={m.content} />
         </div>
       )}

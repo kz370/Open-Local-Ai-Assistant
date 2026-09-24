@@ -20,6 +20,16 @@ pub struct VoiceInfo {
     pub gender: String,
 }
 
+/// `VoiceInfo::language` of a voice that speaks every supported language.
+pub const MULTILINGUAL: &str = "*";
+const SUPERTONIC_SPEAKERS: i32 = 10;
+
+impl VoiceInfo {
+    pub fn speaks(&self, lang: Lang) -> bool {
+        self.language == lang.code() || self.language == MULTILINGUAL
+    }
+}
+
 /// Speakers of kokoro-en-v0_19 in speaker-id order.
 const KOKORO_V019_SPEAKERS: &[&str] = &[
     "af", "af_bella", "af_nicole", "af_sarah", "af_sky", "am_adam", "am_michael", "bf_emma", "bf_isabella", "bm_george", "bm_lewis",
@@ -61,7 +71,9 @@ pub fn list_voices(installed: &[InstalledModel]) -> Vec<VoiceInfo> {
             // Kokoro-architecture models for other languages (e.g. Nabra for
             // Arabic) expose numbered style vectors instead of named speakers.
             Engine::Kokoro if m.languages.first().map(|l| l != "en").unwrap_or(false) => {
-                let lang = m.languages.first().cloned().unwrap_or_else(|| "*".into());
+                // Kokoro "multi-lang" exports speak English and Chinese only,
+                // so they must not be offered as a voice for every language.
+                let lang = m.languages.first().filter(|l| *l != "*").cloned().unwrap_or_else(|| "en".into());
                 for sid in 0..8 {
                     out.push(VoiceInfo {
                         id: format!("{}:{sid}", m.id),
@@ -105,6 +117,22 @@ pub fn list_voices(installed: &[InstalledModel]) -> Vec<VoiceInfo> {
                     });
                 }
             }
+            Engine::Supertonic => {
+                // voice.bin holds the styles in file-name order: F1-F5, M1-M5.
+                for sid in 0..SUPERTONIC_SPEAKERS {
+                    let (gender, n) = if sid < 5 { ("female", sid + 1) } else { ("male", sid - 4) };
+                    out.push(VoiceInfo {
+                        id: format!("{}:{sid}", m.id),
+                        model_id: m.id.clone(),
+                        name: format!("{} - {gender} {n}", m.name),
+                        language: MULTILINGUAL.into(),
+                        speaker_id: sid,
+                        engine: m.engine,
+                        quality,
+                        gender: gender.into(),
+                    });
+                }
+            }
             Engine::Piper => {
                 let lang = m.languages.first().cloned().unwrap_or_else(|| "*".into());
                 out.push(VoiceInfo {
@@ -124,37 +152,25 @@ pub fn list_voices(installed: &[InstalledModel]) -> Vec<VoiceInfo> {
     out
 }
 
-pub const SILMA_VOICE_ID: &str = "silma:0";
-
-/// The SILMA voice (see services::silma). SILMA speaks Arabic only: its
-/// English sounds like the Arabic reference speaker reading English, so it is
-/// not offered for other languages.
-pub fn silma_voices() -> Vec<VoiceInfo> {
-    vec![VoiceInfo {
-        id: SILMA_VOICE_ID.into(),
-        model_id: "silma".into(),
-        name: "SILMA (natural Arabic)".into(),
-        language: "ar".into(),
-        speaker_id: 0,
-        engine: Engine::Silma,
-        quality: 9,
-        gender: String::new(),
-    }]
-}
-
 /// `preference` is "auto" or a voice id from settings; `gender` is
 /// "any" | "female" | "male" and only steers the automatic choice.
 pub fn select_voice(voices: &[VoiceInfo], lang: Lang, preference: &str, gender: &str) -> Option<VoiceInfo> {
     if preference != "auto" {
-        if let Some(v) = voices.iter().find(|v| v.id == preference && v.language == lang.code()) {
+        if let Some(v) = voices.iter().find(|v| v.id == preference && v.speaks(lang)) {
             return Some(v.clone());
         }
     }
     let best = |filter: &dyn Fn(&VoiceInfo) -> bool| {
         voices
             .iter()
-            .filter(|v| v.language == lang.code() && filter(v))
-            .max_by(|a, b| a.quality.cmp(&b.quality).then_with(|| b.id.cmp(&a.id)))
+            .filter(|v| v.speaks(lang) && filter(v))
+            // At equal quality a voice made for the language beats a multilingual one.
+            .max_by(|a, b| {
+                a.quality
+                    .cmp(&b.quality)
+                    .then_with(|| (b.language == MULTILINGUAL).cmp(&(a.language == MULTILINGUAL)))
+                    .then_with(|| b.id.cmp(&a.id))
+            })
             .cloned()
     };
     if gender == "female" || gender == "male" {
@@ -187,17 +203,6 @@ mod tests {
     }
 
     #[test]
-    fn silma_speaks_arabic_only() {
-        let voices = silma_voices();
-        assert!(voices.iter().all(|v| v.language == "ar"), "SILMA must not be offered for other languages");
-        // English keeps its own voices even when SILMA is installed.
-        let mut all = list_voices(&[installed("kokoro-en-v0_19", Engine::Kokoro, "en")]);
-        all.extend(silma_voices());
-        assert_eq!(select_voice(&all, Lang::En, "auto", "any").unwrap().engine, Engine::Kokoro);
-        assert_eq!(select_voice(&all, Lang::Ar, "auto", "any").unwrap().engine, Engine::Silma);
-    }
-
-    #[test]
     fn automatic_selection_per_language() {
         let voices = list_voices(&[
             installed("kokoro-en-v0_19", Engine::Kokoro, "en"),
@@ -217,6 +222,32 @@ mod tests {
         assert_eq!(select_voice(&voices, Lang::En, "auto", "female").unwrap().gender, "female");
         // ...and falls back when that language has no such voice
         assert_eq!(select_voice(&voices, Lang::De, "auto", "female").unwrap().language, "de");
+    }
+
+    #[test]
+    fn multilingual_voice_speaks_every_language() {
+        let only = list_voices(&[installed("supertonic-3-int8", Engine::Supertonic, "*")]);
+        assert_eq!(only.len(), 10);
+        for lang in [Lang::En, Lang::Ar, Lang::De] {
+            assert_eq!(select_voice(&only, lang, "auto", "any").unwrap().engine, Engine::Supertonic);
+        }
+        assert_eq!(select_voice(&only, Lang::De, "auto", "male").unwrap().gender, "male");
+        // A manual pick of a multilingual voice holds for any language.
+        assert_eq!(select_voice(&only, Lang::Ar, "supertonic-3-int8:7", "any").unwrap().speaker_id, 7);
+
+        // A voice made for the language wins at equal quality...
+        let mut mixed = list_voices(&[installed("piper-de_DE-thorsten-medium-int8", Engine::Piper, "de")]);
+        mixed.extend(only.clone());
+        assert_eq!(select_voice(&mixed, Lang::De, "auto", "any").unwrap().engine, Engine::Piper);
+        // ...and the multilingual one fills the languages that have none.
+        assert_eq!(select_voice(&mixed, Lang::Ar, "auto", "any").unwrap().engine, Engine::Supertonic);
+    }
+
+    #[test]
+    fn kokoro_multi_lang_is_not_offered_for_every_language() {
+        let voices = list_voices(&[installed("kokoro-multi-lang-v1_1", Engine::Kokoro, "*")]);
+        assert!(voices.iter().all(|v| v.language == "en"));
+        assert!(select_voice(&voices, Lang::Ar, "auto", "any").is_none());
     }
 
     #[test]

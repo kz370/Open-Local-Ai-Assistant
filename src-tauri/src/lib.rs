@@ -62,17 +62,6 @@ fn init_state(app: &AppHandle) -> Result<AppState, Box<dyn std::error::Error>> {
     let stt = Arc::new(SttService::new(models.clone(), hardware.clone()));
 
     let handle = app.clone();
-    let silma = Arc::new(services::silma::Silma::new(
-        paths.data_dir.clone(),
-        hardware.has_nvidia(),
-        Arc::new(move |status| {
-            let _ = handle.emit("silma://status", status);
-        }),
-    ));
-    silma.set_force_cpu(s.silma.hardware == "cpu");
-    tts.set_silma(silma.clone());
-
-    let handle = app.clone();
     let tts_probe = tts.clone();
     let voice = Arc::new(VoiceSessions::new(
         stt.clone(),
@@ -109,7 +98,6 @@ fn init_state(app: &AppHandle) -> Result<AppState, Box<dyn std::error::Error>> {
         stt,
         tts,
         voice,
-        silma,
         hardware,
         downloads: Mutex::new(Default::default()),
         model_loading: Mutex::new(Default::default()),
@@ -448,14 +436,9 @@ pub fn run() {
             commands::voice::gpu_install,
             commands::voice::gpu_cancel,
             commands::voice::gpu_remove,
-            commands::voice::silma_status,
-            commands::voice::silma_install,
-            commands::voice::silma_cancel,
-            commands::voice::silma_test,
             commands::memory::memory_status,
             commands::memory::memory_load,
             commands::memory::memory_unload,
-            commands::voice::silma_remove,
             commands::attachments::attach_files,
             commands::attachments::attach_bytes,
             commands::attachments::attach_text,
@@ -463,6 +446,7 @@ pub fn run() {
             commands::attachments::attachment_data_url,
             commands::attachments::attachment_text,
             commands::chat::chat_send,
+            commands::chat::chat_explain,
             commands::chat::chat_stop,
             commands::chat::chat_confirm_tool,
             commands::chat::conv_list,

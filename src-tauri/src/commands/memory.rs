@@ -5,7 +5,6 @@
 use super::CmdResult;
 use crate::errors::AppError;
 use crate::services::language::Lang;
-use crate::services::models::catalog::Engine;
 use crate::state::AppState;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -13,9 +12,9 @@ use tauri::{AppHandle, Emitter, Manager, State};
 #[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MemoryItem {
-    /// "stt" | "voice:en" | "voice:ar" | "voice:de" | "silma" | "llm:<model id>"
+    /// "stt" | "voice:en" | "voice:ar" | "voice:de" | "llm:<model id>"
     pub key: String,
-    /// "stt" | "voice" | "silma" | "llm"
+    /// "stt" | "voice" | "llm"
     pub kind: String,
     /// What the model is used for (language code for voices).
     pub role: String,
@@ -66,7 +65,6 @@ pub async fn memory_status(state: State<'_, AppState>) -> CmdResult<Vec<MemoryIt
     let mut items = Vec::new();
     // The ONNX speech models run wherever the GPU pack put this process.
     let onnx_device = Some(if crate::services::gpu::is_active() { "GPU" } else { "CPU" }.to_string());
-    let silma_device = |s: &crate::services::silma::SilmaStatus| s.device.as_deref().map(|d| if d == "cuda" { "GPU" } else { "CPU" }.to_string());
 
     // Speech recognition
     match state.stt.resolve_model(&settings.stt) {
@@ -80,21 +78,11 @@ pub async fn memory_status(state: State<'_, AppState>) -> CmdResult<Vec<MemoryIt
         None => items.push(MemoryItem { key: "stt".into(), kind: "stt".into(), role: "stt".into(), model: String::new(), state: "missing".into(), detail: None, ..Default::default() }),
     }
 
-    // One voice per language (SILMA voices are covered by the SILMA row).
+    // One voice per language.
     let loaded_voices = state.tts.loaded_models();
     for lang in LANGS {
         let key = format!("voice:{}", lang.code());
         match state.tts.selected_voice(lang) {
-            Some(v) if v.engine == Engine::Silma => {
-                let s = state.silma.status();
-                items.push(MemoryItem {
-                    state: if s.state == "starting" { "loading".into() } else if s.state == "ready" { "loaded".into() } else { state_of(&key, false) },
-                    key,
-                    kind: "voice".into(),
-                    role: lang.code().into(),
-                    model: v.name,
-                    detail: silma_device(&s), ..Default::default() })
-            }
             Some(v) => items.push(MemoryItem {
                 state: state_of(&key, loaded_voices.contains(&v.model_id)),
                 key,
@@ -104,26 +92,6 @@ pub async fn memory_status(state: State<'_, AppState>) -> CmdResult<Vec<MemoryIt
                 detail: onnx_device.clone(), ..Default::default() }),
             None => items.push(MemoryItem { key, kind: "voice".into(), role: lang.code().into(), model: String::new(), state: "missing".into(), detail: None, ..Default::default() }),
         }
-    }
-
-    // SILMA: one process behind the Arabic voice, so it only gets its own row
-    // when no voice row already stands for it.
-    let silma_voiced = LANGS.iter().any(|l| state.tts.selected_voice(*l).is_some_and(|v| v.engine == Engine::Silma));
-    if state.silma.is_installed() && !silma_voiced {
-        let s = state.silma.status();
-        items.push(MemoryItem {
-            key: "silma".into(),
-            kind: "silma".into(),
-            role: "silma".into(),
-            model: "SILMA TTS v1".into(),
-            state: match s.state.as_str() {
-                "ready" => "loaded",
-                "starting" => "loading",
-                "failed" => "failed",
-                _ => "idle",
-            }
-            .into(),
-            detail: silma_device(&s).or(s.error), ..Default::default() });
     }
 
     // LM Studio: the chat model plus anything else it holds in memory. A hosted
@@ -183,18 +151,8 @@ pub async fn load(app: &AppHandle, key: &str) -> CmdResult<()> {
             })
             .await
         }
-        "silma" => {
-            state.silma.start()?;
-            changed(app);
-            Ok(())
-        }
         k if k.starts_with("voice:") => {
             let lang = lang_from_key(k).ok_or_else(|| AppError::Invalid(k.into()))?;
-            if state.tts.selected_voice(lang).is_some_and(|v| v.engine == Engine::Silma) {
-                state.silma.start()?;
-                changed(app);
-                return Ok(());
-            }
             let (tts, threads) = (state.tts.clone(), state.hardware.inference_threads().min(4));
             tracked(app, key, async move {
                 tokio::task::spawn_blocking(move || tts.preload_lang(lang, threads)).await.map_err(|e| AppError::Tts(e.to_string()))?
@@ -227,15 +185,6 @@ pub fn load_all(app: &AppHandle, only_autoload: bool) {
     let state = app.state::<AppState>();
     let general = state.settings.get().general;
     let wanted = move |key: &str| !only_autoload || general.autoloads(key);
-    // SILMA holds a few GB of VRAM. Next to a local LM Studio model on the same
-    // card that pushes the chat model out of video memory and slows it to a
-    // crawl, so it then starts on the first Arabic sentence instead.
-    let local_llm = state.settings.get().ai.provider == "lmstudio";
-    if !local_llm && wanted("voice:ar") && state.silma.is_installed() && state.tts.uses_silma() {
-        if let Err(e) = state.silma.start() {
-            tracing::warn!(error = %e, "SILMA could not start");
-        }
-    }
     let keys: Vec<&'static str> = ["stt", "voice:en", "voice:ar", "voice:de"].into_iter().filter(|k| wanted(k)).collect();
     let speech = app.clone();
     tauri::async_runtime::spawn(async move {
@@ -267,12 +216,6 @@ pub async fn memory_load(app: AppHandle, key: String) -> CmdResult<()> {
     load(&app, &key).await
 }
 
-/// Stopping the helper waits for its process to exit, so keep that off the async workers.
-async fn stop_silma(state: &AppState) {
-    let silma = state.silma.clone();
-    let _ = tokio::task::spawn_blocking(move || silma.stop()).await;
-}
-
 #[tauri::command]
 pub async fn memory_unload(app: AppHandle, state: State<'_, AppState>, key: String) -> CmdResult<()> {
     match key.as_str() {
@@ -282,13 +225,10 @@ pub async fn memory_unload(app: AppHandle, state: State<'_, AppState>, key: Stri
             }
             state.stt.unload();
         }
-        "silma" => stop_silma(&state).await,
         k if k.starts_with("voice:") => {
             let lang = lang_from_key(k).ok_or_else(|| AppError::Invalid(k.into()))?;
-            match state.tts.selected_voice(lang) {
-                Some(v) if v.engine == Engine::Silma => stop_silma(&state).await,
-                Some(v) => state.tts.unload_model(&v.model_id),
-                None => {}
+            if let Some(v) = state.tts.selected_voice(lang) {
+                state.tts.unload_model(&v.model_id);
             }
         }
         k if k.starts_with("llm:") => {

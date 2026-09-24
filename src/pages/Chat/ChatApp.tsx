@@ -12,6 +12,7 @@ import type { DictationStateEvent } from "../../app/types";
 import { useVoice } from "../../app/voiceStore";
 import { Composer, type ComposerHandle } from "../../components/chat/Composer";
 import { MessageBubble } from "../../components/chat/MessageBubble";
+import { SelectionMenu } from "../../components/chat/SelectionMenu";
 import { ToolConfirmDialog } from "../../components/chat/ToolConfirmDialog";
 import { BrandMark } from "../../components/common/BrandMark";
 import { CallView } from "../../components/voice/CallView";
@@ -405,6 +406,7 @@ export function ChatApp() {
       )}
       <div className="morph-veil" aria-hidden />
       <ToolConfirmDialog />
+      <SelectionMenu />
       {showHistory && <HistoryPanel onClose={() => setShowHistory(false)} />}
     </div>
   );

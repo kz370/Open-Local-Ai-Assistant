@@ -38,14 +38,13 @@ pub struct InstalledModel {
 pub struct Recommendation {
     pub stt: &'static str,
     pub vad: &'static str,
-    pub tts_en: &'static str,
-    pub tts_de: &'static str,
-    pub tts_ar: &'static str,
+    /// One multilingual voice for every language.
+    pub tts: &'static str,
 }
 
 impl Recommendation {
     pub fn ids(&self) -> Vec<&'static str> {
-        vec![self.stt, self.vad, self.tts_en, self.tts_de, self.tts_ar]
+        vec![self.stt, self.vad, self.tts]
     }
 }
 
@@ -55,9 +54,7 @@ pub fn recommend(_hw: &HardwareInfo) -> Recommendation {
     Recommendation {
         stt: "whisper-base",
         vad: "silero-vad",
-        tts_en: "kitten-nano-en-v0_8-int8",
-        tts_de: "piper-de_DE-thorsten-medium-int8",
-        tts_ar: "piper-ar_JO-SA_miro_V2-high",
+        tts: "supertonic-3-int8",
     }
 }
 
@@ -311,6 +308,9 @@ pub fn detect_custom(dir: &Path, name: &str) -> Option<InstalledModel> {
 
     if onnx.iter().any(|n| n.starts_with("silero_vad") || n.starts_with("ten-vad")) {
         return Some(base(ModelKind::Vad, Engine::SileroVad, vec!["*".into()], None, false, ""));
+    }
+    if has("tts.json") && has("unicode_indexer.bin") && has("voice.bin") {
+        return Some(base(ModelKind::Tts, Engine::Supertonic, vec!["*".into()], None, false, "mixed"));
     }
     if has("voices.bin") && !tokens.is_empty() {
         // Kitten and Kokoro both ship a voices.bin; the folder name tells them apart.
