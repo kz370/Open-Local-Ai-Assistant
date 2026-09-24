@@ -266,8 +266,8 @@ mod tests {
     fn user_models_outrank_the_tiny_default() {
         let app = tempfile::tempdir().unwrap();
         let store = Arc::new(ModelStore::new(app.path().to_path_buf()));
-        // A catalog model (quality 1) plus a user-provided streaming model.
-        let base = app.path().join("whisper-base");
+        // A catalog model (quality 3) plus a user-provided streaming model.
+        let base = app.path().join("whisper-small");
         std::fs::create_dir_all(&base).unwrap();
         for f in ["encoder.int8.onnx", "decoder.int8.onnx", "tokens.txt", ".complete"] {
             std::fs::write(base.join(f), b"x").unwrap();
@@ -282,8 +282,8 @@ mod tests {
         assert_eq!(svc.resolve_model(&settings).unwrap().id, "nemotron-3.5-asr-streaming-0.6b");
         assert!(svc.is_streaming(&settings));
         // Explicit choice wins.
-        settings.model = "whisper-base".into();
-        assert_eq!(svc.resolve_model(&settings).unwrap().id, "whisper-base");
+        settings.model = "whisper-small".into();
+        assert_eq!(svc.resolve_model(&settings).unwrap().id, "whisper-small");
         assert!(!svc.is_streaming(&settings));
     }
 }
