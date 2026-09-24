@@ -16,8 +16,12 @@ pub const COMPLETE_MARKER: &str = ".complete";
 /// The multilingual voice every language falls back to.
 pub const BUILT_IN_VOICE: &str = "supertonic-3-int8";
 
-/// Voices the app never deletes, so the assistant always has one.
-pub const PROTECTED_MODELS: &[&str] = &[BUILT_IN_VOICE];
+/// Voice activity detection; Whisper-style recognizers and hands-free need it.
+pub const BUILT_IN_VAD: &str = "silero-vad";
+
+/// Models the app never deletes: the fallback voice, so the assistant always
+/// has one, and the VAD that non-streaming dictation depends on.
+pub const PROTECTED_MODELS: &[&str] = &[BUILT_IN_VOICE, BUILT_IN_VAD];
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -59,7 +63,7 @@ impl Recommendation {
 pub fn recommend(_hw: &HardwareInfo) -> Recommendation {
     Recommendation {
         stt: "whisper-base",
-        vad: "silero-vad",
+        vad: BUILT_IN_VAD,
         tts: BUILT_IN_VOICE,
     }
 }

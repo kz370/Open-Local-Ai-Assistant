@@ -356,7 +356,7 @@ pub fn models_cancel(state: State<'_, AppState>, id: String) {
 #[tauri::command]
 pub fn models_delete(app: AppHandle, state: State<'_, AppState>, id: String) -> CmdResult<()> {
     if crate::services::models::PROTECTED_MODELS.contains(&id.as_str()) {
-        return Err(AppError::Invalid("built-in voices cannot be deleted".into()));
+        return Err(AppError::Invalid("built-in models cannot be deleted".into()));
     }
     state.stt.unload();
     state.models.delete(&id)?;
