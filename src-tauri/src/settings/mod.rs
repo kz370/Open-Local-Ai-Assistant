@@ -337,6 +337,11 @@ pub struct TtsSettings {
     /// sentence. Slower to start, but the voice model and the chat model then
     /// take turns on the GPU instead of competing.
     pub speak_after_reply: bool,
+    /// Lets spoken replies carry sound cues (<laugh>, <sigh>, <breath>) that
+    /// Supertonic voices perform. Other voices skip them.
+    pub expressive_sounds: bool,
+    /// Replaces the built-in instruction about sound cues when non-empty.
+    pub expressive_instruction: String,
 }
 
 impl Default for TtsSettings {
@@ -352,6 +357,8 @@ impl Default for TtsSettings {
             preferred_gender: "any".into(),
             voice_hardware: Default::default(),
             speak_after_reply: false,
+            expressive_sounds: true,
+            expressive_instruction: String::new(),
         }
     }
 }

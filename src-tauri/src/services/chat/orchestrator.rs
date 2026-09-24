@@ -377,6 +377,8 @@ impl ChatEngine {
             custom_prompt: &settings.ai.system_prompt,
             tashkeel_enabled: settings.language.arabic_tashkeel_enabled,
             tashkeel_instruction: &settings.language.arabic_tashkeel_instruction,
+            expressive_sounds: speak && self.speech.expressive(),
+            expressive_instruction: &settings.tts.expressive_instruction,
         });
         let note = turn_note(chrono::Local::now(), forced, detected.filter(|_| custom_language.is_none()), needs_fresh_info(&text).then(|| freshness_hint(has_web_tool)));
 

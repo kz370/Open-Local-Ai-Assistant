@@ -118,6 +118,11 @@ pub trait SpeechSink: Send + Sync {
     fn push_text(&self, turn_id: &str, text: &str);
     fn finish(&self, turn_id: &str);
     fn cancel(&self, turn_id: &str);
+    /// True when replies may carry sound cues (<laugh>, <sigh>, <breath>):
+    /// the user allows them and a voice that performs them is in use.
+    fn expressive(&self) -> bool {
+        false
+    }
 }
 
 pub struct NoSpeech;

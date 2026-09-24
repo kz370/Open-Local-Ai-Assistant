@@ -5,6 +5,7 @@ import type { MessageStats } from "../../app/types";
 import { ipc } from "../../app/ipc";
 import { useSettings } from "../../app/settingsStore";
 import { useVoice } from "../../app/voiceStore";
+import { stripSoundTags } from "../../app/soundTags";
 import { t } from "../../app/strings";
 import { ErrorNotice, textDir } from "../common/controls";
 import { BrandMark } from "../common/BrandMark";
@@ -130,7 +131,7 @@ export const MessageBubble = memo(function MessageBubble({ message: m, developer
             aria-label={copied ? t("app.copied") : t("chat.copyMessage")}
             title={copied ? t("app.copied") : t("chat.copyMessage")}
             onClick={() => {
-              void navigator.clipboard.writeText(m.content);
+              void navigator.clipboard.writeText(stripSoundTags(m.content));
               setCopied(true);
               setTimeout(() => setCopied(false), 1500);
             }}

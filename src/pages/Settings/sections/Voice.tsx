@@ -341,6 +341,39 @@ function NoVoiceHelp({ entry }: { entry: LanguageEntry }) {
   );
 }
 
+/** The instruction about sound cues: empty means the built-in default. */
+function ExpressiveInstruction({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [draft, setDraft] = useState(value);
+  useEffect(() => setDraft(value), [value]);
+  const fallback = t("settings.voice.expressiveInstructionDefault");
+  return (
+    <Row label={t("settings.voice.expressiveInstruction")} hint={t("settings.voice.expressiveInstructionHint")} htmlFor="ta-expressive" stack>
+      <textarea
+        id="ta-expressive"
+        className="textarea"
+        rows={4}
+        dir="auto"
+        value={draft}
+        placeholder={fallback}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={() => draft !== value && onChange(draft)}
+      />
+      <div style={{ display: "flex", gap: 6 }}>
+        {!draft.trim() && (
+          <button className="btn btn-sm" onClick={() => setDraft(fallback)}>
+            {t("settings.voice.expressiveEditDefault")}
+          </button>
+        )}
+        {value.trim() && (
+          <button className="btn btn-sm" onClick={() => onChange("")}>
+            {t("settings.voice.expressiveReset")}
+          </button>
+        )}
+      </div>
+    </Row>
+  );
+}
+
 export function VoiceSection() {
   const [s, set] = useS();
   const devices = useDevices();
@@ -381,6 +414,14 @@ export function VoiceSection() {
         <Row label={t("settings.voice.speakResponses")} htmlFor="sw-speak">
           <Switch id="sw-speak" label={t("settings.voice.speakResponses")} checked={s.tts.speakResponses} onChange={(v) => set((d) => void (d.tts.speakResponses = v))} />
         </Row>
+        {voices.some((v) => v.engine === "supertonic") && (
+          <>
+            <Row label={t("settings.voice.expressiveSounds")} hint={t("settings.voice.expressiveSoundsHint")} htmlFor="sw-expressive">
+              <Switch id="sw-expressive" label={t("settings.voice.expressiveSounds")} checked={s.tts.expressiveSounds} onChange={(v) => set((d) => void (d.tts.expressiveSounds = v))} />
+            </Row>
+            {s.tts.expressiveSounds && <ExpressiveInstruction value={s.tts.expressiveInstruction} onChange={(v) => set((d) => void (d.tts.expressiveInstruction = v))} />}
+          </>
+        )}
         <Row label={t("settings.voice.speakAfterReply")} hint={t("settings.voice.speakAfterReplyHint")} htmlFor="sw-after-reply">
           <Switch id="sw-after-reply" label={t("settings.voice.speakAfterReply")} checked={s.tts.speakAfterReply} onChange={(v) => set((d) => void (d.tts.speakAfterReply = v))} />
         </Row>

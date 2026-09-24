@@ -9,6 +9,7 @@ import { BrandMark } from "../common/BrandMark";
 import { textDir } from "../common/controls";
 import { LevelMeter } from "./LevelMeter";
 import { SpokenText } from "./SpokenText";
+import { stripSoundTags } from "../../app/soundTags";
 
 function elapsed(startedAt: number): string {
   const s = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
@@ -107,7 +108,7 @@ export function CallView() {
           glow and the dots show progress instead, in the same space. */}
       {thinking ? <div className="call-meter-gap" aria-hidden /> : <LevelMeter levels={voice.levels} max={44} label={t("voice.level")} />}
       {showReply && reply ? (
-        <SpokenText text={reply.content} sentence={sentence && sentence.tag === reply.turnId ? sentence : null} paused={voice.paused} />
+        <SpokenText text={stripSoundTags(reply.content)} sentence={sentence && sentence.tag === reply.turnId ? sentence : null} paused={voice.paused} />
       ) : (
         <div className="call-caption" dir={caption ? textDir(caption) : "auto"} lang={caption && textDir(caption) === "rtl" ? "ar" : undefined}>
           {caption || t("call.saySomething")}

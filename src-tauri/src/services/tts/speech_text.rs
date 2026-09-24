@@ -11,6 +11,18 @@ static QUOTE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?m)^\s*>\s?").unw
 static EMPH: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(\*\*|__|\*|~~|`)").unwrap());
 static TABLE_RULE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?m)^\s*\|?\s*:?-{3,}.*$").unwrap());
 static SPACES: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\s+").unwrap());
+/// Sound cues Supertonic performs instead of reading them.
+static SOUND_TAG: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)<\s*(laugh|sigh|breath)\s*>").unwrap());
+/// Any other short `<word>` tag a model may invent (`<smile>`, `<pause>`).
+static OTHER_TAG: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"<\s*/?\s*[A-Za-z]{2,15}\s*>").unwrap());
+
+/// Keeps only the sound cues a voice can perform: the known ones (lowercased)
+/// when `performs` is true, none otherwise. Other invented tags always go.
+pub fn sound_tags(text: &str, performs: bool) -> String {
+    let s = SOUND_TAG.replace_all(text, |c: &regex::Captures| if performs { format!("<{}>", c[1].to_ascii_lowercase()) } else { " ".into() });
+    let s = OTHER_TAG.replace_all(&s, |c: &regex::Captures| if performs && SOUND_TAG.is_match(&c[0]) { c[0].to_string() } else { " ".into() });
+    SPACES.replace_all(&s, " ").trim().to_string()
+}
 /// Quote marks that some voices pronounce ("quote", "Anführungszeichen").
 /// The apostrophe is left alone: it belongs inside words like "don't".
 const QUOTE_MARKS: &[char] = &['"', '“', '”', '„', '‟', '«', '»', '‹', '›', '＂', '「', '」', '『', '』'];
@@ -38,6 +50,16 @@ pub fn clean_for_speech(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sound_tags_for_voices_that_perform_them_or_not() {
+        assert_eq!(sound_tags("So funny! <Laugh> Next.", true), "So funny! <laugh> Next.");
+        assert_eq!(sound_tags("So funny! <laugh> Next.", false), "So funny! Next.");
+        assert_eq!(sound_tags("<sigh> Fine. <smile>", true), "<sigh> Fine.");
+        assert_eq!(sound_tags("<breath>", false), "");
+        // Comparisons and generics are not tags.
+        assert_eq!(sound_tags("if a < b and c > d", false), "if a < b and c > d");
+    }
 
     #[test]
     fn strips_markdown() {

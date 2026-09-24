@@ -3,6 +3,7 @@ import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Check, Copy } from "lucide-react";
 import { openExternal } from "../common/controls";
+import { stripSoundTags } from "../../app/soundTags";
 import { t } from "../../app/strings";
 
 function CodeBlock({ lang, code }: { lang: string; code: string }) {
@@ -64,7 +65,7 @@ export const Markdown = memo(function Markdown({ text }: { text: string }) {
   return (
     <div className="markdown">
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={components} skipHtml>
-        {text}
+        {stripSoundTags(text)}
       </ReactMarkdown>
     </div>
   );

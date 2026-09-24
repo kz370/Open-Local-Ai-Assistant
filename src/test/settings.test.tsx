@@ -63,7 +63,7 @@ const SETTINGS: Settings = {
     arabicTashkeelInstruction: "",
   },
   stt: { model: "auto", language: "auto", microphone: null, hardware: "auto", autoSubmit: false, handsFree: false, pushToTalk: true, vadThreshold: 0.5, silenceMs: 800, extraModelDirs: [], callView: true, autoStopSilenceSecs: 8, handsFreeTimeoutSecs: 300 },
-  tts: { speakResponses: false, speed: 1, volume: 1, outputDevice: null, preferredGender: "any", voiceHardware: {}, speakAfterReply: false },
+  tts: { speakResponses: false, speed: 1, volume: 1, outputDevice: null, preferredGender: "any", voiceHardware: {}, speakAfterReply: false, expressiveSounds: true, expressiveInstruction: "" },
   dictation: { enabled: true, shortcut: "CommandOrControl+Alt+Space", mode: "hold", correctionEnabled: false, correctionModel: null, insertMethod: "type", addTrailingSpace: true, language: "", reviewBeforeInsert: false, historyEnabled: true, overlayX: null, overlayY: null },
   search: { enabled: true, maxResults: 5, searxngUrl: "", searxngEnabled: true, searxngSource: "local", searxngPublicUrl: "", primary: "searxng" },
   lastConversationId: null,

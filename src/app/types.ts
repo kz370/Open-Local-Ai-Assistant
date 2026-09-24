@@ -103,6 +103,10 @@ export interface Settings {
     voiceHardware: Record<string, string>;
     /** Speak only once the whole reply is written. */
     speakAfterReply: boolean;
+    /** Spoken replies may laugh, sigh or breathe (Supertonic voices only). */
+    expressiveSounds: boolean;
+    /** Replaces the built-in instruction about sound cues when not empty. */
+    expressiveInstruction: string;
   };
   dictation: {
     enabled: boolean;
@@ -347,7 +351,7 @@ export interface CatalogEntry {
   installed: boolean;
   recommended: boolean;
   downloading: boolean;
-  /** False for the built-in voice. */
+  /** False for the built-in voices. */
   deletable: boolean;
 }
 
