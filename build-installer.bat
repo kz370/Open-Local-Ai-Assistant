@@ -8,6 +8,9 @@ rem    build-installer.bat           build exe + setup (Inno Setup)
 rem    build-installer.bat install   build exe, then install it directly into
 rem                                  "C:\Program Files\Open Local Assistant"
 rem                                  (asks for admin)
+rem    build-installer.bat upload    build exe + setup, then upload them as a
+rem                                  GitHub release without asking
+rem    build-installer.bat noupload  build exe + setup, never ask to upload
 rem
 rem  Needs: Rust (https://rustup.rs) with the MSVC toolchain.
 rem         Inno Setup 6 (https://jrsoftware.org/isdl.php) for the setup file.
@@ -162,7 +165,38 @@ if errorlevel 1 (
 echo.
 echo Done. Installer: "%DIST%\Open-Local-Assistant-%VERSION%-setup.exe"
 echo It installs to "C:\Program Files\%APPNAME%" with a Start menu entry and uninstaller.
-echo To publish: write release-notes\v%VERSION%.md and commit-message.txt, then run upload-release.bat
+
+
+rem Offer to publish this build as GitHub release v<version> (upload-release.bat).
+rem Handy when release\ was lost and the same version just needs rebuilding.
+if /i "%~1"=="noupload" goto :done
+set "TAG=v%VERSION%"
+set "UPLOAD=N"
+if /i "%~1"=="upload" set "UPLOAD=Y"
+if /i "%UPLOAD%"=="Y" goto :upload
+where gh >nul 2>nul || (echo To publish later: run upload-release.bat & goto :done)
+echo.
+gh release view "%TAG%" >nul 2>nul
+if errorlevel 1 (
+  echo Release %TAG% does not exist on GitHub yet.
+  if not exist "%ROOT%release-notes\%TAG%.md" echo Note: no release-notes\%TAG%.md, GitHub will generate the notes.
+  choice /c YN /n /m "Create release %TAG% and upload this build? [Y/N] "
+) else (
+  echo Release %TAG% already exists on GitHub.
+  choice /c YN /n /m "Replace its setup exe and portable zip with this build? [Y/N] "
+)
+if errorlevel 2 (
+  echo Not uploaded. To publish later: run upload-release.bat
+  goto :done
+)
+
+:upload
+echo Uploading %TAG%...
+call "%ROOT%upload-release.bat" %TAG%
+if errorlevel 1 (
+  echo [x] Upload failed.
+  goto :fail
+)
 goto :done
 
 
