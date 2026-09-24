@@ -347,6 +347,8 @@ export interface CatalogEntry {
   installed: boolean;
   recommended: boolean;
   downloading: boolean;
+  /** False for the built-in voice. */
+  deletable: boolean;
 }
 
 export interface InstalledModel {
