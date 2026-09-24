@@ -50,6 +50,7 @@ const SETTINGS: Settings = {
     modelAliases: { "qwen/qwen3.5-9b": "Qwen 9B" },
     hiddenModels: [], freeModelsOnly: false,
     pasteAsFileChars: 2000,
+    explainMode: "chat",
   },
   language: {
     responseLanguage: "auto",
@@ -64,7 +65,6 @@ const SETTINGS: Settings = {
   stt: { model: "auto", language: "auto", microphone: null, hardware: "auto", autoSubmit: false, handsFree: false, pushToTalk: true, vadThreshold: 0.5, silenceMs: 800, extraModelDirs: [], callView: true, autoStopSilenceSecs: 8, handsFreeTimeoutSecs: 300 },
   tts: { speakResponses: false, speed: 1, volume: 1, outputDevice: null, preferredGender: "any", voiceHardware: {}, speakAfterReply: false },
   dictation: { enabled: true, shortcut: "CommandOrControl+Alt+Space", mode: "hold", correctionEnabled: false, correctionModel: null, insertMethod: "type", addTrailingSpace: true, language: "", reviewBeforeInsert: false, historyEnabled: true, overlayX: null, overlayY: null },
-  silma: { hardware: "auto" },
   search: { enabled: true, maxResults: 5, searxngUrl: "", searxngEnabled: true, searxngSource: "local", searxngPublicUrl: "", primary: "searxng" },
   lastConversationId: null,
   version: 2,
@@ -111,7 +111,7 @@ function mockBackend() {
         return {
           lmStudio: { connected: true, serverUrl: "http://localhost:1234/v1", api: "native-v1", modelCount: 2, errorCode: null, errorDetail: null, selection: { modelId: "qwen/qwen3.5-9b", needsLoad: false, score: 115, reasons: [] }, loadedModels: ["qwen/qwen3.5-9b"] },
           hardware: { os: "Windows 11", cpuName: "Xeon", physicalCores: 6, logicalCores: 12, totalRamBytes: 96e9, availableRamBytes: 60e9, gpus: [{ name: "RTX 3060", vendor: "nvidia", vramBytes: 12e9 }] },
-          voice: { sttModel: "whisper-small", vadReady: true, ttsEn: "Bella", ttsAr: null, ttsDe: null, installed: [], recommendation: { stt: "whisper-turbo", vad: "silero-vad", ttsEn: "kokoro-en-v0_19", ttsDe: "piper-de_DE-thorsten-high", ttsAr: "piper-ar_JO-kareem-medium" }, acceleration: "cpu" },
+          voice: { sttModel: "whisper-small", vadReady: true, ttsEn: "Bella", ttsAr: null, ttsDe: null, installed: [], recommendation: { stt: "whisper-turbo", vad: "silero-vad", tts: "supertonic-3-int8" }, acceleration: "cpu" },
           microphones: [{ id: "mic1", name: "Microphone", isDefault: true }],
           audioOutputs: [{ id: "spk", name: "Speakers", isDefault: true }],
           mcp: { enabled: 0, connected: 0, internet: false },

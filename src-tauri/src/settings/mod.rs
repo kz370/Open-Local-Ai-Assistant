@@ -166,6 +166,9 @@ pub struct AiSettings {
     /// instead of filling the composer. 0 turns the behaviour off.
     #[serde(default = "default_paste_as_file_chars")]
     pub paste_as_file_chars: u32,
+    /// Where "Explain" on selected reply text answers: "chat" (a follow-up
+    /// message in the conversation) | "popup" (next to the selection only).
+    pub explain_mode: String,
 }
 
 impl Default for AiSettings {
@@ -190,6 +193,7 @@ impl Default for AiSettings {
             model_aliases: Default::default(),
             hidden_models: Vec::new(),
             paste_as_file_chars: default_paste_as_file_chars(),
+            explain_mode: "chat".into(),
         }
     }
 }
@@ -436,19 +440,6 @@ impl Default for DictationSettings {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase", default)]
-pub struct SilmaSettings {
-    /// "auto" | "cpu" — forces the Arabic SILMA voice off the GPU.
-    pub hardware: String,
-}
-
-impl Default for SilmaSettings {
-    fn default() -> Self {
-        Self { hardware: "auto".into() }
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Settings {
@@ -458,7 +449,6 @@ pub struct Settings {
     pub stt: SttSettings,
     pub tts: TtsSettings,
     pub dictation: DictationSettings,
-    pub silma: SilmaSettings,
     pub search: SearchSettings,
     pub last_conversation_id: Option<String>,
     /// Schema version of the stored settings, used for one-time migrations.
@@ -517,7 +507,8 @@ impl Settings {
                     e.stt_language = e.code.clone();
                 }
                 e.tts_voice = e.tts_voice.trim().to_string();
-                if e.tts_voice.is_empty() {
+                // "silma:0" was the removed SILMA Arabic voice.
+                if e.tts_voice.is_empty() || e.tts_voice.starts_with("silma:") {
                     e.tts_voice = "auto".into();
                 }
                 Some(e)
@@ -576,6 +567,9 @@ impl Settings {
             self.ai.model_mode = "auto".into();
         }
         self.ai.request_timeout_secs = self.ai.request_timeout_secs.clamp(10, 3600);
+        if !matches!(self.ai.explain_mode.as_str(), "chat" | "popup") {
+            self.ai.explain_mode = "chat".into();
+        }
         if self.ai.paste_as_file_chars != 0 {
             self.ai.paste_as_file_chars = self.ai.paste_as_file_chars.clamp(200, 200_000);
         }
@@ -596,10 +590,7 @@ impl Settings {
             .into_iter()
             .filter(|(k, v)| !k.is_empty() && matches!(v.as_str(), "auto" | "cpu"))
             .collect();
-        if !matches!(self.silma.hardware.as_str(), "auto" | "cpu") {
-            self.silma.hardware = "auto".into();
-        }
-        self.stt.vad_threshold = self.stt.vad_threshold.clamp(0.1, 0.95);
+            self.stt.vad_threshold = self.stt.vad_threshold.clamp(0.1, 0.95);
         self.stt.silence_ms = self.stt.silence_ms.clamp(200, 5000);
         self.stt.extra_model_dirs = std::mem::take(&mut self.stt.extra_model_dirs)
             .into_iter()

@@ -1,4 +1,5 @@
 pub mod attach;
+pub mod explain;
 pub mod freshness;
 pub mod orchestrator;
 pub mod prompt;

@@ -13,8 +13,8 @@ import type {
   DictationEntry,
   ChatEvent,
   ConnectionStatus,
+  ExplainEvent,
   GpuStatus,
-  SilmaStatus,
   Conversation,
   ImportCandidate,
   PublicSearxInstance,
@@ -85,6 +85,12 @@ export const ipc = {
     return invoke<void>("chat_send", { input, onEvent: channel });
   },
   chatStop: (turnId: string) => invoke<void>("chat_stop", { turnId }),
+  /** Explains selected reply text outside the conversation; `chatStop(id)` cancels. */
+  chatExplain: (id: string, selection: string, passage: string, onEvent: (e: ExplainEvent) => void) => {
+    const channel = new Channel<ExplainEvent>();
+    channel.onmessage = onEvent;
+    return invoke<void>("chat_explain", { id, selection, passage, onEvent: channel });
+  },
   chatConfirmTool: (callId: string, approved: boolean) => invoke<boolean>("chat_confirm_tool", { callId, approved }),
 
   // attachments
@@ -146,17 +152,10 @@ export const ipc = {
   gpuCancel: () => invoke<void>("gpu_cancel"),
   gpuRemove: () => invoke<void>("gpu_remove"),
 
-  // SILMA natural Arabic voice (PyTorch helper managed by the app)
-  silmaStatus: () => invoke<SilmaStatus>("silma_status"),
-  silmaInstall: () => invoke<void>("silma_install"),
-  silmaCancel: () => invoke<void>("silma_cancel"),
-  silmaTest: () => invoke<void>("silma_test"),
-
   // models in memory
   memoryStatus: () => invoke<MemoryItem[]>("memory_status"),
   memoryLoad: (key: string) => invoke<void>("memory_load", { key }),
   memoryUnload: (key: string) => invoke<void>("memory_unload", { key }),
-  silmaRemove: () => invoke<void>("silma_remove"),
 
   // MCP
   mcpList: () => invoke<ServerStatus[]>("mcp_list"),

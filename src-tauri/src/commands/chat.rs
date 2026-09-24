@@ -2,6 +2,7 @@ use super::CmdResult;
 use crate::database::conversations::{Conversation, Message, SearchHit};
 use crate::database::export::ExportFormat;
 use crate::errors::AppError;
+use crate::services::chat::explain::ExplainEvent;
 use crate::services::chat::{ChatEvent, SendInput};
 use crate::state::AppState;
 use std::sync::Arc;
@@ -16,6 +17,17 @@ pub async fn chat_send(state: State<'_, AppState>, input: SendInput, on_event: C
     });
     // Errors are also delivered as events; the command result only signals completion.
     let _ = chat.send(input, emit).await;
+    Ok(())
+}
+
+/// Explains selected reply text in a popup; `chat_stop(id)` cancels it.
+#[tauri::command]
+pub async fn chat_explain(state: State<'_, AppState>, id: String, selection: String, passage: String, on_event: Channel<ExplainEvent>) -> CmdResult<()> {
+    let chat = state.chat.clone();
+    chat.explain(&id, &selection, &passage, &move |ev| {
+        let _ = on_event.send(ev);
+    })
+    .await;
     Ok(())
 }
 

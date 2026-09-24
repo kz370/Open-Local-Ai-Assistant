@@ -69,6 +69,8 @@ export interface Settings {
     freeModelsOnly: boolean;
     /** Pasted text longer than this becomes a text attachment. 0 disables it. */
     pasteAsFileChars: number;
+    /** Where "Explain" on selected reply text answers. */
+    explainMode: "chat" | "popup";
   };
   language: {
     responseLanguage: string;
@@ -116,9 +118,6 @@ export interface Settings {
     historyEnabled: boolean;
     overlayX: number | null;
     overlayY: number | null;
-  };
-  silma: {
-    hardware: "auto" | "cpu";
   };
   search: {
     enabled: boolean;
@@ -267,6 +266,8 @@ export type ChatEvent =
   | { type: "done"; turnId: string; message: Message }
   | { type: "error"; turnId: string; code: string; detail: string; partialMessage: Message | null };
 
+export type ExplainEvent = { type: "delta"; text: string } | { type: "done" } | { type: "error"; code: string; detail: string };
+
 export type ListenMode = "pushToTalk" | "handsFree" | "dictation" | "test";
 
 export type VoiceEvent =
@@ -296,10 +297,10 @@ export interface GpuStatus {
 }
 
 export interface MemoryItem {
-  /** "stt" | "voice:en" | "voice:ar" | "voice:de" | "silma" | "llm:<model id>" */
+  /** "stt" | "voice:en" | "voice:ar" | "voice:de" | "llm:<model id>" */
   key: string;
-  kind: "stt" | "voice" | "silma" | "llm";
-  /** "stt" | language code | "silma" | "chat" | "other" */
+  kind: "stt" | "voice" | "llm";
+  /** "stt" | language code | "chat" | "other" */
   role: string;
   model: string;
   state: "loaded" | "loading" | "idle" | "missing" | "failed";
@@ -307,24 +308,6 @@ export interface MemoryItem {
   /** Key of the model's "load at startup" switch; empty when it has none. */
   autoloadKey: string;
   autoload: boolean;
-}
-
-export interface SilmaStatus {
-  installed: boolean;
-  state: "off" | "starting" | "ready" | "failed";
-  device: string | null;
-  error: string | null;
-  sizeBytes: number;
-  downloadBytes: number;
-  gpu: boolean;
-}
-
-export interface SilmaProgress {
-  stage: "runtime" | "packages" | "weights" | "prepare" | "done" | "error" | "cancelled";
-  downloadedBytes: number;
-  totalBytes: number;
-  detail: string | null;
-  error: string | null;
 }
 
 export interface GpuProgress {
@@ -483,7 +466,7 @@ export interface CapabilityReport {
     ttsAr: string | null;
     ttsDe: string | null;
     installed: InstalledModel[];
-    recommendation: { stt: string; vad: string; ttsEn: string; ttsDe: string; ttsAr: string };
+    recommendation: { stt: string; vad: string; tts: string };
     acceleration: string;
   };
   microphones: AudioDevice[];

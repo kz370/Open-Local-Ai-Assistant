@@ -13,8 +13,6 @@ function rowLabel(item: MemoryItem): string {
       return t("settings.memory.stt");
     case "voice":
       return t("settings.memory.voice", { language: languageName(item.role) });
-    case "silma":
-      return t("settings.memory.silma");
     default:
       return item.role === "chat" ? t("settings.memory.chat") : t("settings.memory.otherLlm");
   }
@@ -34,7 +32,7 @@ export function MemorySection() {
     void refresh();
     // Loads started elsewhere (startup, another window) show up here too.
     const id = window.setInterval(() => void refresh(), 3000);
-    const subs = [on("memory://changed", () => void refresh()), on("silma://status", () => void refresh())];
+    const subs = [on("memory://changed", () => void refresh())];
     return () => {
       window.clearInterval(id);
       subs.forEach((u) => void u.then((f) => f()));

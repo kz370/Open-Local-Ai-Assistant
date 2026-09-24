@@ -3,6 +3,7 @@
 //! optional MCP tool rounds (with permissions) -> persisted answer -> speech.
 
 use super::attach;
+use super::explain::{self, ExplainEvent};
 use super::freshness::needs_fresh_info;
 use super::prompt::{build_system_prompt, freshness_hint, turn_note, PromptContext};
 use super::resolver::ModelResolver;
@@ -184,6 +185,49 @@ impl ChatEngine {
         match self.confirmations.lock().unwrap_or_else(|p| p.into_inner()).remove(call_id) {
             Some(tx) => tx.send(approved).is_ok(),
             None => false,
+        }
+    }
+
+    /// Explains `selection` (taken from `passage`, a reply) without touching
+    /// the conversation. Streams the answer; `stop(id)` cancels it.
+    pub async fn explain(&self, id: &str, selection: &str, passage: &str, emit: &(dyn Fn(ExplainEvent) + Send + Sync)) {
+        let token = CancellationToken::new();
+        self.active.lock().unwrap_or_else(|p| p.into_inner()).insert(id.to_string(), token.clone());
+        let result = async {
+            let settings = self.settings.get();
+            let model = self.resolver.resolve(&settings.ai).await?;
+            let req = explain::request(&model.id, selection, passage, settings.ai.temperature);
+            let mut filter = ThinkFilter::default();
+            let mut streamed = false;
+            let mut on_chunk = |c: StreamChunk| {
+                if let StreamChunk::Content(c) = c {
+                    let text = filter.push(&c).0;
+                    if !text.is_empty() {
+                        streamed = true;
+                        emit(ExplainEvent::Delta { text });
+                    }
+                }
+            };
+            let done = self.ai.chat(req, token.clone(), &mut on_chunk).await?;
+            let mut rest = filter.finish().0;
+            if !streamed {
+                // Servers that ignore streaming answer in one piece.
+                let mut f = ThinkFilter::default();
+                rest = f.push(&done.content).0 + &f.finish().0;
+            }
+            if !rest.is_empty() {
+                emit(ExplainEvent::Delta { text: rest });
+            }
+            AppResult::Ok(())
+        }
+        .await;
+        self.active.lock().unwrap_or_else(|p| p.into_inner()).remove(id);
+        match result {
+            Ok(()) | Err(AppError::Cancelled) => emit(ExplainEvent::Done),
+            Err(e) => {
+                tracing::warn!(error = %e, "explain failed");
+                emit(ExplainEvent::Error { code: e.code().into(), detail: e.to_string() });
+            }
         }
     }
 
@@ -904,6 +948,22 @@ mod tests {
         let stored = db.list_messages(&convs[0].id).unwrap();
         assert_eq!(stored.len(), 2);
         assert_eq!(stored[0].content, "كيف حالك اليوم؟");
+    }
+
+    #[tokio::test]
+    async fn explain_streams_without_touching_the_conversation() {
+        let (e, ai, db, _files, _dir) = engine(vec![ChatCompletion { content: "<think>hm</think>It means plants make food from light.".into(), ..Default::default() }], Permission::Allow);
+        let events = StdMutex::new(Vec::new());
+        e.explain("x1", "photosynthesis", "Plants rely on photosynthesis.", &|ev| events.lock().unwrap().push(ev)).await;
+        let events = events.into_inner().unwrap();
+        let text: String = events.iter().filter_map(|ev| if let ExplainEvent::Delta { text } = ev { Some(text.as_str()) } else { None }).collect();
+        assert_eq!(text, "It means plants make food from light.");
+        assert!(matches!(events.last(), Some(ExplainEvent::Done)));
+        let req = &ai.requests.lock().unwrap()[0];
+        assert!(req.tools.is_empty());
+        assert!(req.messages[1].content_text().contains("<selection>\nphotosynthesis"));
+        assert!(db.list_conversations(10, 0).unwrap().is_empty());
+        assert!(!e.is_busy());
     }
 
     #[tokio::test]

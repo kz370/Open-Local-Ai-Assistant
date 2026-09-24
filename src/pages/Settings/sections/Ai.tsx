@@ -340,6 +340,17 @@ export function AiSection() {
         <Row label={t("settings.ai.showStats")} htmlFor="sw-stats">
           <Switch id="sw-stats" label={t("settings.ai.showStats")} checked={s.ai.showStats} onChange={(v) => set((d) => void (d.ai.showStats = v))} />
         </Row>
+        <Row label={t("settings.ai.explainMode")} hint={t("settings.ai.explainModeHint")}>
+          <Segmented
+            label={t("settings.ai.explainMode")}
+            value={s.ai.explainMode}
+            options={[
+              { value: "chat" as const, label: t("settings.ai.explainChat") },
+              { value: "popup" as const, label: t("settings.ai.explainPopup") },
+            ]}
+            onChange={(v) => set((d) => void (d.ai.explainMode = v))}
+          />
+        </Row>
         <Row label={t("settings.ai.systemPrompt")} hint={t("settings.ai.systemPromptHint")} htmlFor="ta-sys" stack>
           <textarea id="ta-sys" className="textarea" rows={4} dir="auto" defaultValue={s.ai.systemPrompt} onBlur={(e) => set((d) => void (d.ai.systemPrompt = e.target.value))} />
         </Row>
