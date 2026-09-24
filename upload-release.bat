@@ -1,22 +1,27 @@
 @echo off
 setlocal EnableExtensions
-rem Runs against the release repo (its own git repo, so gh picks up its
-rem GitHub remote): setup exe in its root, portable exe + DLLs in portable\.
-rem Set PUBLISH beforehand to use another folder.
-if not defined PUBLISH set "PUBLISH=I:\Development\repos\Open-Local-Ai-Assitant"
-cd /d "%PUBLISH%" || (echo Release repo "%PUBLISH%" not found. & exit /b 1)
+cd /d "%~dp0"
 
+rem Publish a GitHub release of this repo from the files build-installer.bat
+rem put in release\:
+rem   release\Open-Local-Assistant-<version>-setup.exe      uploaded as-is
+rem   release\Open Local Assistant.exe + the speech DLLs    zipped as the portable version
+rem Release notes come from release-notes\<tag>.md, the commit message from
+rem commit-message.txt (git-ignored, rewrite it for each release).
+rem
 rem Usage: upload-release.bat [tag]   (e.g. upload-release.bat v0.1.0)
 rem No tag given = read the version from the setup exe name
 rem (Open-Local-Assistant-<version>-setup.exe) and use tag v<version>.
+set "DIST=release"
 set "TAG=%~1"
 if not "%TAG%"=="" goto :have_tag
 
 rem Newest setup exe wins if there are several.
 set "SETUP="
-for /f "delims=" %%F in ('dir /b /a-d /o-d "Open-Local-Assistant-*-setup.exe" 2^>nul') do if not defined SETUP set "SETUP=%%F"
+for /f "delims=" %%F in ('dir /b /a-d /o-d "%DIST%\Open-Local-Assistant-*-setup.exe" 2^>nul') do if not defined SETUP set "SETUP=%%F"
 if not defined SETUP (
-  echo No Open-Local-Assistant-*-setup.exe found and no tag given.
+  echo No %DIST%\Open-Local-Assistant-*-setup.exe found and no tag given.
+  echo Run build-installer.bat first.
   exit /b 1
 )
 set "VERSION=%SETUP:Open-Local-Assistant-=%"
@@ -32,18 +37,22 @@ set "SETUP=Open-Local-Assistant-%VERSION%-setup.exe"
 :tag_ready
 echo Using tag %TAG% (version %VERSION%)
 
+set "SETUPPATH=%DIST%\%SETUP%"
 set "ZIP=Open-Local-Assistant-%VERSION%-portable-win-x64.zip"
 set "ZIPPATH=%TEMP%\%ZIP%"
+set "STAGE=%TEMP%\open-local-assistant-portable"
+set "PORTABLE_FILES="Open Local Assistant.exe" sherpa-onnx-c-api.dll sherpa-onnx-cxx-api.dll onnxruntime.dll onnxruntime_providers_shared.dll"
 
 where gh >nul 2>&1 || (echo GitHub CLI "gh" not found. & exit /b 1)
-if not exist "%SETUP%" (echo Missing %SETUP% & exit /b 1)
-if not exist "portable\Open Local Assistant.exe" (echo Missing portable\Open Local Assistant.exe & exit /b 1)
-
-rem Commit and push everything in the release repo first, so the release tag
-rem points at a commit that has these builds. The commit message is read from
-rem commit-message.txt (git-ignored, rewrite it for each release).
-set "MSGFILE=commit-message.txt"
 where git >nul 2>&1 || (echo git not found. & exit /b 1)
+if not exist "%SETUPPATH%" (echo Missing %SETUPPATH% - run build-installer.bat first. & exit /b 1)
+for %%f in (%PORTABLE_FILES%) do (
+  if not exist "%DIST%\%%~f" (echo Missing %DIST%\%%~f - run build-installer.bat first. & exit /b 1)
+)
+
+rem Commit and push first, so a new release tag points at the commit these
+rem builds came from.
+set "MSGFILE=commit-message.txt"
 set "DIRTY="
 for /f "delims=" %%L in ('git status --porcelain') do set "DIRTY=1"
 if defined DIRTY (
@@ -57,9 +66,14 @@ if defined DIRTY (
 echo Pushing...
 git push origin HEAD || (echo Push failed. & exit /b 1)
 
-echo Zipping portable folder...
+rem Only the portable files go in the zip, not the setup exe next to them.
+echo Zipping portable version...
+if exist "%STAGE%" rmdir /s /q "%STAGE%"
+mkdir "%STAGE%" || (echo Could not create %STAGE%. & exit /b 1)
+for %%f in (%PORTABLE_FILES%) do copy /y "%DIST%\%%~f" "%STAGE%\" >nul || (echo Could not copy %%~f. & exit /b 1)
 if exist "%ZIPPATH%" del /f /q "%ZIPPATH%"
-powershell -NoProfile -Command "Compress-Archive -Path 'portable\*' -DestinationPath $env:ZIPPATH -Force" || (echo Zip failed. & exit /b 1)
+powershell -NoProfile -Command "Compress-Archive -Path (Join-Path $env:STAGE '*') -DestinationPath $env:ZIPPATH -Force" || (echo Zip failed. & exit /b 1)
+rmdir /s /q "%STAGE%"
 
 rem Release notes: release-notes\<tag>.md if present, else GitHub's generated notes
 rem (new releases only). An existing release keeps its notes unless the file exists.
@@ -83,7 +97,7 @@ if errorlevel 1 (
   )
 )
 
-gh release upload "%TAG%" "%SETUP%" "%ZIPPATH%" --clobber || (echo Upload failed. & exit /b 1)
+gh release upload "%TAG%" "%SETUPPATH%" "%ZIPPATH%" --clobber || (echo Upload failed. & exit /b 1)
 
 del /f /q "%ZIPPATH%" >nul 2>&1
 echo Done. Uploaded %SETUP% and %ZIP% to %TAG%.

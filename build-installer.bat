@@ -21,10 +21,6 @@ set "EXE=%ROOT%src-tauri\target\release\%BINNAME%.exe"
 rem NOTE: outputs go to release\, never to dist\ (dist\ is the Tauri
 rem frontend folder and gets embedded into the exe as-is).
 set "DIST=%ROOT%release"
-rem Release repo (its own git repo): setup exe goes in its root, the portable
-rem exe + speech DLLs go in its portable\ folder. Set PUBLISH beforehand to
-rem override, or to an empty/missing folder to skip.
-if not defined PUBLISH set "PUBLISH=I:\Development\repos\Open-Local-Ai-Assitant"
 
 
 rem version = the "version" line of Cargo.toml
@@ -127,27 +123,8 @@ if errorlevel 1 (
 echo.
 echo Done. Installer: "%DIST%\Open-Local-Assistant-%VERSION%-setup.exe"
 echo It installs to "C:\Program Files\%APPNAME%" with a Start menu entry and uninstaller.
-call :publish || goto :fail
+echo To publish: write release-notes\v%VERSION%.md and commit-message.txt, then run upload-release.bat
 goto :done
-
-
-rem Copy the setup exe to the release repo root and the portable exe + DLLs
-rem to its portable\ folder.
-:publish
-if not exist "%PUBLISH%\" (
-  echo [!] Release repo "%PUBLISH%" not found, nothing copied there.
-  exit /b 0
-)
-echo Copying to release repo "%PUBLISH%"...
-copy /y "%DIST%\Open-Local-Assistant-%VERSION%-setup.exe" "%PUBLISH%\Open-Local-Assistant-%VERSION%-setup.exe" >nul || (echo [x] Could not copy the setup exe. & exit /b 1)
-if not exist "%PUBLISH%\portable" mkdir "%PUBLISH%\portable"
-for %%f in ("%APPNAME%.exe" sherpa-onnx-c-api.dll sherpa-onnx-cxx-api.dll onnxruntime.dll onnxruntime_providers_shared.dll) do (
-  copy /y "%DIST%\%%~f" "%PUBLISH%\portable\%%~f" >nul || (echo [x] Could not copy %%~f - is the portable app running? & exit /b 1)
-)
-echo       setup:    "%PUBLISH%\Open-Local-Assistant-%VERSION%-setup.exe"
-echo       portable: "%PUBLISH%\portable\"
-echo       Next: commit there, then run upload-release.bat
-exit /b 0
 
 
 :direct_install
