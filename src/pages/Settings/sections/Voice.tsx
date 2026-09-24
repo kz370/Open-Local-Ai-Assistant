@@ -396,6 +396,11 @@ export function VoiceSection() {
   const entry = s.language.entries.find((e) => e.code === activeLang) ?? s.language.entries[0];
   // "*" = a multilingual voice. Speech only routes the built-in languages.
   const list = voices.filter((v) => v.language === entry?.code || (entry?.builtIn && v.language === "*"));
+  // The preferred gender narrows the picker. Voices of unknown gender always
+  // show, and when none match, all are offered rather than an empty list.
+  const matchesGender = (v: VoiceInfo, g: string) => g === "any" || !v.gender || v.gender === g;
+  const byGender = list.filter((v) => matchesGender(v, s.tts.preferredGender));
+  const shown = byGender.length ? byGender : list;
 
   const updateEntry = (code: string, patch: Partial<LanguageEntry>) =>
     set((d) => {
@@ -434,7 +439,16 @@ export function VoiceSection() {
               { value: "female" as const, label: t("settings.voice.genderFemale") },
               { value: "male" as const, label: t("settings.voice.genderMale") },
             ]}
-            onChange={(v) => set((d) => void (d.tts.preferredGender = v))}
+            onChange={(v) =>
+              set((d) => {
+                d.tts.preferredGender = v;
+                // A picked voice of the other gender goes back to automatic.
+                for (const e of d.language.entries) {
+                  const picked = voices.find((x) => x.id === e.ttsVoice);
+                  if (picked && !matchesGender(picked, v)) e.ttsVoice = "auto";
+                }
+              })
+            }
           />
         </Row>
         <Row label={t("settings.voice.language")}>
@@ -449,7 +463,7 @@ export function VoiceSection() {
           <Row label={t("settings.voice.voiceFor", { language: languageLabel(entry) })} htmlFor="sel-voice">
             <select id="sel-voice" className="select" value={entry.ttsVoice} onChange={(e) => updateEntry(entry.code, { ttsVoice: e.target.value })} disabled={!list.length} style={{ maxWidth: 260 }}>
               <option value="auto">{list.length ? t("app.automatic") : t("settings.voice.none")}</option>
-              {list.map((v) => (
+              {shown.map((v) => (
                 <option key={v.id} value={v.id}>
                   {v.name}
                   {v.gender && !v.name.toLowerCase().includes(v.gender) ? ` — ${t(`settings.voice.gender${v.gender === "female" ? "Female" : "Male"}`)}` : ""}
