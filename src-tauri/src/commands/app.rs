@@ -40,13 +40,16 @@ pub async fn save_settings(app: AppHandle, state: State<'_, AppState>, settings:
         state.models.set_extra_dirs(saved.stt.extra_model_dirs.iter().map(std::path::PathBuf::from).collect());
         let _ = app.emit("models://changed", ());
     }
-    if before.stt.model != saved.stt.model
-        || before.stt.language != saved.stt.language
+    // A language change needs nothing: Whisper switches it in place. The
+    // rest may pick another model; swap it in now, rather than dropping it
+    // and making the next session wait for the load.
+    if (before.stt.model != saved.stt.model
         || before.stt.extra_model_dirs != saved.stt.extra_model_dirs
         || before.stt.silence_ms != saved.stt.silence_ms
-        || before.stt.hardware != saved.stt.hardware
+        || before.stt.hardware != saved.stt.hardware)
+        && state.stt.loaded_model().is_some()
     {
-        state.stt.unload();
+        super::memory::reload_stt(&app);
     }
     if before.tts.voice_hardware != saved.tts.voice_hardware {
         // Blunt but simple: a hardware-placement change is rare, so just drop

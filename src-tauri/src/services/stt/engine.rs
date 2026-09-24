@@ -229,6 +229,47 @@ impl Recognizer {
     }
 }
 
+extern "C" {
+    // Exported by the sherpa-onnx C library but not bound by the Rust crates.
+    fn SherpaOnnxOfflineRecognizerSetConfig(recognizer: *const sherpa_onnx_sys::OfflineRecognizer, config: *const sherpa_onnx_sys::OfflineRecognizerConfig);
+}
+
+// `set_whisper_language` reads the wrapper's private C pointer, which is its
+// only field; fail the build if the wrapper ever grows.
+const _: () = assert!(std::mem::size_of::<sherpa_onnx::OfflineRecognizer>() == std::mem::size_of::<*const sherpa_onnx_sys::OfflineRecognizer>());
+
+/// Switches a loaded Whisper model to another language ("" = detect) in
+/// place, in well under a millisecond, instead of loading it again. The
+/// caller must make sure nothing decodes on `rec` meanwhile.
+pub fn set_whisper_language(rec: &Recognizer, files: &SttModelFiles, opts: &EngineOptions) {
+    let Recognizer::Offline(r) = rec else { return };
+    let text = |v: Option<String>| std::ffi::CString::new(v.unwrap_or_default()).unwrap_or_default();
+    let encoder = text(s(&files.encoder));
+    let decoder = text(s(&files.decoder));
+    let tokens = text(Some(files.tokens.to_string_lossy().to_string()));
+    let language = text(Some(opts.language.clone()));
+    let task = text(Some("transcribe".into()));
+    let provider = text(Some(opts.provider.into()));
+    let method = text(Some("greedy_search".into()));
+    // SAFETY: the C API reads an all-zero config as "defaults", and every
+    // string points into a CString that outlives the call. The pointer is
+    // the wrapper's only field (checked above) and lives as long as `r`.
+    unsafe {
+        let mut c: sherpa_onnx_sys::OfflineRecognizerConfig = std::mem::zeroed();
+        c.model_config.whisper.encoder = encoder.as_ptr();
+        c.model_config.whisper.decoder = decoder.as_ptr();
+        c.model_config.whisper.language = language.as_ptr();
+        c.model_config.whisper.task = task.as_ptr();
+        c.model_config.whisper.tail_paddings = -1;
+        c.model_config.tokens = tokens.as_ptr();
+        c.model_config.num_threads = opts.threads;
+        c.model_config.provider = provider.as_ptr();
+        c.decoding_method = method.as_ptr();
+        let ptr: *const sherpa_onnx_sys::OfflineRecognizer = std::mem::transmute_copy(r);
+        SherpaOnnxOfflineRecognizerSetConfig(ptr, &c);
+    }
+}
+
 pub struct EngineOptions {
     pub threads: i32,
     /// Whisper only: "" lets the model detect the language.

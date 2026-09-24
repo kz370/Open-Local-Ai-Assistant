@@ -13,7 +13,7 @@ use crate::services::language::{detect, Lang};
 use crate::services::models::catalog::{self, ModelKind};
 use crate::services::models::{find_file, InstalledModel, ModelStore};
 use crate::settings::SttSettings;
-use engine::{EngineOptions, Recognizer};
+use engine::{EngineOptions, Recognizer, SttFamily};
 use serde::Serialize;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -32,6 +32,8 @@ pub struct Transcription {
 struct Loaded {
     key: String,
     recognizer: Recognizer,
+    /// Language the recognizer currently decodes (Whisper switches in place).
+    language: String,
 }
 
 pub struct SttService {
@@ -114,19 +116,31 @@ impl SttService {
             .resolve_model(settings)
             .ok_or_else(|| AppError::Stt("no local speech recognition model is installed".into()))?;
         let opts = self.options(settings);
-        let key = format!("{}|{}|{}|{}", model.path.display(), opts.language, opts.endpoint_silence, opts.provider);
+        let files = engine::detect(&model.path).ok_or_else(|| AppError::Stt(format!("{} is not a recognizable speech model folder", model.path.display())))?;
+        // Whisper changes language in place, so the language is not part of
+        // what identifies a loaded model (chat and dictation often differ,
+        // and reloading took seconds each time); endpointing is streaming-only.
+        let switchable = files.family == SttFamily::Whisper;
+        let language = if switchable { "" } else { opts.language.as_str() };
+        let silence = if files.family.is_streaming() { opts.endpoint_silence } else { 0.0 };
+        let key = format!("{}|{}|{}|{}", model.path.display(), language, silence, opts.provider);
         let mut guard = self.loaded.lock().unwrap_or_else(|p| p.into_inner());
         if guard.as_ref().map(|l| l.key != key).unwrap_or(true) {
             *guard = None; // free the previous model before loading another
             *self.loaded_id.lock().unwrap_or_else(|p| p.into_inner()) = None;
-            let files = engine::detect(&model.path).ok_or_else(|| AppError::Stt(format!("{} is not a recognizable speech model folder", model.path.display())))?;
             let started = Instant::now();
             let recognizer = engine::create(&files, &opts)?;
             tracing::info!(model = %model.id, family = files.family.label(), ms = started.elapsed().as_millis() as u64, "speech model loaded");
-            *guard = Some(Loaded { key, recognizer });
+            *guard = Some(Loaded { key, recognizer, language: opts.language.clone() });
             *self.loaded_id.lock().unwrap_or_else(|p| p.into_inner()) = Some(model.id.clone());
         }
-        let loaded = guard.as_ref().expect("recognizer loaded");
+        let loaded = guard.as_mut().expect("recognizer loaded");
+        if switchable && loaded.language != opts.language {
+            // Safe to reconfigure: holding the lock means nothing is decoding.
+            engine::set_whisper_language(&loaded.recognizer, &files, &opts);
+            tracing::info!(model = %model.id, language = %opts.language, "speech model language switched");
+            loaded.language = opts.language.clone();
+        }
         Ok(f(&loaded.recognizer, &model))
     }
 
