@@ -140,16 +140,19 @@ pub fn tts_speak(state: State<'_, AppState>, text: String, language: Option<Stri
 }
 
 #[tauri::command]
-pub fn tts_test(state: State<'_, AppState>, language: String) -> CmdResult<()> {
+/// Speaks `text` with the voice chosen for `language`, or a sample sentence
+/// in that language when `text` is empty.
+pub fn tts_test(state: State<'_, AppState>, language: String, text: Option<String>) -> CmdResult<()> {
     let lang = Lang::from_code(&language).ok_or_else(|| AppError::Invalid("language".into()))?;
     if !state.tts.is_available(lang) {
         return Err(AppError::Tts(format!("no local voice installed for {}", lang.english_name())));
     }
-    let text = match lang {
+    let sample = match lang {
         Lang::En => "Hello! This is your local assistant speaking. Everything you hear was generated on this computer.",
         Lang::De => "Hallo! Hier spricht dein lokaler Assistent. Alles, was du hörst, wurde auf diesem Computer erzeugt.",
         Lang::Ar => "مَرْحَبًا! أَنَا مُسَاعِدُكَ الْمَحَلِّيُّ، وَكُلُّ مَا تَسْمَعُهُ صَوْتٌ مُوَلَّدٌ عَلَى هَذَا الْحَاسُوبِ.",
     };
+    let text = text.as_deref().map(str::trim).filter(|t| !t.is_empty()).unwrap_or(sample);
     state.tts.speak("test-voice", text, Some(lang));
     Ok(())
 }

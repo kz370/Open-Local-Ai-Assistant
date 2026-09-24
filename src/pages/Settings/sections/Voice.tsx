@@ -348,6 +348,11 @@ export function VoiceSection() {
   const gpu = useGpuStatus();
   const [error, setError] = useState<AppErrorPayload | null>(null);
   const [activeLang, setActiveLang] = useState(s.language.entries[0]?.code ?? "en");
+  const [testText, setTestText] = useState("");
+  const testVoice = (code: string) => {
+    setError(null);
+    void ipc.ttsTest(code, testText.trim()).catch((e) => setError(toAppError(e)));
+  };
 
   useEffect(() => {
     if (!s.language.entries.some((e) => e.code === activeLang) && s.language.entries[0]) {
@@ -431,13 +436,26 @@ export function VoiceSection() {
             <button
               className="btn btn-sm"
               disabled={!list.length}
-              onClick={() => {
-                setError(null);
-                void ipc.ttsTest(entry.code).catch((e) => setError(toAppError(e)));
-              }}
+              onClick={() => testVoice(entry.code)}
             >
               <Play size={12} /> {t("settings.voice.testVoice")}
             </button>
+          </Row>
+        )}
+        {entry && (
+          <Row label={t("settings.voice.testText")} hint={t("settings.voice.testTextHint")} htmlFor="in-test-text">
+            <input
+              id="in-test-text"
+              className="input"
+              dir="auto"
+              value={testText}
+              placeholder={t("settings.voice.testTextPlaceholder")}
+              onChange={(e) => setTestText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && list.length) testVoice(entry.code);
+              }}
+              style={{ maxWidth: 360 }}
+            />
           </Row>
         )}
         <Row label={t("settings.voice.speed")} htmlFor="rng-speed">

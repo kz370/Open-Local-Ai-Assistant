@@ -133,7 +133,8 @@ export const ipc = {
   ttsSpeak: (text: string, language?: string | null, tag?: string) => invoke<void>("tts_speak", { text, language, tag }),
   ttsSetPaused: (paused: boolean) => invoke<{ speaking: boolean; paused: boolean }>("tts_set_paused", { paused }),
   ttsState: () => invoke<{ speaking: boolean; paused: boolean }>("tts_state"),
-  ttsTest: (language: string) => invoke<void>("tts_test", { language }),
+  /** Empty `text` speaks a sample sentence in `language`. */
+  ttsTest: (language: string, text?: string) => invoke<void>("tts_test", { language, text: text || null }),
   ttsStop: () => invoke<void>("tts_stop"),
   ttsReplayLast: () => invoke<boolean>("tts_replay_last"),
 
