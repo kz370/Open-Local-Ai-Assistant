@@ -1,0 +1,62 @@
+# Builds the Windows setup exe and the portable version from this repository,
+# so release files can be traced back to the source they came from (needed
+# for SignPath code signing). Uses the same build-installer.bat as local builds.
+name: Build Windows release
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) {
+            choco install innosetup --no-progress -y
+          }
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build exe and installer
+        shell: cmd
+        run: |
+          set BUILD_JOBS=%NUMBER_OF_PROCESSORS%
+          call build-installer.bat noupload < NUL
+
+      - name: Check build output
+        shell: pwsh
+        run: |
+          $files = @("release\Open Local Assistant.exe", "release\onnxruntime.dll",
+                     "release\onnxruntime_providers_shared.dll", "release\sherpa-onnx-c-api.dll",
+                     "release\sherpa-onnx-cxx-api.dll")
+          $files += (Get-ChildItem release\Open-Local-Assistant-*-setup.exe).FullName
+          foreach ($f in $files) { if (-not (Test-Path $f)) { throw "Missing $f" } }
+          Get-ChildItem release | Format-Table Name, Length
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: open-local-assistant-windows
+          path: release/
+          if-no-files-found: error
