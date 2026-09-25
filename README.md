@@ -15,7 +15,7 @@
 
 **Free and open source** under the [GPL-3.0 license](LICENSE). Download the Windows installer or the portable version from the [Releases](../../releases) page, or [build it yourself](#building-from-source).
 
-**Windows only.** Bug reports, ideas and pull requests are welcome in [Issues](../../issues).
+**Early release (0.1.0), Windows only.** Expect rough edges. Bug reports, ideas and pull requests are welcome in [Issues](../../issues).
 
 ---
 
@@ -43,19 +43,9 @@ Get the latest version from the [Releases](../../releases) page:
 
 ### "Windows protected your PC"
 
-The builds are not code-signed yet. A code-signing certificate costs money every year, and this is a free app, so Windows SmartScreen doesn't recognise it and shows a warning. To run it, click **More info → Run anyway**. If you'd rather not, you can [build it yourself](#building-from-source) from this code.
+The builds are not code-signed yet. A code-signing certificate costs money every year, and this is a free app, so Windows SmartScreen doesn't recognise it and shows a warning. To run it, click **More info → Run anyway**. If you'd rather not, you can [build it yourself](#building-from-source) from this code. We have applied for free code signing for open-source projects; see the [code signing policy](#code-signing-policy).
 
-### Check that a download is genuine
-
-Every release file is built on GitHub from this repository, and GitHub attaches a signed record (a [build provenance attestation](https://docs.github.com/actions/security-for-github-actions/using-artifact-attestations), made with [Sigstore](https://www.sigstore.dev)) saying exactly which commit and build produced it. With the [GitHub CLI](https://cli.github.com) installed, run:
-
-```powershell
-gh attestation verify .\Open-Local-Assistant-<version>-setup.exe --repo kz370/Open-Local-Ai-Assistant
-```
-
-If the file was changed in any way, or wasn't built here, the check fails. This doesn't stop the SmartScreen warning, which only looks for a paid code-signing certificate.
-
-Without the GitHub CLI, you can still compare the file's SHA-256 hash with the one shown next to it on the [Releases](../../releases) page:
+To check that your download wasn't changed along the way, compare its SHA-256 hash with the one shown next to the file on the [Releases](../../releases) page. In PowerShell:
 
 ```powershell
 Get-FileHash .\Open-Local-Assistant-<version>-setup.exe
@@ -223,13 +213,9 @@ When the build finishes, it asks whether to upload it as GitHub release `v<versi
 
 ### Publish a release (maintainers)
 
-1. Set the new version in `package.json`, `src-tauri/Cargo.toml` and `src-tauri/tauri.conf.json`.
-2. Write the release notes in `release-notes/v<version>.md` and commit.
-3. Push a tag: `git tag v<version>`, then `git push origin v<version>`.
-
-The [build workflow](.github/workflows/build.yml) then builds the setup exe and the portable zip on GitHub, attests them with Sigstore, and publishes them as release `v<version>`. It stops if the tag doesn't match the version in `Cargo.toml`.
-
-`upload-release.bat` (and the upload question at the end of `build-installer.bat`) can still publish a build from your own PC, for example to replace a release file quickly. Files uploaded that way have no attestation, so prefer the tag.
+1. Write the release notes in `release-notes\v<version>.md`.
+2. Write the commit message in `commit-message.txt` (git-ignored).
+3. Run `upload-release.bat`. It commits and pushes this repo, creates or updates the GitHub release `v<version>`, and uploads the setup exe and a zip of the portable version from `release\`.
 
 ## Architecture
 
@@ -283,13 +269,14 @@ LA_LIVE_LMSTUDIO=1 cargo test --test lmstudio_live -- --nocapture
 
 Bug reports and pull requests are welcome. For bigger changes, please open an issue first so we can agree on the approach. Run `npm test` and `cargo test` before sending a pull request.
 
-## Code signing and build provenance
+## Code signing policy
 
-Windows releases are not code-signed: a trusted code-signing certificate costs money every year, and the free programs for open-source projects haven't accepted this project yet.
+Windows releases are not code-signed yet. The project has applied to the [SignPath Foundation](https://signpath.org) for free code signing for open-source projects. Once approved, release files will be signed as described here.
 
-Instead, every release file is built from this repository by the public GitHub Actions workflow [`.github/workflows/build.yml`](.github/workflows/build.yml), and each file gets a Sigstore build provenance attestation. See [Check that a download is genuine](#check-that-a-download-is-genuine).
-
-- **Maintainer:** [kz370](https://github.com/kz370) reviews every change and publishes every release.
+- **What gets signed:** only the setup exe and the portable exe built from this repository by its GitHub Actions workflow ([`.github/workflows/build.yml`](.github/workflows/build.yml)). Files built on a developer's own PC are never signed.
+- **Committers and reviewers:** [kz370](https://github.com/kz370). Changes from anyone else are merged only after review by a committer.
+- **Approvers:** [kz370](https://github.com/kz370). Every release is approved by hand before it is signed.
+- **Accounts:** the project's GitHub and SignPath accounts use two-factor authentication.
 - **Privacy:** see the [privacy policy](PRIVACY.md). The app sends nothing anywhere except for the features listed there, which the user chooses or starts.
 
 ## License

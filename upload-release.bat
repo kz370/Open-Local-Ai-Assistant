@@ -9,7 +9,7 @@ rem   release\Open Local Assistant.exe + the speech DLLs    zipped as the portab
 rem Release notes come from release-notes\<tag>.md, the commit message from
 rem commit-message.txt (git-ignored, rewrite it for each release).
 rem
-rem Usage: upload-release.bat [tag]   (e.g. upload-release.bat v1.0.0)
+rem Usage: upload-release.bat [tag]   (e.g. upload-release.bat v0.1.0)
 rem No tag given = read the version from the setup exe name
 rem (Open-Local-Assistant-<version>-setup.exe) and use tag v<version>.
 set "DIST=release"
