@@ -1,6 +1,6 @@
 [package]
 name = "local-ai-assistant"
-version = "0.1.0"
+version = "1.0.0"
 description = "Free, local-first desktop AI assistant with voice, dictation and MCP tools"
 license = "GPL-3.0-only"
 repository = "https://github.com/kz370/Open-Local-Ai-Assistant"

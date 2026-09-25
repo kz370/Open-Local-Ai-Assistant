@@ -15,7 +15,7 @@
 
 **Free and open source** under the [GPL-3.0 license](LICENSE). Download the Windows installer or the portable version from the [Releases](../../releases) page, or [build it yourself](#building-from-source).
 
-**Early release (0.1.0), Windows only.** Expect rough edges. Bug reports, ideas and pull requests are welcome in [Issues](../../issues).
+**Windows only.** Bug reports, ideas and pull requests are welcome in [Issues](../../issues).
 
 ---
 
@@ -43,7 +43,7 @@ Get the latest version from the [Releases](../../releases) page:
 
 ### "Windows protected your PC"
 
-The builds are not code-signed yet. A code-signing certificate costs money every year, and this is a free app, so Windows SmartScreen doesn't recognise it and shows a warning. To run it, click **More info → Run anyway**. If you'd rather not, you can [build it yourself](#building-from-source) from this code. We have applied for free code signing for open-source projects; see the [code signing policy](#code-signing-policy).
+The builds are not code-signed yet. A code-signing certificate costs money every year, and this is a free app, so Windows SmartScreen doesn't recognise it and shows a warning. To run it, click **More info → Run anyway**. If you'd rather not, you can [build it yourself](#building-from-source) from this code.
 
 To check that your download wasn't changed along the way, compare its SHA-256 hash with the one shown next to the file on the [Releases](../../releases) page. In PowerShell:
 
@@ -269,14 +269,11 @@ LA_LIVE_LMSTUDIO=1 cargo test --test lmstudio_live -- --nocapture
 
 Bug reports and pull requests are welcome. For bigger changes, please open an issue first so we can agree on the approach. Run `npm test` and `cargo test` before sending a pull request.
 
-## Code signing policy
+## Code signing
 
-Windows releases are not code-signed yet. The project has applied to the [SignPath Foundation](https://signpath.org) for free code signing for open-source projects. Once approved, release files will be signed as described here.
+Windows releases are not code-signed: a trusted code-signing certificate costs money every year, and the free programs for open-source projects haven't accepted this project yet. The GitHub Actions workflow [`.github/workflows/build.yml`](.github/workflows/build.yml) builds the app from this repository so anyone can check the build.
 
-- **What gets signed:** only the setup exe and the portable exe built from this repository by its GitHub Actions workflow ([`.github/workflows/build.yml`](.github/workflows/build.yml)). Files built on a developer's own PC are never signed.
-- **Committers and reviewers:** [kz370](https://github.com/kz370). Changes from anyone else are merged only after review by a committer.
-- **Approvers:** [kz370](https://github.com/kz370). Every release is approved by hand before it is signed.
-- **Accounts:** the project's GitHub and SignPath accounts use two-factor authentication.
+- **Maintainer:** [kz370](https://github.com/kz370) reviews every change and publishes every release.
 - **Privacy:** see the [privacy policy](PRIVACY.md). The app sends nothing anywhere except for the features listed there, which the user chooses or starts.
 
 ## License
