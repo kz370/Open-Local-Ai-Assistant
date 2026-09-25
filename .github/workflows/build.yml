@@ -1,6 +1,12 @@
-# Builds the Windows setup exe and the portable version from this repository,
-# so release files can be traced back to the source they came from (needed
-# for SignPath code signing). Uses the same build-installer.bat as local builds.
+# Builds the Windows setup exe and the portable version from this repository
+# with the same build-installer.bat as local builds, and attaches a Sigstore
+# build provenance attestation to each file, so anyone can check that a
+# download was built here from this source:
+#   gh attestation verify <file> --repo kz370/Open-Local-Ai-Assistant
+#
+# Pushing a tag v<version> also publishes the files as that GitHub release,
+# with release-notes/v<version>.md as the notes. Running the workflow by hand
+# only builds and attests (the files are kept as a workflow artifact).
 name: Build Windows release
 
 on:
@@ -15,6 +21,10 @@ jobs:
   build:
     runs-on: windows-latest
     timeout-minutes: 90
+    permissions:
+      contents: write      # create the GitHub release on tag pushes
+      id-token: write      # Sigstore signing for the attestations
+      attestations: write  # store the attestations on GitHub
     steps:
       - uses: actions/checkout@v4
 
@@ -45,18 +55,62 @@ jobs:
           set BUILD_JOBS=%NUMBER_OF_PROCESSORS%
           call build-installer.bat noupload < NUL
 
-      - name: Check build output
+      - name: Package release files
+        id: package
         shell: pwsh
         run: |
-          $files = @("release\Open Local Assistant.exe", "release\onnxruntime.dll",
-                     "release\onnxruntime_providers_shared.dll", "release\sherpa-onnx-c-api.dll",
-                     "release\sherpa-onnx-cxx-api.dll")
-          $files += (Get-ChildItem release\Open-Local-Assistant-*-setup.exe).FullName
-          foreach ($f in $files) { if (-not (Test-Path $f)) { throw "Missing $f" } }
-          Get-ChildItem release | Format-Table Name, Length
+          $version = (Select-String -Path src-tauri/Cargo.toml -Pattern '^version = "([^"]+)"').Matches[0].Groups[1].Value
+          if ("${{ github.ref_type }}" -eq "tag" -and "${{ github.ref_name }}" -ne "v$version") {
+            throw "Tag ${{ github.ref_name }} does not match the app version $version in src-tauri/Cargo.toml"
+          }
+          $portable = @("Open Local Assistant.exe", "onnxruntime.dll", "onnxruntime_providers_shared.dll",
+                        "sherpa-onnx-c-api.dll", "sherpa-onnx-cxx-api.dll")
+          foreach ($f in $portable) { if (-not (Test-Path "release/$f")) { throw "Missing release/$f" } }
+          $setup = "release/Open-Local-Assistant-$version-setup.exe"
+          if (-not (Test-Path $setup)) { throw "Missing $setup" }
+
+          New-Item -ItemType Directory -Force out, stage | Out-Null
+          foreach ($f in $portable) { Copy-Item "release/$f" stage/ }
+          Compress-Archive -Path stage/* -DestinationPath "out/Open-Local-Assistant-$version-portable-win-x64.zip"
+          Copy-Item $setup out/
+          Copy-Item "release/Open Local Assistant.exe" out/
+          Get-ChildItem out | Format-Table Name, Length
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: |
+            out/Open-Local-Assistant-*-setup.exe
+            out/Open-Local-Assistant-*-portable-win-x64.zip
+            out/Open Local Assistant.exe
 
       - uses: actions/upload-artifact@v4
         with:
-          name: open-local-assistant-windows
-          path: release/
+          name: open-local-assistant-${{ steps.package.outputs.version }}-windows
+          path: out/
           if-no-files-found: error
+
+      - name: Publish GitHub release
+        if: github.ref_type == 'tag'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $version = "${{ steps.package.outputs.version }}"
+          $files = @("out/Open-Local-Assistant-$version-setup.exe",
+                     "out/Open-Local-Assistant-$version-portable-win-x64.zip")
+          $notes = "release-notes/$tag.md"
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -ne 0) {
+            if (Test-Path $notes) {
+              gh release create $tag --title $tag --notes-file $notes @files
+            } else {
+              gh release create $tag --title $tag --generate-notes @files
+            }
+          } else {
+            if (Test-Path $notes) { gh release edit $tag --notes-file $notes }
+            gh release upload $tag @files --clobber
+          }
+          if ($LASTEXITCODE -ne 0) { throw "Publishing $tag failed" }
