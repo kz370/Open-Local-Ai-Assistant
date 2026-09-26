@@ -13,7 +13,7 @@ rem                                  GitHub release without asking
 rem    build-installer.bat noupload  build exe + setup, never ask to upload
 rem
 rem  Needs: Rust (https://rustup.rs) with the MSVC toolchain.
-rem         Inno Setup 6 (https://jrsoftware.org/isdl.php) for the setup file.
+rem         Inno Setup 7 (https://jrsoftware.org/isdl.php) for the setup file.
 rem ---------------------------------------------------------------------------
 
 
@@ -146,12 +146,12 @@ if /i "%~1"=="install" goto :direct_install
 
 echo [3/4] Looking for Inno Setup...
 set "ISCC="
-for %%p in ("%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe" "%ProgramFiles%\Inno Setup 6\ISCC.exe" "%LocalAppData%\Programs\Inno Setup 6\ISCC.exe") do (
+for %%p in ("C:\Program Files\Inno Setup 7\ISCC.exe" "%ProgramFiles(x86)%\Inno Setup 7\ISCC.exe" "%ProgramFiles%\Inno Setup 7\ISCC.exe" "%LocalAppData%\Programs\Inno Setup 7\ISCC.exe") do (
   if not defined ISCC if exist "%%~p" set "ISCC=%%~p"
 )
 if not defined ISCC for /f "delims=" %%p in ('where iscc 2^>nul') do if not defined ISCC set "ISCC=%%p"
 if not defined ISCC (
-  echo [!] Inno Setup 6 not found, so no setup file was made.
+  echo [!] Inno Setup 7 not found, so no setup file was made.
   echo     Install it from https://jrsoftware.org/isdl.php and run this again,
   echo     or run:  build-installer.bat install   to install straight into Program Files.
   goto :done
