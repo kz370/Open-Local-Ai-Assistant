@@ -1,0 +1,882 @@
+RELATIONSHIPS — Open Local Assistant (`local-ai-assistant` v1.0.0)
+Machine-readable dependency edges for the Tauri 2 / Rust + React 19 codebase.
+
+LEGEND
+======
+Format        subject | verb | object          (one edge per line)
+Verbs         uses            a module reads/imports another, or consults it
+              depends_on      a hard build- or runtime-order dependency
+              emits           publishes a Tauri event (see the EVENTS section)
+              subscribes_to   listens to a Tauri event
+              calls           invokes a function or method
+              implements      satisfies a trait / interface contract
+              extends         adds members to a parent type or store
+              produces        returns or yields a documented payload
+              persists_to     writes rows, files or KV entries
+              reads           loads rows, files or KV entries
+              writes          creates or mutates rows, files or KV entries
+Conventions   ::  separates module-path segments  (services::chat::orchestrator)
+              /   is a filesystem path              (src/app/chatStore.ts)
+              ::  a Rust type path, the same way   (ChatEvent::Done)
+              *   "every member of"                (commands::*)
+              -   the wire/serialised name of a struct field (settings.general.accent)
+External      third-party systems are named by product (LM Studio, SearXNG,
+              Hugging Face, GitHub, NVIDIA, DuckDuckGo, searx.space) and are
+              not part of the crate graph.
+
+================================================================================
+1. PROCESS BOOTSTRAP (ordered edges of run() and init_state)
+================================================================================
+
+main.rs | calls | lib::run
+lib::run | calls | services::gpu::activate_early
+lib::run | calls | plugins::single_instance
+lib::run | calls | plugins::global_shortcut
+lib::run | calls | logging::init
+lib::run | calls | lib::init_state
+lib::init_state | reads | tauri::app_data_dir
+lib::init_state | produces | state::AppPaths
+lib::init_state | reads | database::Db
+lib::init_state | produces | settings::SettingsStore
+lib::init_state | calls | services::hardware::detect
+lib::init_state | produces | services::ai::lmstudio::LmStudioService
+lib::init_state | produces | services::chat::resolver::ModelResolver
+lib::init_state | produces | services::models::ModelStore
+lib::init_state | calls | services::models::ModelStore::install_bundled
+lib::init_state | produces | services::mcp::McpManager
+lib::init_state | produces | services::tts::TtsService
+lib::init_state | produces | services::stt::SttService
+lib::init_state | produces | services::stt::session::VoiceSessions
+lib::init_state | produces | services::search::WebSearch
+lib::init_state | produces | services::chat::tools::CombinedTools
+lib::init_state | produces | services::attachments::AttachmentStore
+lib::init_state | produces | services::chat::orchestrator::ChatEngine
+lib::init_state | calls | database::Db::attachment_ids
+lib::init_state | calls | services::attachments::AttachmentStore::gc
+lib::init_state | produces | state::AppState
+lib::run | calls | desktop::autostart::sync
+lib::run | calls | desktop::tray::create
+lib::run | calls | desktop::shortcuts::register_all
+lib::run | calls | desktop::window::restore
+lib::run | calls | desktop::window::create_overlay
+lib::run | calls | desktop::window::ensure_settings
+lib::run | calls | desktop::icon::apply_accent
+lib::run | calls | lib::preload_models
+lib::run | calls | commands::memory::load_all
+lib::run | calls | services::mcp::McpManager::connect_enabled
+main.tsx | calls | app::settingsStore::useSettings.load
+main.tsx | calls | app::settingsStore::useSettings.subscribe
+main.tsx | calls | app::voiceStore::useVoice.subscribe
+main.tsx | calls | app::ipc::ipc.appReady
+app::ipc::ipc.appReady | calls | commands::app::app_ready
+
+================================================================================
+2. RUST MODULE GRAPH (local `use` edges)
+================================================================================
+
+lib | uses | state
+lib | uses | errors
+lib | uses | database
+lib | uses | settings
+lib | uses | services
+lib | uses | desktop
+lib | uses | logging
+lib | uses | capabilities
+lib | uses | commands
+state | uses | database::Db
+state | uses | settings::SettingsStore
+state | uses | services::ai::lmstudio::LmStudioService
+state | uses | services::chat::resolver::ModelResolver
+state | uses | services::chat::orchestrator::ChatEngine
+state | uses | services::attachments::AttachmentStore
+state | uses | services::mcp::McpManager
+state | uses | services::search::WebSearch
+state | uses | services::models::ModelStore
+state | uses | services::stt::SttService
+state | uses | services::tts::TtsService
+state | uses | services::stt::session::VoiceSessions
+state | uses | services::hardware::HardwareInfo
+state | uses | services::dictation::LiveTyper
+state | uses | capabilities::LocalCapabilityManager
+state | produces | capabilities::LocalCapabilityManager
+errors | uses | serde
+errors | uses | thiserror
+logging | uses | tracing_subscriber
+logging | uses | tracing_appender
+database::mod | uses | database::conversations
+database::mod | uses | database::dictation
+database::mod | uses | database::export
+database::mod | uses | database::migrations
+database::conversations | extends | database::Db
+database::dictation | extends | database::Db
+database::export | extends | database::Db
+settings::mod | uses | settings::backup
+settings::backup | uses | settings::Settings
+capabilities | uses | services::ai::AiService
+capabilities | uses | services::ai::model_selector::select_model
+capabilities | uses | services::ai::model_selector::ModelSelection
+capabilities | uses | services::audio::devices
+capabilities | uses | services::hardware::HardwareInfo
+capabilities | uses | services::language::Lang
+capabilities | uses | services::mcp::McpManager
+capabilities | uses | services::models::catalog::ModelKind
+capabilities | uses | services::models::recommend
+capabilities | uses | services::models::ModelStore
+capabilities | uses | services::models::InstalledModel
+capabilities | uses | services::models::Recommendation
+capabilities | uses | services::stt::SttService
+capabilities | uses | services::tts::TtsService
+capabilities | uses | services::tts::voices::select_voice
+capabilities | uses | settings::Settings
+services::ai::mod | uses | services::ai::lmstudio
+services::ai::mod | uses | services::ai::model_selector
+services::ai::mod | uses | services::ai::sse
+services::ai::mod | emits | services::ai::sse::ToolCall (re-export)
+services::ai::lmstudio | uses | services::ai::AiService
+services::ai::lmstudio | implements | services::ai::AiService
+services::ai::lmstudio | calls | services::ai::sse::SseDecoder
+services::ai::lmstudio | calls | services::ai::sse::ToolCallAccumulator
+services::ai::lmstudio | reads | LM Studio (native-v1 / native-v0 / openai discovery)
+services::ai::lmstudio | reads | OpenRouter | Google Gemini | Hugging Face
+services::ai::model_selector | uses | services::ai::ModelInfo
+services::ai::model_selector | uses | services::hardware::HardwareInfo
+services::chat::mod | uses | services::chat::attach
+services::chat::mod | uses | services::chat::explain
+services::chat::mod | uses | services::chat::freshness
+services::chat::mod | uses | services::chat::orchestrator
+services::chat::mod | uses | services::chat::prompt
+services::chat::mod | uses | services::chat::resolver
+services::chat::mod | uses | services::chat::think
+services::chat::mod | uses | services::chat::tools
+services::chat::orchestrator | uses | services::chat::attach
+services::chat::orchestrator | uses | services::chat::explain
+services::chat::orchestrator | uses | services::chat::freshness
+services::chat::orchestrator | uses | services::chat::prompt
+services::chat::orchestrator | uses | services::chat::resolver
+services::chat::orchestrator | uses | services::chat::think
+services::chat::orchestrator | uses | services::chat::tools
+services::chat::orchestrator | uses | services::ai::AiService
+services::chat::orchestrator | uses | services::attachments::AttachmentStore
+services::chat::orchestrator | uses | services::language::detect
+services::chat::orchestrator | uses | services::language::Lang
+services::chat::orchestrator | uses | database::Db
+services::chat::orchestrator | uses | database::conversations::Message
+services::chat::orchestrator | uses | settings::SettingsStore
+services::chat::orchestrator | calls | services::ai::AiService::chat
+services::chat::orchestrator | calls | services::chat::tools::ToolProvider::call_tool
+services::chat::orchestrator | calls | services::chat::tools::SpeechSink::push_text
+services::chat::orchestrator | writes | database::conversations
+services::chat::prompt | uses | services::language::Lang
+services::chat::prompt | calls | services::chat::freshness::needs_fresh_info
+services::chat::explain | uses | services::ai::ChatRequest
+services::chat::attach | uses | services::attachments::Attachment
+services::chat::attach | uses | services::attachments::AttachmentStore
+services::chat::attach | uses | services::ai::ChatMessage
+services::chat::attach | calls | services::attachments::AttachmentStore::data_url
+services::chat::resolver | uses | services::ai::AiService
+services::chat::resolver | uses | services::ai::ModelInfo
+services::chat::resolver | uses | services::ai::model_selector
+services::chat::resolver | uses | services::hardware::HardwareInfo
+services::chat::resolver | uses | settings::AiSettings
+services::chat::tools | produces | services::chat::tools::ToolSpec
+services::chat::tools | produces | services::chat::tools::ToolOutput
+services::chat::tools | produces | services::chat::tools::Source
+services::chat::tools::CombinedTools | implements | services::chat::tools::ToolProvider
+services::chat::tools::NoTools | implements | services::chat::tools::ToolProvider
+services::chat::tools::NoSpeech | implements | services::chat::tools::SpeechSink
+services::tts::mod | implements | services::chat::tools::SpeechSink
+services::tts::mod | uses | services::tts::sentence_buffer
+services::tts::mod | uses | services::tts::voices
+services::tts::mod | uses | services::tts::speech_text
+services::tts::mod | uses | services::models::ModelStore
+services::tts::mod | uses | services::settings (settings::SettingsStore)
+services::tts::mod | uses | services::gpu
+services::tts::mod | uses | services::language::Lang
+services::tts::mod | uses | services::audio::playback::Player
+services::tts::mod | calls | services::tts::sentence_buffer::SentenceBuffer
+services::tts::mod | calls | services::tts::voices::select_voice
+services::tts::mod | calls | services::tts::speech_text::clean_for_speech
+services::tts::mod | calls | services::tts::speech_text::sound_tags
+services::tts::mod | calls | services::language::detect
+services::tts::mod | calls | services::audio::playback::Player::enqueue
+services::tts::mod | calls | services::gpu::provider_for
+services::tts::mod | calls | services::gpu::mark_healthy
+services::tts::voices | uses | services::models::InstalledModel
+services::tts::voices | uses | services::language::Lang
+services::tts::speech_text | uses | (no local deps; regex statics only)
+services::stt::mod | uses | services::stt::engine
+services::stt::mod | uses | services::stt::session
+services::stt::mod | uses | services::models::ModelStore
+services::stt::mod | uses | services::models::InstalledModel
+services::stt::mod | uses | services::language
+services::stt::mod | calls | services::stt::engine::detect
+services::stt::mod | calls | services::stt::engine::create
+services::stt::mod | calls | services::stt::engine::set_whisper_language
+services::stt::mod | calls | services::models::ModelStore::installed
+services::stt::engine | calls | services::gpu::mark_healthy
+services::stt::engine | reads | sherpa-onnx FFI (raw C for the Whisper language switch)
+services::stt::session | uses | services::stt::SttService
+services::stt::session | uses | services::audio::capture::Capture
+services::stt::session | uses | services::audio::audio DSP (level, high-pass, spectrum)
+services::stt::session | uses | services::settings::SettingsStore
+services::stt::session | uses | services::stt::engine::Recognizer
+services::stt::session | emits | services::stt::session::VoiceEvent
+services::attachments::mod | uses | services::attachments::base64
+services::attachments::mod | uses | services::attachments::office
+services::attachments::office | reads | zip archives (docx/xlsx/pptx XML)
+services::audio::mod | uses | services::audio::capture
+services::audio::mod | uses | services::audio::devices
+services::audio::mod | uses | services::audio::playback
+services::audio::capture | reads | sherpa-onnx::LinearResampler
+services::audio::playback | reads | sherpa-onnx::LinearResampler
+services::models::mod | uses | services::models::catalog
+services::models::mod | uses | services::models::download
+services::models::mod | calls | services::stt::engine::detect (via catalog kind probing)
+services::models::mod | calls | services::stt::engine (family detection for custom folders)
+services::models::download | reads | Hugging Face | GitHub sherpa-onnx releases
+services::models::download | writes | <models_dir>/<id>
+services::gpu | reads | GitHub sherpa-onnx CUDA archive | developer.download.nvidia.com
+services::gpu | writes | <data_dir>/gpu/cuda-1.13.8
+services::mcp::mod | uses | services::mcp::config
+services::mcp::mod | uses | services::mcp::permissions
+services::mcp::mod | uses | services::mcp::sources
+services::mcp::mod | implements | services::chat::tools::ToolProvider
+services::mcp::mod | uses | services::chat::tools
+services::mcp::mod | uses | database::Db
+services::mcp::mod | calls | rmcp (stdio child process + streamable HTTP)
+services::mcp::mod | calls | services::mcp::permissions::classify
+services::mcp::mod | calls | services::mcp::permissions::clamp_permission
+services::mcp::mod | calls | services::mcp::permissions::default_permission
+services::mcp::mod | calls | services::mcp::sources::extract_sources
+services::mcp::config | extends | database::Db
+services::mcp::config | uses | services::chat::tools::Permission
+services::mcp::config | reads | %USERPROFILE%/.lmstudio/mcp.json
+services::mcp::permissions | uses | services::chat::tools
+services::mcp::sources | produces | services::chat::tools::Source
+services::search | implements | services::chat::tools::ToolProvider
+services::search | uses | services::chat::tools
+services::search | uses | settings::SettingsStore
+services::search | reads | SearXNG (own instance, or searx.space public list)
+services::search | reads | DuckDuckGo (lite + html endpoints, fallback)
+services::dictation | uses | services::ai::AiService
+services::dictation | uses | services::chat::think::ThinkFilter
+services::dictation | uses | settings::DictationSettings
+services::dictation | uses | state::AppState
+services::dictation | calls | enigo (typing) | arboard (clipboard)
+services::dictation | calls | windows::Win32::GetAsyncKeyState (modifier settle)
+services::dictation | reads | LM Studio (optional grammar correction)
+services::hardware | reads | sysinfo (CPU, RAM, GPU)
+desktop::mod | uses | desktop::window
+desktop::mod | uses | desktop::tray
+desktop::mod | uses | desktop::shortcuts
+desktop::mod | uses | desktop::autostart
+desktop::mod | uses | desktop::icon
+desktop::mod | uses | desktop::verify
+desktop::window | uses | settings::WindowGeometry
+desktop::window | uses | services::gpu (Win32 style/region handling)
+desktop::window | uses | state::AppState
+desktop::tray | uses | desktop::window
+desktop::tray | calls | services::chat::orchestrator::ChatEngine::stop_all
+desktop::tray | calls | services::stt::session::VoiceSessions::stop
+desktop::tray | calls | services::tts::TtsService::stop_all
+desktop::tray | calls | services::mcp::McpManager::shutdown
+desktop::shortcuts | uses | desktop::window
+desktop::shortcuts | uses | services::stt::session::ListenMode
+desktop::shortcuts | calls | tauri_plugin_global_shortcut
+desktop::shortcuts | calls | windows::Win32::GetAsyncKeyState (modifier watcher)
+desktop::autostart | calls | auto_launch
+desktop::autostart | calls | services::gpu::launcher_exe
+desktop::icon | uses | windows::Win32 (WM_SETICON)
+desktop::verify | calls | windows::WinRT::UserConsentVerifier (Windows Hello)
+
+================================================================================
+3. COMMANDS -> SERVICES (all 93)
+================================================================================
+
+--- commands/app.rs ---
+commands::app::get_settings | reads | settings::SettingsStore
+commands::app::save_settings | writes | settings::SettingsStore
+commands::app::save_settings | calls | services::ai::lmstudio::LmStudioService::set_provider
+commands::app::save_settings | calls | services::ai::lmstudio::LmStudioService::set_base_url
+commands::app::save_settings | calls | services::ai::lmstudio::LmStudioService::set_api_key
+commands::app::save_settings | calls | services::ai::lmstudio::LmStudioService::set_timeout
+commands::app::save_settings | calls | services::chat::resolver::ModelResolver::invalidate
+commands::app::save_settings | calls | services::models::ModelStore::set_extra_dirs
+commands::app::save_settings | calls | services::stt::SttService (via commands::memory::reload_stt)
+commands::app::save_settings | calls | services::tts::TtsService::unload_model
+commands::app::save_settings | calls | services::tts::TtsService::apply_settings
+commands::app::save_settings | calls | lib::preload_models
+commands::app::save_settings | calls | desktop::shortcuts::register_all
+commands::app::save_settings | calls | desktop::autostart::set_enabled
+commands::app::save_settings | calls | desktop::window::apply_position
+commands::app::save_settings | calls | desktop::icon::apply_accent
+commands::app::settings_export | calls | settings::backup::strip_keys
+commands::app::settings_export | calls | settings::backup::encrypt
+commands::app::settings_export | writes | <user-chosen absolute path>
+commands::app::settings_import | calls | settings::backup::decrypt
+commands::app::settings_import | calls | settings::backup::merge_import
+commands::app::settings_import | reads | <user-chosen absolute path>
+commands::app::shortcuts_capture | calls | desktop::shortcuts::unregister_all
+commands::app::shortcuts_capture | calls | desktop::shortcuts::register_all
+commands::app::shortcut_errors | reads | state::AppState.shortcut_errors
+commands::app::app_info | produces | commands::app::AppInfo
+commands::app::open_folder | calls | desktop::window (show/explore through AppPaths)
+commands::app::read_log_tail | reads | <data_dir>/logs/*.log
+commands::app::scan_capabilities | calls | state::AppState::capabilities
+commands::app::scan_capabilities | calls | capabilities::LocalCapabilityManager::scan
+commands::app::scan_capabilities | produces | capabilities::CapabilityReport
+commands::app::lmstudio_test | calls | services::ai::lmstudio::LmStudioService::test_connection
+commands::app::lmstudio_models | calls | services::chat::resolver::ModelResolver::models
+commands::app::lmstudio_auto_selection | calls | services::chat::resolver::ModelResolver::auto_selection
+commands::app::lmstudio_auto_selection | produces | services::ai::model_selector::ModelSelection
+commands::app::window_set_compact | calls | desktop::window::set_compact
+commands::app::window_hide | calls | desktop::window::hide_to_tray
+commands::app::bubble_open_chat | calls | desktop::window::show_main
+commands::app::window_minimize | calls | desktop::window::minimize_to_bubble
+commands::app::window_toggle_maximize | calls | desktop::window::toggle_maximize
+commands::app::window_show_main | calls | desktop::window::show_main
+commands::app::open_settings_window | calls | desktop::window::open_settings
+commands::app::open_settings_window | calls | desktop::icon::apply_accent_to
+commands::app::complete_first_run | writes | settings::SettingsStore
+commands::app::complete_first_run | calls | desktop::window::show_main
+commands::app::quit_app | calls | desktop::tray::quit
+commands::app::privacy_status | produces | commands::app::PrivacyStatus
+commands::app::app_ready | calls | desktop::window::show_main
+commands::app::app_ready | calls | desktop::window::show_bubble
+
+--- commands/attachments.rs ---
+commands::attachments::attach_files | calls | services::attachments::AttachmentStore::ingest_path
+commands::attachments::attach_files | produces | commands::attachments::AttachResult
+commands::attachments::attach_bytes | calls | services::attachments::base64_decode
+commands::attachments::attach_bytes | calls | services::attachments::AttachmentStore::ingest_bytes
+commands::attachments::attach_text | calls | services::attachments::AttachmentStore::ingest_text
+commands::attachments::attach_remove | calls | services::attachments::AttachmentStore::discard
+commands::attachments::attachment_data_url | calls | services::attachments::AttachmentStore::data_url
+commands::attachments::attachment_text | calls | services::attachments::AttachmentStore::text
+commands::attachments::* | writes | <data_dir>/attachments
+
+--- commands/chat.rs ---
+commands::chat::chat_send | calls | services::chat::orchestrator::ChatEngine::send
+commands::chat::chat_send | produces | ChatEvent (over a tauri Channel, not a global event)
+commands::chat::chat_explain | calls | services::chat::orchestrator::ChatEngine::explain
+commands::chat::chat_explain | produces | services::chat::explain::ExplainEvent (over a Channel)
+commands::chat::chat_stop | calls | services::chat::orchestrator::ChatEngine::stop
+commands::chat::chat_confirm_tool | calls | services::chat::orchestrator::ChatEngine::confirm_tool
+commands::chat::conv_list | reads | database::conversations
+commands::chat::conv_search | reads | database::messages_fts
+commands::chat::conv_get | reads | database::conversations
+commands::chat::conv_rename | writes | database::conversations
+commands::chat::conv_delete | writes | database::conversations
+commands::chat::conv_delete | writes | settings::SettingsStore (last_conversation_id)
+commands::chat::conv_clear_all | writes | database::conversations
+commands::chat::conv_clear_all | calls | services::attachments::AttachmentStore::gc
+commands::chat::conv_set_last | writes | settings::SettingsStore
+commands::chat::conv_export | calls | database::export::Db::export_conversations
+commands::chat::conv_export | writes | <user-chosen absolute path>
+commands::chat::conv_import | calls | database::export::Db::import_conversations
+commands::chat::conv_import | reads | <user-chosen absolute path>
+commands::chat::conv_import | writes | database::conversations
+
+--- commands/mcp.rs ---
+commands::mcp::mcp_list | calls | services::mcp::McpManager::statuses
+commands::mcp::mcp_save | calls | services::mcp::McpManager (via services::mcp::config::Db::save_mcp_server)
+commands::mcp::mcp_delete | calls | services::mcp::McpManager::disconnect
+commands::mcp::mcp_delete | calls | services::mcp::config::Db::delete_mcp_server
+commands::mcp::mcp_set_enabled | calls | services::mcp::McpManager::set_enabled
+commands::mcp::mcp_reconnect | calls | services::mcp::McpManager::connect
+commands::mcp::mcp_set_permission | calls | services::mcp::McpManager::set_permission
+commands::mcp::mcp_set_all_permissions | calls | services::mcp::McpManager::set_all_permissions
+commands::mcp::mcp_safe_mode | reads | services::mcp::McpManager::safe_mode
+commands::mcp::mcp_set_safe_mode | calls | desktop::verify::verify_user (only when turning it OFF)
+commands::mcp::mcp_set_safe_mode | calls | services::mcp::McpManager::set_safe_mode
+commands::mcp::mcp_import_preview | calls | services::mcp::config::parse_mcp_json
+commands::mcp::mcp_import | calls | services::mcp::config::parse_mcp_json
+commands::mcp::mcp_import | writes | database::mcp_servers
+commands::mcp::search_public_instances | calls | services::search::WebSearch::public_instances
+commands::mcp::search_test | calls | services::search::WebSearch::search_uncached
+commands::mcp::search_test | produces | commands::mcp::SearchTestResult
+
+--- commands/memory.rs ---
+commands::memory::memory_status | reads | services::stt::SttService
+commands::memory::memory_status | reads | services::tts::TtsService
+commands::memory::memory_status | reads | services::chat::resolver::ModelResolver
+commands::memory::memory_status | reads | settings::SettingsStore
+commands::memory::memory_status | produces | commands::memory::MemoryItem
+commands::memory::memory_load | calls | commands::memory::load
+commands::memory::load | calls | services::stt::SttService::with_recognizer
+commands::memory::load | calls | services::tts::TtsService::preload_lang
+commands::memory::load | calls | services::chat::resolver::ModelResolver::resolve
+commands::memory::load | calls | services::ai::AiService::load_model
+commands::memory::load | calls | services::chat::resolver::ModelResolver::invalidate
+commands::memory::memory_unload | calls | services::stt::SttService::unload
+commands::memory::memory_unload | calls | services::tts::TtsService::unload_model
+commands::memory::load_all | depends_on | services::stt + services::tts (sequential, one spawned task)
+commands::memory::load_all | depends_on | services::chat::resolver (parallel task)
+commands::memory::reload_stt | calls | services::stt::SttService::unload
+commands::memory::reload_stt | calls | services::stt::SttService::with_recognizer
+
+--- commands/voice.rs ---
+commands::voice::audio_devices | calls | services::audio::devices::list_inputs
+commands::voice::audio_devices | calls | services::audio::devices::list_outputs
+commands::voice::audio_devices | produces | commands::voice::AudioDevices
+commands::voice::voice_start | calls | services::tts::TtsService::stop_all
+commands::voice::voice_start | calls | services::stt::session::VoiceSessions::start
+commands::voice::voice_stop | calls | services::stt::session::VoiceSessions::stop
+commands::voice::dictation_cancel | calls | desktop::window::cancel_dictation
+commands::voice::dictation_insert_now | calls | services::stt::session::VoiceSessions::stop
+commands::voice::dictation_confirm | calls | lib::confirm_review
+commands::voice::dictation_retry | calls | lib::retry_dictation
+commands::voice::dictation_set_language | writes | settings::SettingsStore
+commands::voice::dictation_history | reads | database::dictation
+commands::voice::dictation_history_delete | writes | database::dictation
+commands::voice::dictation_history_clear | writes | database::dictation
+commands::voice::dictation_reset_overlay_position | calls | desktop::window::reset_overlay_position
+commands::voice::dictation_overlay_menu | calls | desktop::window::set_overlay_menu
+commands::voice::voice_status | reads | services::stt::session::VoiceSessions::active_mode
+commands::voice::voice_set_muted | calls | services::stt::session::VoiceSessions::set_muted
+commands::voice::voice_muted | reads | services::stt::session::VoiceSessions::is_muted
+commands::voice::tts_voices | calls | services::tts::TtsService::voices
+commands::voice::tts_speak | calls | services::tts::TtsService::speak
+commands::voice::tts_test | calls | services::tts::TtsService::is_available
+commands::voice::tts_test | calls | services::tts::TtsService::speak
+commands::voice::tts_stop | calls | services::tts::TtsService::stop_all
+commands::voice::tts_set_paused | calls | services::tts::TtsService::set_paused
+commands::voice::tts_set_paused | produces | commands::voice::TtsState
+commands::voice::tts_state | produces | commands::voice::TtsState
+commands::voice::tts_replay_last | calls | services::tts::TtsService::replay_last
+commands::voice::models_catalog | reads | services::models::catalog::CATALOG
+commands::voice::models_catalog | calls | services::models::recommend
+commands::voice::models_catalog | reads | services::models::ModelStore::is_installed
+commands::voice::models_catalog | produces | commands::voice::CatalogEntry
+commands::voice::models_installed | calls | services::models::ModelStore::installed
+commands::voice::models_incompatible | calls | services::models::ModelStore::incompatible
+commands::voice::models_download | calls | services::models::download::install
+commands::voice::models_download | calls | commands::memory::reload_stt (on STT-model success)
+commands::voice::models_cancel | calls | state::AppState.downloads
+commands::voice::models_delete | calls | services::models::ModelStore::delete
+commands::voice::models_delete | calls | services::stt::SttService::unload
+commands::voice::models_delete | calls | commands::memory::reload_stt
+commands::voice::gpu_status | calls | services::gpu::status
+commands::voice::gpu_status | reads | services::hardware::HardwareInfo
+commands::voice::gpu_set_enabled | writes | services::gpu::set_enabled
+commands::voice::gpu_install | calls | services::gpu::install
+commands::voice::gpu_install | calls | services::gpu::set_enabled
+commands::voice::gpu_cancel | calls | state::AppState.downloads
+commands::voice::gpu_remove | calls | services::gpu::remove
+commands::voice::gpu_remove | writes | services::gpu::set_enabled
+
+================================================================================
+4. SERVICES -> INFRASTRUCTURE (external systems and persistence)
+================================================================================
+
+services::ai::lmstudio | depends_on | reqwest + futures-util (SSE streaming)
+services::ai::lmstudio | depends_on | tokio_util::sync::CancellationToken (cancellation)
+services::ai::lmstudio | reads | LM Studio local server (default http://localhost:1234/v1)
+services::ai::lmstudio | reads | OpenRouter | Google Gemini | Hugging Face (hosted providers)
+services::chat::orchestrator | persists_to | database::conversations + database::messages
+services::chat::orchestrator | reads | settings::SettingsStore
+services::chat::orchestrator | reads | services::attachments (text and images in the prompt)
+services::tts | depends_on | sherpa-onnx (synthesis) + onnxruntime
+services::tts | writes | services::audio::playback (clip queue)
+services::stt | depends_on | sherpa-onnx (recognition) + silero/ten VAD
+services::stt::session | depends_on | cpal (microphone capture)
+services::audio::playback | depends_on | cpal (output stream)
+services::models::download | depends_on | reqwest + sha2 (SHA-256 verification)
+services::models::download | depends_on | tar + bzip2 (.tar.bz2 extraction)
+services::models::mod | depends_on | assets/silero_vad.onnx (include_bytes!, ~630 KB in the exe)
+services::mcp | depends_on | rmcp (MCP client, stdio + streamable HTTP)
+services::mcp | depends_on | tokio (child process, RwLock-based session map)
+services::search | depends_on | reqwest (HTTPS GET)
+services::dictation | depends_on | enigo + arboard
+services::dictation | depends_on | windows (keyboard modifier polling)
+services::gpu | depends_on | futures-util + tokio_util (download) + windows (child-process env)
+services::database | persists_to | %APPDATA%\com.localassistant.app\assistant.db
+services::settings | persists_to | database::settings (key `app_settings`, value = one JSON document)
+services::mcp::config | persists_to | database::mcp_servers + database::mcp_tool_permissions
+services::logging | writes | %APPDATA%\com.localassistant.app\logs\local-assistant.<date>.log
+services::models::mod | persists_to | %APPDATA%\com.localassistant.app\models\<id>\.complete
+services::attachments | persists_to | %APPDATA%\com.localassistant.app\attachments\<id> (+ <id>.txt)
+services::gpu | persists_to | %APPDATA%\com.localassistant.app\gpu\cuda-1.13.8
+services::settings::backup | reads | LM Studio (no) | produces an encrypted file
+services::settings::backup | depends_on | chacha20poly1305 + sha2 (key derivation)
+
+================================================================================
+5. EVENTS (every emitter and subscriber)
+================================================================================
+
+--- settings://changed ---
+commands::app::save_settings | emits | settings://changed
+commands::voice::dictation_set_language | emits | settings://changed
+desktop::window::open_settings | emits | settings://changed
+src/app/settingsStore.ts::useSettings.subscribe | subscribes_to | settings://changed
+
+--- voice://event (VoiceEvent) ---
+lib::on_voice_event | emits | voice://event
+lib::on_voice_event | emits | voice://event  (targeted at the `overlay` window for dictation)
+services::stt::session::VoiceSessions | emits | voice://event (via the VoiceEmit callback)
+src/app/voiceStore.ts::useVoice.subscribe | subscribes_to | voice://event
+src/pages/Bubble/Bubble.tsx | subscribes_to | voice://event
+src/pages/Overlay/Overlay.tsx | subscribes_to | voice://event
+src/pages/Settings/sections/Voice.tsx | subscribes_to | voice://event
+
+--- voice://error (AppErrorPayload) ---
+desktop::shortcuts::handle | emits | voice://error
+src/app/voiceStore.ts::useVoice.subscribe | subscribes_to | voice://error
+
+--- tts://event (TtsEvent) ---
+lib::on_voice_event | emits | tts://event
+services::tts::TtsService | emits | tts://event (via the emit callback installed at construction)
+src/app/voiceStore.ts::useVoice.subscribe | subscribes_to | tts://event
+src/pages/Bubble/Bubble.tsx | subscribes_to | tts://event
+
+--- dictation://state (DictationStateEvent) ---
+lib::on_voice_event | emits | dictation://state
+lib::run_dictation | emits | dictation://state
+lib::confirm_review | emits | dictation://state
+lib::retry_dictation | emits | dictation://state
+desktop::shortcuts::start_dictation | emits | dictation://state
+desktop::shortcuts::toggle_dictation | emits | dictation://state
+src/pages/Overlay/Overlay.tsx | subscribes_to | dictation://state
+src/pages/Bubble/Bubble.tsx | subscribes_to | dictation://state
+src/pages/Chat/ChatApp.tsx | subscribes_to | dictation://state
+
+--- dictation://history ---
+lib::insert_and_report | emits | dictation://history
+src/pages/Settings/sections/Dictation.tsx | subscribes_to | dictation://history
+
+--- models://changed ---
+commands::app::save_settings (stt.extra_model_dirs) | emits | models://changed
+commands::voice::models_download | emits | models://changed
+commands::voice::models_delete | emits | models://changed
+src/components/settings/ModelManager.tsx | subscribes_to | models://changed
+src/pages/Settings/sections/Voice.tsx | subscribes_to | models://changed
+
+--- models://download (DownloadProgress) ---
+commands::voice::models_download | emits | models://download
+src/components/settings/ModelManager.tsx | subscribes_to | models://download
+src/pages/Setup/SetupWizard.tsx | subscribes_to | models://download
+
+--- gpu://changed ---
+commands::voice::gpu_install | emits | gpu://changed
+commands::voice::gpu_remove | emits | gpu://changed
+commands::voice::gpu_set_enabled | emits | gpu://changed
+src/components/settings/GpuCard.tsx | subscribes_to | gpu://changed
+src/pages/Settings/sections/Voice.tsx | subscribes_to | gpu://changed
+
+--- gpu://download (GpuProgress) ---
+commands::voice::gpu_install | emits | gpu://download
+src/components/settings/GpuCard.tsx | subscribes_to | gpu://download
+
+--- memory://changed ---
+commands::memory::tracked | emits | memory://changed
+src/pages/Settings/sections/Memory.tsx | subscribes_to | memory://changed
+
+--- mcp://changed ---
+lib (McpManager on_change callback, installed at construction) | emits | mcp://changed
+src/pages/Settings/sections/Mcp.tsx | subscribes_to | mcp://changed
+
+--- app://window-shown ---
+desktop::window::show_main | emits | app://window-shown  (targeted at the `main` window)
+src/pages/Chat/ChatApp.tsx | subscribes_to | app://window-shown
+
+--- app://window-closing ---
+desktop::window::minimize_to_bubble | emits | app://window-closing  (targeted at the `main` window)
+src/pages/Chat/ChatApp.tsx | subscribes_to | app://window-closing
+
+--- app://focus-input ---
+desktop::window::show_main | emits | app://focus-input  (targeted at the `main` window)
+src/pages/Chat/ChatApp.tsx | subscribes_to | app://focus-input
+
+--- app://new-conversation ---
+desktop::tray (menu action `new`) | emits | app://new-conversation  (targeted at `main`)
+src/pages/Chat/ChatApp.tsx | subscribes_to | app://new-conversation
+
+--- app://toggle-hands-free ---
+desktop::tray (menu action `voice`) | emits | app://toggle-hands-free  (targeted at `main`)
+src/pages/Chat/ChatApp.tsx | subscribes_to | app://toggle-hands-free
+
+--- app://navigate ---
+desktop::window::open_settings | emits | app://navigate  (targeted at `settings`, payload `/settings/<section>`)
+src/pages/Settings/SettingsApp.tsx | subscribes_to | app://navigate
+
+--- Not events, but Channels (per-invocation, never global) ---
+commands::chat::chat_send | produces | ChatEvent (tauri::ipc::Channel<ChatEvent> -> ipc.chatSend onEvent)
+commands::chat::chat_explain | produces | ExplainEvent (Channel<ExplainEvent> -> ipc.chatExplain onEvent)
+
+================================================================================
+6. FRONTEND IMPORT GRAPH (whole src/ tree)
+================================================================================
+
+src/main.tsx | uses | src/app/ipc
+src/main.tsx | uses | src/app/settingsStore
+src/main.tsx | uses | src/app/voiceStore
+src/main.tsx | uses | src/components/common/ErrorBoundary
+src/main.tsx | uses | src/pages/Bubble/Bubble
+src/main.tsx | uses | src/pages/Chat/ChatApp
+src/main.tsx | uses | src/pages/Overlay/Overlay
+src/main.tsx | uses | src/pages/Settings/SettingsApp
+src/main.tsx | uses | src/pages/Setup/SetupWizard
+src/main.tsx | uses | src/styles/tokens.css
+src/main.tsx | uses | src/styles/base.css
+src/main.tsx | uses | src/styles/chat.css
+src/main.tsx | uses | src/styles/settings.css
+
+src/app/ipc | uses | @tauri-apps/api/core (Channel, invoke)
+src/app/ipc | uses | @tauri-apps/api/event (listen)
+src/app/ipc | uses | src/app/types (type-only)
+src/app/ipc | depends_on | src-tauri/src/commands/*  (the ONLY frontend module naming a Rust command)
+src/app/strings | uses | src/app/strings.en.json
+src/app/strings | depends_on | src-tauri/src/errors.rs (the `errors.<code>` key space)
+src/app/providers | uses | src/app/types (type-only)
+src/app/vision | uses | src/app/ipc
+src/app/vision | uses | src/app/settingsStore
+src/app/vision | uses | src/app/strings
+src/app/attach | uses | @tauri-apps/plugin-dialog (open)
+src/app/attach | uses | src/app/chatStore
+src/app/attach | uses | src/app/ipc
+src/app/attach | uses | src/app/strings
+src/app/attach | uses | src/app/vision
+src/app/chatStore | uses | zustand
+src/app/chatStore | uses | src/app/ipc
+src/app/chatStore | uses | src/app/types
+src/app/settingsStore | uses | zustand
+src/app/settingsStore | uses | src/app/ipc
+src/app/settingsStore | uses | src/app/types
+src/app/settingsHighlight | uses | zustand
+src/app/voiceStore | uses | zustand
+src/app/voiceStore | uses | src/app/chatStore (static)
+src/app/voiceStore | uses | src/app/ipc
+src/app/voiceStore | uses | src/app/settingsStore
+src/app/voiceStore | uses | src/app/strings
+src/app/voiceStore | uses | src/app/types
+src/app/knownLanguages | (no imports)
+src/app/soundTags | (no imports)
+src/app/types | (no imports)
+
+src/components/chat/Composer | uses | src/app/attach
+src/components/chat/Composer | uses | src/app/chatStore
+src/components/chat/Composer | uses | src/app/ipc
+src/components/chat/Composer | uses | src/app/settingsStore
+src/components/chat/Composer | uses | src/app/strings
+src/components/chat/Composer | uses | src/app/voiceStore
+src/components/chat/Composer | uses | src/components/chat/Attachments
+src/components/chat/Composer | uses | src/components/chat/ModelPicker
+src/components/chat/Composer | uses | src/components/common/controls
+src/components/chat/Composer | uses | src/components/voice/LevelMeter
+src/components/chat/Composer | uses | src/components/voice/VoiceBars
+src/components/chat/MessageBubble | uses | src/app/chatStore
+src/components/chat/MessageBubble | uses | src/app/ipc
+src/components/chat/MessageBubble | uses | src/app/settingsStore
+src/components/chat/MessageBubble | uses | src/app/soundTags
+src/components/chat/MessageBubble | uses | src/app/strings
+src/components/chat/MessageBubble | uses | src/app/types
+src/components/chat/MessageBubble | uses | src/app/voiceStore
+src/components/chat/MessageBubble | uses | src/components/chat/Attachments
+src/components/chat/MessageBubble | uses | src/components/chat/Markdown
+src/components/chat/MessageBubble | uses | src/components/chat/Sources
+src/components/chat/MessageBubble | uses | src/components/chat/ToolActivity
+src/components/chat/MessageBubble | uses | src/components/common/BrandMark
+src/components/chat/MessageBubble | uses | src/components/common/controls
+src/components/chat/Attachments | uses | src/app/ipc
+src/components/chat/Attachments | uses | src/app/strings
+src/components/chat/Attachments | uses | src/app/types
+src/components/chat/Markdown | uses | src/app/soundTags
+src/components/chat/Markdown | uses | src/app/strings
+src/components/chat/Markdown | uses | src/components/common/controls
+src/components/chat/Markdown | uses | react-markdown + remark-gfm
+src/components/chat/ModelPicker | uses | src/app/ipc
+src/components/chat/ModelPicker | uses | src/app/providers
+src/components/chat/ModelPicker | uses | src/app/settingsStore
+src/components/chat/ModelPicker | uses | src/app/strings
+src/components/chat/ModelPicker | uses | src/app/types
+src/components/chat/SelectionMenu | uses | src/app/chatStore
+src/components/chat/SelectionMenu | uses | src/app/ipc
+src/components/chat/SelectionMenu | uses | src/app/settingsStore
+src/components/chat/SelectionMenu | uses | src/app/strings
+src/components/chat/SelectionMenu | uses | src/components/chat/Markdown
+src/components/chat/SelectionMenu | uses | src/components/common/controls
+src/components/chat/SelectionMenu | uses | react-dom (createPortal)
+src/components/chat/Sources | uses | src/app/strings
+src/components/chat/Sources | uses | src/app/types
+src/components/chat/Sources | uses | src/components/common/controls
+src/components/chat/ToolActivity | uses | src/app/chatStore
+src/components/chat/ToolActivity | uses | src/app/strings
+src/components/chat/ToolConfirmDialog | uses | src/app/chatStore
+src/components/chat/ToolConfirmDialog | uses | src/app/strings
+src/components/chat/ToolConfirmDialog | uses | src/components/common/controls
+
+src/components/common/BrandMark | (no imports)
+src/components/common/ErrorBoundary | uses | react
+src/components/common/controls | uses | @tauri-apps/plugin-opener (openUrl)
+src/components/common/controls | uses | src/app/providers
+src/components/common/controls | uses | src/app/settingsStore
+src/components/common/controls | uses | src/app/strings
+src/components/common/controls | uses | src/app/types
+
+src/components/history/HistoryPanel | uses | @tauri-apps/plugin-dialog (save)
+src/components/history/HistoryPanel | uses | src/app/chatStore
+src/components/history/HistoryPanel | uses | src/app/ipc
+src/components/history/HistoryPanel | uses | src/app/strings
+src/components/history/HistoryPanel | uses | src/app/types
+src/components/history/HistoryPanel | uses | src/components/common/controls
+
+src/components/settings/GpuCard | uses | src/app/ipc
+src/components/settings/GpuCard | uses | src/app/strings
+src/components/settings/GpuCard | uses | src/app/types
+src/components/settings/GpuCard | uses | src/components/common/controls
+src/components/settings/GpuCard | uses | src/components/settings/layout
+src/components/settings/LanguagePicker | uses | src/app/knownLanguages
+src/components/settings/ModelManager | uses | src/app/ipc
+src/components/settings/ModelManager | uses | src/app/strings
+src/components/settings/ModelManager | uses | src/app/types
+src/components/settings/ModelManager | uses | src/components/common/controls
+src/components/settings/ModelManager | uses | src/components/settings/layout
+src/components/settings/ShortcutInput | uses | src/app/ipc
+src/components/settings/ShortcutInput | uses | src/app/strings
+src/components/settings/layout | uses | src/app/settingsHighlight
+src/components/settings/layout | implements | the highlight-pulse lifecycle (calls clear() after the animation)
+
+src/components/voice/CallView | uses | src/app/chatStore
+src/components/voice/CallView | uses | src/app/ipc
+src/components/voice/CallView | uses | src/app/settingsStore
+src/components/voice/CallView | uses | src/app/soundTags
+src/components/voice/CallView | uses | src/app/strings
+src/components/voice/CallView | uses | src/app/voiceStore
+src/components/voice/CallView | uses | src/components/common/BrandMark
+src/components/voice/CallView | uses | src/components/common/controls
+src/components/voice/CallView | uses | src/components/voice/LevelMeter
+src/components/voice/CallView | uses | src/components/voice/SpokenText
+src/components/voice/SpokenText | uses | src/app/voiceStore
+src/components/voice/SpokenText | uses | src/components/common/controls
+src/components/voice/VoiceBars | uses | src/app/voiceStore
+src/components/voice/LevelMeter | (no imports)
+
+src/pages/Bubble/Bubble | uses | @tauri-apps/api/window
+src/pages/Bubble/Bubble | uses | src/app/ipc
+src/pages/Bubble/Bubble | uses | src/app/strings
+src/pages/Bubble/Bubble | uses | src/app/types
+src/pages/Chat/ChatApp | uses | @tauri-apps/api/webview + api/window
+src/pages/Chat/ChatApp | uses | src/app/attach
+src/pages/Chat/ChatApp | uses | src/app/chatStore
+src/pages/Chat/ChatApp | uses | src/app/ipc
+src/pages/Chat/ChatApp | uses | src/app/providers
+src/pages/Chat/ChatApp | uses | src/app/settingsStore
+src/pages/Chat/ChatApp | uses | src/app/strings
+src/pages/Chat/ChatApp | uses | src/app/types
+src/pages/Chat/ChatApp | uses | src/app/voiceStore
+src/pages/Chat/ChatApp | uses | src/components/chat/Composer
+src/pages/Chat/ChatApp | uses | src/components/chat/MessageBubble
+src/pages/Chat/ChatApp | uses | src/components/chat/SelectionMenu
+src/pages/Chat/ChatApp | uses | src/components/chat/ToolConfirmDialog
+src/pages/Chat/ChatApp | uses | src/components/common/BrandMark
+src/pages/Chat/ChatApp | uses | src/components/common/controls
+src/pages/Chat/ChatApp | uses | src/components/history/HistoryPanel
+src/pages/Chat/ChatApp | uses | src/components/voice/CallView
+src/pages/Overlay/Overlay | uses | @tauri-apps/api/window
+src/pages/Overlay/Overlay | uses | src/app/ipc
+src/pages/Overlay/Overlay | uses | src/app/settingsStore
+src/pages/Overlay/Overlay | uses | src/app/strings
+src/pages/Overlay/Overlay | uses | src/app/types
+src/pages/Overlay/Overlay | uses | src/components/common/controls
+src/pages/Overlay/Overlay | uses | src/components/voice/LevelMeter
+src/pages/Settings/SettingsApp | uses | src/app/ipc
+src/pages/Settings/SettingsApp | uses | src/app/settingsHighlight
+src/pages/Settings/SettingsApp | uses | src/app/strings
+src/pages/Settings/SettingsApp | uses | src/pages/Settings/searchIndex
+src/pages/Settings/SettingsApp | uses | src/pages/Settings/sections/About
+src/pages/Settings/SettingsApp | uses | src/pages/Settings/sections/Ai
+src/pages/Settings/SettingsApp | uses | src/pages/Settings/sections/Basic
+src/pages/Settings/SettingsApp | uses | src/pages/Settings/sections/Dictation
+src/pages/Settings/SettingsApp | uses | src/pages/Settings/sections/Languages
+src/pages/Settings/SettingsApp | uses | src/pages/Settings/sections/Mcp
+src/pages/Settings/SettingsApp | uses | src/pages/Settings/sections/Memory
+src/pages/Settings/SettingsApp | uses | src/pages/Settings/sections/System
+src/pages/Settings/SettingsApp | uses | src/pages/Settings/sections/Voice
+src/pages/Settings/SettingsApp | uses | src/pages/Settings/sections/WebSearch
+src/pages/Settings/searchIndex | uses | src/app/strings.en.json
+src/pages/Settings/sections/About | uses | src/app/ipc + src/app/strings + src/app/types + components/settings/layout
+src/pages/Settings/sections/Ai | uses | src/app/ipc + src/app/providers + src/app/strings + src/app/types + common/controls + settings/layout
+src/pages/Settings/sections/Ai | uses | src/pages/Settings/sections/Basic (useS)
+src/pages/Settings/sections/Basic | uses | @tauri-apps/plugin-dialog (open, model folder picker)
+src/pages/Settings/sections/Basic | uses | src/app/ipc + src/app/settingsStore + src/app/strings + src/app/types
+src/pages/Settings/sections/Basic | uses | common/controls + settings/layout + settings/ShortcutInput
+src/pages/Settings/sections/Dictation | uses | src/app/ipc + src/app/strings + src/app/types
+src/pages/Settings/sections/Dictation | uses | common/controls + settings/layout + settings/ShortcutInput
+src/pages/Settings/sections/Dictation | uses | src/pages/Settings/sections/Ai (model list for correction)
+src/pages/Settings/sections/Dictation | uses | src/pages/Settings/sections/Basic (useS)
+src/pages/Settings/sections/Languages | uses | src/app/knownLanguages + src/app/strings + src/app/types
+src/pages/Settings/sections/Languages | uses | common/controls + settings/LanguagePicker + settings/layout
+src/pages/Settings/sections/Languages | uses | src/pages/Settings/sections/Basic (useS)
+src/pages/Settings/sections/Mcp | uses | src/app/ipc + src/app/settingsStore + src/app/strings + src/app/types + common/controls + settings/layout
+src/pages/Settings/sections/Memory | uses | src/app/ipc + src/app/strings + src/app/types + common/controls + settings/layout
+src/pages/Settings/sections/Memory | uses | src/pages/Settings/sections/Basic (useS)
+src/pages/Settings/sections/System | uses | src/app/ipc + src/app/strings + src/app/types + common/controls + settings/layout
+src/pages/Settings/sections/System | uses | src/pages/Settings/sections/Basic (useS)
+src/pages/Settings/sections/Voice | uses | @tauri-apps/plugin-dialog (open, extra model folder)
+src/pages/Settings/sections/Voice | uses | src/app/ipc + src/app/strings + src/app/types + common/controls
+src/pages/Settings/sections/Voice | uses | settings/GpuCard + settings/layout + settings/ModelManager + voice/LevelMeter
+src/pages/Settings/sections/Voice | uses | src/pages/Settings/sections/Basic (useS)
+src/pages/Settings/sections/WebSearch | uses | src/app/ipc + src/app/settingsStore + src/app/strings + src/app/types + common/controls + settings/layout
+src/pages/Setup/SetupWizard | uses | src/app/ipc + src/app/settingsStore + src/app/strings + src/app/types + settings/ShortcutInput
+src/pages/Setup/SetupWizard | uses | src/pages/Settings/sections/System (CheckItem)
+
+--- test files ---
+src/test/setup | subscribes_to | (mocks @tauri-apps/api/core, api/event, plugin-opener, plugin-dialog)
+src/test/ui.test.tsx | uses | src/app/chatStore, settingsStore, types, voiceStore
+src/test/ui.test.tsx | uses | components/chat/Composer, chat/MessageBubble, common/controls, settings/ShortcutInput, voice/CallView, voice/SpokenText
+src/test/ui.test.tsx | reads | src-tauri/capabilities/default.json (asserts global-shortcut:default)
+src/test/settings.test.tsx | uses | src/app/settingsStore, src/app/types
+src/test/settings.test.tsx | uses | components/chat/ModelPicker, pages/Bubble/Bubble, pages/Settings/SettingsApp
+src/test/selection.test.tsx | uses | src/app/chatStore, settingsStore, types, components/chat/SelectionMenu
+src/test/history.test.tsx | uses | src/app/ipc, src/app/strings, src/app/types, components/history/HistoryPanel
+src/test/shortcutinput.test.tsx | uses | src/components/settings/ShortcutInput
+src/test/soundTags.test.ts | uses | src/app/soundTags, src/app/strings
+src/test/soundTags.test.ts | reads | src-tauri/src/services/chat/prompt.rs (DEFAULT_EXPRESSIVE_INSTRUCTION parity)
+src/test/strings.test.ts | uses | src/app/strings
+src/test/strings.test.ts | reads | every non-test src/**/*.ts and src/**/*.tsx (key coverage)
+src/test/voiceSessions.test.ts | uses | src/app/types, src/app/voiceStore
+
+================================================================================
+7. PERSISTENCE EDGES (what is written where)
+================================================================================
+
+settings::SettingsStore::set | writes | database::settings (key `app_settings`)
+settings::SettingsStore::get | reads | database::settings
+settings::SettingsStore::load | reads | database::settings
+services::mcp::config::Db::save_mcp_server | writes | database::mcp_servers
+services::mcp::config::Db::set_tool_permission | writes | database::mcp_tool_permissions
+services::mcp::config::Db::clear_tool_permissions | writes | database::mcp_tool_permissions
+services::mcp::config::Db::delete_mcp_server | writes | database::mcp_servers (cascades to permissions)
+database::conversations::Db::insert_message | writes | database::messages
+database::conversations::Db::insert_message | produces | database::messages_fts rows (via triggers messages_ai/messages_au/messages_ad)
+services::chat::orchestrator | writes | database::messages (user, assistant, tool rows)
+database::dictation::Db::dictation_add | writes | database::dictation_history (trimmed to 100 rows)
+database::export::Db::import_conversations | writes | database::conversations + database::messages (fresh ids)
+database::migrations::run | writes | database::conversations, messages, messages_fts, settings, mcp_servers, mcp_tool_permissions, dictation_history
+services::models::ModelStore::install_bundled | writes | <models_dir>/silero-vad/silero_vad.onnx + .complete
+services::models::download::install | writes | <models_dir>/<id>/.complete
+services::models::download::install | reads | Hugging Face | GitHub
+services::gpu::install | writes | <data_dir>/gpu/cuda-1.13.8 (7 required DLLs)
+services::attachments::AttachmentStore::ingest_* | writes | <data_dir>/attachments/<id> and <id>.txt
+services::attachments::AttachmentStore::gc | writes | <data_dir>/attachments (deletes orphans)
+logging::init | writes | <data_dir>/logs/local-assistant.<date>.log
+desktop::shortcuts::register_all | writes | OS global-shortcut registrations
+desktop::autostart::set_enabled | writes | Windows Run registry entry (via auto_launch)
+
+================================================================================
+8. DUPLICATION / SYNC-CONTRACT EDGES (must be kept in step manually)
+================================================================================
+
+src/app/providers.ts::PROVIDERS | depends_on | settings::mod::PROVIDERS  (same 4 ids and base URLs)
+src/app/providers.ts::PROVIDERS | depends_on | settings::mod::DEFAULT_LMSTUDIO_URL
+src/app/vision.ts::REPORTS_VISION | depends_on | the provider list that publishes a `vision` flag
+src/app/soundTags.ts::stripSoundTags | depends_on | services::tts::speech_text (same rule set in two languages)
+src/app/voiceStore.ts::SPECTRUM_BANDS | depends_on | services::audio::SPECTRUM_BANDS  (both 24)
+src/app/strings.ts::errorMessage | depends_on | errors::AppError::code (the `errors.<code>` key space)
+src/test/soundTags.test.ts | depends_on | services::chat::prompt::DEFAULT_EXPRESSIVE_INSTRUCTION
+src/test/strings.test.ts | depends_on | src/app/strings.en.json (every literal t() key must exist)
+src/test/ui.test.tsx | depends_on | src-tauri/capabilities/default.json (global-shortcut:default)
+desktop::window (MENU_ROOM, CARD_MARGIN, CARD_RADIUS) | depends_on | src/styles/settings.css (.overlay-card, --menu-room)
+desktop::icon::accent_rgb | depends_on | settings::mod::sanitize (the allowed accent set) and src/app/settingsStore.ts::ACCENTS
+desktop::window (window labels) | depends_on | src-tauri/capabilities/default.json (`windows` array)
+lib::run (env var LA_OPEN) | depends_on | src/main.tsx (routeFromHash) for debug navigation

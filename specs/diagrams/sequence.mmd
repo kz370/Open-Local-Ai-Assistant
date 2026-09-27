@@ -1,0 +1,267 @@
+%% Open Local Assistant - Runtime Sequences
+%% Three representative end-to-end flows:
+%%   1. A full chat turn that ends in a tool round with a permission confirmation
+%%   2. A hands-free voice call: hotkey, mic, transcript, auto-submit, spoken reply
+%%   3. A consented model download with SHA-256 verification and cancellation
+%% Node names match specs/diagrams/architecture.mmd and dataflow.mmd.
+
+sequenceDiagram
+    autonumber
+
+    %% ==================================================================
+    %% 1. Full chat turn with a tool round
+    %% ==================================================================
+    rect rgb(232, 240, 254)
+        Note over U,BUB: SEQUENCE 1 - A full chat turn with a tool round (user asks for current information and a search tool is enabled)
+        participant U as User
+        participant COMP as Composer
+        participant CS as chatStore
+        participant IPC as ipc.ts
+        participant CMD as commands/chat.rs
+        participant ENG as ChatEngine
+        participant DBP as Db (assistant.db)
+        participant TOOLS as CombinedTools (MCP + WebSearch)
+        participant LLM as LM Studio / hosted provider
+        participant TTS as TtsService
+        participant BUB as MessageBubble
+        participant DLG as ToolConfirmDialog
+    end
+
+    U->>COMP: types "What is the latest PHP version?" and presses Enter
+    COMP->>CS: send(text, attachmentIds)
+    CS->>CS: new turnId, append optimistic user message and pending assistant message
+    CS->>IPC: chatSend(input, onEvent) with Channel(ChatEvent)
+    IPC->>CMD: invoke chat_send(input, onEvent)
+    CMD->>ENG: send(input, emit)
+
+    ENG->>DBP: claim staged attachments, then create or load the conversation
+    ENG->>ENG: detect language: spoken hint, then text detection, then conversation language
+    ENG->>DBP: insert_message(user) - stored exactly as typed
+    ENG->>ENG: ModelResolver.resolve: manual, or scored automatic selection
+    ENG->>ENG: build_system_prompt - byte-identical to the previous turn
+    ENG->>ENG: turn_note: local time + detected language + freshness hint
+    ENG->>DBP: list_messages, then build_history (drop incomplete tool exchanges, trim to 60% of context)
+    ENG->>ENG: append_to_last_user(messages, note) - the note rides on the LATEST user message only
+    ENG-->>CS: ChatEvent::Started(conversationId, userMessage, model, language, newConversation)
+    CS->>CS: flush the buffer, replace the optimistic message with the persisted one
+    CS-->>BUB: re-render
+
+    rect rgb(230, 244, 234)
+        Note over ENG,LLM: Round 1 - stream the answer, with tools offered
+        ENG->>LLM: POST /chat/completions (messages, tools, stream=true, include_usage)
+        LLM-->>ENG: SSE data frames
+        ENG->>ENG: SseDecoder to StreamChunk, ThinkFilter splits reasoning from content
+        loop every visible delta
+            ENG->>CS: ChatEvent::Delta / Reasoning
+            CS->>CS: bufferStream: batch, flush at most every 50 ms
+            CS-->>BUB: one re-render per flush (capped at about 20 per second)
+        end
+        ENG->>TTS: SpeechSink.begin(turn_id) when the reply will be spoken
+        loop every visible delta
+            ENG->>TTS: push_text(turn_id, text)
+        end
+    end
+
+    rect rgb(252, 232, 230)
+        Note over U,LLM: The model asked for the web search tool
+        LLM-->>ENG: tool_calls (accumulated from delta fragments)
+        ENG->>DBP: insert_message(role=assistant_tool_calls, tool_calls)
+        ENG->>ENG: look up the spec, permission is Ask, so gate the call
+        ENG-->>CS: ChatEvent::ToolAwaitingConfirmation(callId, tool, args)
+        CS->>DLG: confirmation = activity, then render the dialog
+        DLG-->>U: show server, tool, category and arguments
+        U->>DLG: Allow
+        DLG->>CS: confirmTool(true)
+        CS->>IPC: chatConfirmTool(callId, true)
+        IPC->>CMD: invoke chat_confirm_tool
+        CMD->>ENG: confirm_tool(callId, true) -> oneshot::Sender<bool>
+        ENG-->>CS: ChatEvent::ToolStarted(callId)
+        ENG->>TOOLS: call_tool(spec, args) with a 90 s timeout
+        alt the user denies
+            ENG-->>CS: ChatEvent::ToolFinished(denied=true)
+            Note right of ENG: The model is told the user declined, so it answers without the tool instead of retrying.
+        else allowed
+            TOOLS->>LLM: HTTPS GET (SearXNG, or DuckDuckGo HTML)
+            LLM-->>TOOLS: result HTML or JSON
+            TOOLS-->>ENG: ToolOutput(text, sources extracted from the result)
+            ENG-->>CS: ChatEvent::ToolFinished(ok, durationMs, resultPreview, sources)
+        end
+        ENG->>DBP: insert_message(role=tool, tool_call_id)
+    end
+
+    rect rgb(230, 244, 234)
+        Note over ENG,LLM: Round 2 - answer with the tool result in context (at most 6 rounds)
+        ENG->>LLM: POST /chat/completions (same prefix, plus the tool result)
+        LLM-->>ENG: SSE data frames
+        loop every visible delta
+            ENG->>CS: ChatEvent::Delta
+            CS->>CS: bufferStream, flush at 50 ms
+            CS-->>BUB: append text, render
+        end
+        alt a model that never stops calling tools
+            Note over ENG: At round 6 tools are withheld and an explicit "tool limit reached" instruction is appended, sent as a user message because some chat templates reject a non-first system message.
+        end
+    end
+
+    ENG->>TTS: SpeechSink.finish(turn_id) - queued sentences are spoken
+    ENG->>DBP: insert_message(assistant: content, reasoning, deduplicated sources, tool activity, stats)
+    ENG-->>CS: ChatEvent::Done(message)
+    CS->>CS: swap the pending message for the persisted one, keep live tool details
+    CS-->>BUB: final render with sources and stats
+    CS->>CS: sendNextQueued() if messages were typed while streaming
+    Note over CMD,CS: Cancelling (Esc, the stop button, or a new voice utterance) cancels the token, the HTTP body, the tool call and the speech sink. The partial reply is persisted and ChatEvent::Error with code "cancelled" is emitted.
+
+    %% ==================================================================
+    %% 2. Hands-free voice call
+    %% ==================================================================
+    rect rgb(253, 247, 224)
+        Note over U,HOT: SEQUENCE 2 - A hands-free voice call, from the global hotkey to a spoken reply with word-by-word highlighting
+        participant U as User
+        participant HOT as shortcuts watcher (Win32 GetAsyncKeyState, 25 ms poll)
+        participant DSK as desktop/shortcuts.rs
+        participant VCS as voiceStore
+        participant IPC as ipc.ts
+        participant CMD2 as commands/voice.rs
+        participant VS as VoiceSessions
+        participant CAP as mic-capture thread
+        participant SES as voice-session thread
+        participant REC as sherpa-onnx (Silero VAD + recogniser)
+        participant PLAY as audio-playback thread
+        participant TTS2 as TtsService
+        participant PROG as tts-progress thread
+        participant SPK as SpokenText
+    end
+
+    U->>HOT: presses the global shortcut (Ctrl+Space)
+    alt modifier-only combination
+        HOT->>HOT: observe-only edge detect, the key is never swallowed
+        HOT->>DSK: dispatch_shortcut_action(Toggle, pressed=true)
+    else a combination the global-shortcut plugin registered
+        DSK->>DSK: plugin ShortcutEvent handler
+    end
+    DSK->>VCS: main window shown and focused
+    U->>VCS: clicks the waveform button (or the hotkey arms push-to-talk)
+    VCS->>IPC: voiceStart("handsFree")
+    IPC->>CMD2: invoke voice_start
+    CMD2->>VS: start(HandsFree) -> session number
+    VS->>VS: resolve the language hint, then stop and join the previous session
+    VS->>CAP: open the microphone (cpal input stream)
+    VS-->>VCS: VoiceEvent::State(listening, session, device, streaming)
+    VS->>SES: spawn the voice-session thread
+
+    rect rgb(252, 232, 230)
+        Note over CAP,REC: Continuous capture while the user speaks
+        loop every 20 ms of audio
+            CAP->>CAP: downmix to mono, resample to 16 kHz, 100 Hz high-pass
+            CAP->>CAP: RMS level + 24-band spectrum about 20 times per second
+            CAP->>SES: CaptureEvent::Level and CaptureEvent::Samples
+        end
+        SES->>SES: warm_up: load the recogniser on a scoped thread, keep the meter moving, keep the backlog
+        alt streaming recogniser
+            SES->>REC: accept(samples), then text() gives live partials
+            REC-->>SES: is_endpoint
+        else non-streaming recogniser
+            SES->>REC: 512-sample windows into Silero VAD (provider "cpu", always)
+            REC-->>SES: finished utterance
+            Note right of REC: The VAD is pinned to the CPU because it runs every 32 ms and CUDA launch overhead would compete with the chat model.
+            SES->>REC: transcribe the utterance
+        end
+        alt the assistant is speaking, or was 700 ms ago, or the mic is muted
+            SES->>SES: input_muted: drop the samples, do not count the silence toward the idle timeout
+        end
+    end
+
+    SES-->>VCS: VoiceEvent::Transcript(text, language, audioMs, elapsedMs) on voice://event
+    VCS->>VCS: lastTranscript set, partial cleared
+    VCS->>CS: send(text, spokenLanguage, voice=true) - hands-free always auto-submits
+    Note over CS,TTS2: From here the turn is the sequence-1 chat turn, but voice=true forces a spoken reply.
+    CS->>CS: if a turn is running, stop it first: a voice turn barges in
+
+    rect rgb(241, 243, 244)
+        Note over TTS2,SPK: Streaming speech, sentence by sentence
+        loop every complete sentence in the reply
+            TTS2->>TTS2: SentenceBuffer skips code fences, decimals and abbreviations and URLs do not end a sentence, the first sentence is allowed at 4 characters
+            TTS2->>TTS2: detect the sentence language (threshold 0.5), else keep the previous language
+            TTS2->>TTS2: voices::select_voice from the language entry and the preferred gender
+            TTS2->>TTS2: push a Job to the tts-synth thread (older generations are dropped)
+            TTS2->>PLAY: enqueue(Clip)
+            PLAY-->>TTS2: current clip id changes
+            TTS2->>PROG: the progress thread notices the new clip
+            PROG-->>VCS: TtsEvent::Sentence(tag, text, durationMs) on tts://event
+            VCS->>VCS: spoken = { tag, text, durationMs, startedAt: performance.now() }
+            VCS-->>SPK: re-render with the sentence timing
+            SPK->>SPK: highlight the current word, shift the clock forward across pauses
+        end
+        TTS2-->>VCS: TtsEvent::Idle when the queue runs dry
+        TTS2->>VS: is_speaking probe (used only for the mic gate)
+    end
+
+    U->>U: speaks again, or clicks mute / pause / end
+    VCS->>IPC: voiceStop(true) or ttsStop()
+    IPC->>CMD2: invoke voice_stop
+    CMD2->>VS: stop(discard) - never blocks, the thread is joined by the next start
+    VS-->>VCS: VoiceEvent::State(idle, session)
+
+    %% ==================================================================
+    %% 3. Consented model download
+    %% ==================================================================
+    rect rgb(255, 244, 229)
+        Note over U,FS: SEQUENCE 3 - A consented model download: staged, hashed in the download loop, SHA-256 verified, atomically installed, cancellable
+        participant U as User
+        participant MM as ModelManager
+        participant IPC as ipc.ts
+        participant CMD3 as commands/voice.rs
+        participant ST as AppState.downloads
+        participant DL as models/download.rs
+        participant HOST as Hugging Face / GitHub release
+        participant FS as models directory
+        participant MEM as commands/memory.rs
+    end
+
+    MM-->>U: show the pinned catalogue (name, languages, size, quality, license)
+    U->>MM: ticks a model and clicks Download (explicit consent)
+    MM->>IPC: modelsDownload(ids)
+    IPC->>CMD3: invoke models_download
+    CMD3->>ST: reserve a CancellationToken for every requested id
+    CMD3->>CMD3: emit models://changed - the rows grey out as queued at once
+    CMD3-->>MM: returns immediately, the work runs in the background
+    CMD3->>DL: install(store, model, token, on_progress) - sequential, one model at a time
+    DL->>DL: create models/.staging-id (any previous staging is removed first)
+
+    loop every file of the model
+        DL->>HOST: GET the pinned release asset
+        loop every streamed chunk
+            DL->>FS: write models/.staging-id/download-n.part
+            DL->>DL: hasher.update(chunk) - hashed in the SAME loop, never re-read
+            DL-->>MM: DownloadProgress(downloading) at most every 250 ms
+            opt the user clicks Cancel
+                MM->>IPC: modelsCancel(id)
+                IPC->>CMD3: invoke models_cancel
+                CMD3->>ST: token.cancel()
+                ST-->>DL: the select! arm fires on cancel.cancelled()
+            end
+        end
+        DL-->>MM: DownloadProgress(verifying)
+        alt the digest matches the pinned RemoteFile.sha256
+            DL->>DL: accept the file
+        else checksum mismatch
+            DL->>DL: AppError::Download("checksum mismatch")
+        end
+        opt the file is an archive
+            DL->>FS: extract tar.bz2 and strip the top folder, safe_join rejects absolute paths and dot dot, links and special files are skipped
+        end
+    end
+
+    alt verified
+        DL->>FS: remove any previous models/id, then atomic rename .staging-id to models/id
+        DL->>FS: write models/id/.complete (id + installedAt)
+        DL-->>MM: DownloadProgress(done)
+        DL->>MEM: if a speech model was loaded, reload it in the background
+        MEM-->>DL: stt.with_recognizer on a spawn_blocking thread
+    else cancelled or failed
+        DL->>FS: remove models/.staging-id entirely
+        DL-->>MM: DownloadProgress(cancelled) or DownloadProgress(error)
+        Note right of FS: Nothing is ever installed unless every file of the model verified.
+    end
+    DL->>ST: remove the token
+    CMD3->>CMD3: emit models://changed - the catalogue and installed list refresh

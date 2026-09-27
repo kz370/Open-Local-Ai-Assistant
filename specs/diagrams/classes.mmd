@@ -1,0 +1,1009 @@
+%% Open Local Assistant - Core Domain Model
+%% Class diagram of the types that cross the IPC boundary or define the domain.
+%% Rust type names are used verbatim; the wire format is camelCase
+%% (serde rename_all = "camelCase" on every type below).
+%% Generics are written with the Mermaid ~...~ notation.
+%% Companion diagrams: architecture.mmd, dataflow.mmd, sequence.mmd.
+
+classDiagram
+    direction TB
+
+    %% ==================================================================
+    %% Process state
+    %% ==================================================================
+    namespace STATE["Process state (state.rs)"] {
+
+        class AppState {
+            +paths: AppPaths
+            +db: Arc~Db~
+            +settings: Arc~SettingsStore~
+            +lmstudio: Arc~LmStudioService~
+            +resolver: Arc~ModelResolver~
+            +chat: Arc~ChatEngine~
+            +attachments: Arc~AttachmentStore~
+            +mcp: Arc~McpManager~
+            +web_search: Arc~WebSearch~
+            +models: Arc~ModelStore~
+            +stt: Arc~SttService~
+            +tts: Arc~TtsService~
+            +voice: Arc~VoiceSessions~
+            +hardware: HardwareInfo
+            +downloads: Mutex~HashMap~String~CancellationToken~
+            +model_loading: Mutex~HashSet~String~~
+            +dictation_busy: AtomicBool
+            +dictation_cancel: AtomicBool
+            +dictation_live_typer: LiveTyper
+            +dictation_review: Mutex~Option~ReviewPending~~
+            +dictation_target: AtomicIsize
+            +shortcut_errors: Mutex~Vec~String~~
+            +capabilities() LocalCapabilityManager
+        }
+
+        class AppPaths {
+            +data_dir: PathBuf
+            +models_dir: PathBuf
+            +logs_dir: PathBuf
+            +database: PathBuf
+        }
+    }
+
+    note for AppState "22 fields: 12 Arc service singletons, 1 value type (HardwareInfo),<br/>4 std Mutex maps or sets, 2 AtomicBool flags, 1 AtomicIsize<br/>(native window handle), 1 LiveTyper, 1 Option review slot, 1 error Vec.<br/>Every std lock is poison-tolerant: lock().unwrap_or_else into_inner."
+
+    %% ==================================================================
+    %% Settings tree
+    %% ==================================================================
+    namespace SETTINGS["Settings tree (settings/mod.rs)"] {
+
+        class Settings {
+            +general: GeneralSettings
+            +ai: AiSettings
+            +language: LanguageSettings
+            +stt: SttSettings
+            +tts: TtsSettings
+            +dictation: DictationSettings
+            +search: SearchSettings
+            +last_conversation_id: Option~String~
+            +version: u32
+            +sanitize() void
+        }
+
+        class GeneralSettings {
+            +theme: String
+            +accent: String
+            +assistant_name: String
+            +high_contrast: bool
+            +font_scale: f32
+            +start_with_os: bool
+            +start_minimized: bool
+            +preload_models: bool
+            +autoload_models: BTreeMap~String bool~
+            +always_on_top: bool
+            +window_position: String
+            +window: WindowGeometry
+            +compact: bool
+            +global_shortcut: String
+            +push_to_talk_shortcut: String
+            +developer_mode: bool
+            +first_run_complete: bool
+            +log_conversation_content: bool
+            +bubble_x: Option~i32~
+            +bubble_y: Option~i32~
+            +suggested_prompts: Vec~String~
+            +autoloads(key) bool
+        }
+
+        class AiSettings {
+            +provider: String
+            +server_url: String
+            +api_key: Option~String~
+            +provider_profiles: BTreeMap~String ProviderProfile~
+            +model_mode: String
+            +model: Option~String~
+            +temperature: f32
+            +context_length: Option~u32~
+            +max_tokens: Option~u32~
+            +system_prompt: String
+            +user_gender: String
+            +streaming: bool
+            +request_timeout_secs: u64
+            +show_reasoning: bool
+            +show_stats: bool
+            +model_aliases: BTreeMap~String String~
+            +hidden_models: Vec~String~
+            +free_models_only: bool
+            +paste_as_file_chars: u32
+            +explain_mode: String
+        }
+
+        class SttSettings {
+            +model: String
+            +language: String
+            +microphone: Option~String~
+            +hardware: String
+            +auto_submit: bool
+            +hands_free: bool
+            +push_to_talk: bool
+            +vad_threshold: f32
+            +silence_ms: u32
+            +extra_model_dirs: Vec~String~
+            +call_view: bool
+            +auto_stop_silence_secs: u32
+            +hands_free_timeout_secs: u32
+        }
+
+        class TtsSettings {
+            +speak_responses: bool
+            +legacy_voice_en: String
+            +legacy_voice_ar: String
+            +legacy_voice_de: String
+            +speed: f32
+            +volume: f32
+            +output_device: Option~String~
+            +preferred_gender: String
+            +voice_hardware: BTreeMap~String String~
+            +speak_after_reply: bool
+            +expressive_sounds: bool
+            +expressive_instruction: String
+        }
+
+        class DictationSettings {
+            +enabled: bool
+            +shortcut: String
+            +mode: String
+            +correction_enabled: bool
+            +correction_model: Option~String~
+            +insert_method: String
+            +add_trailing_space: bool
+            +language: String
+            +review_before_insert: bool
+            +history_enabled: bool
+            +overlay_x: Option~i32~
+            +overlay_y: Option~i32~
+        }
+
+        class SearchSettings {
+            +enabled: bool
+            +max_results: u32
+            +searxng_url: String
+            +searxng_enabled: bool
+            +searxng_source: String
+            +searxng_public_url: String
+            +primary: String
+        }
+
+        class LanguageSettings {
+            +response_language: String
+            +entries: Vec~LanguageEntry~
+            +arabic_tashkeel_enabled: bool
+            +arabic_tashkeel_instruction: String
+        }
+
+        class LanguageEntry {
+            +code: String
+            +display_name: String
+            +direction: String
+            +stt_language: String
+            +tts_voice: String
+            +built_in: bool
+        }
+
+        class ProviderProfile {
+            +server_url: String
+            +api_key: Option~String~
+            +model: Option~String~
+            +model_mode: String
+        }
+
+        class WindowGeometry {
+            +x: i32
+            +y: i32
+            +width: u32
+            +height: u32
+        }
+
+        class SettingsStore {
+            -db: Arc~Db~
+            -current: RwLock~Settings~
+            +load() AppResult
+            +get() Settings
+            +set(s) AppResult~Settings~
+            +update(f) AppResult~Settings~
+            -migrate() AppResult
+        }
+    }
+
+    note for Settings "One JSON document in the app_settings key-value row.<br/>Every field has a serde default, so documents written by older<br/>versions keep loading. sanitize() runs on load and on every save.<br/>version drives one-time migrations; CURRENT_VERSION is 4."
+
+    note for TtsSettings "12 fields, 3 of them legacy. voiceEn, voiceAr and voiceDe are<br/>serialised so a pre-v4 settings blob still deserialises; the v4 migration<br/>copies them into LanguageEntry.tts_voice and nothing reads them again.<br/>src/app/types.ts does not declare them: TS type and Rust type disagree."
+
+    note for GeneralSettings "21 fields. windowPosition is a locked preset unless it is<br/>custom: bottom-right, bottom-left or center is recomputed from the<br/>monitor work area on every show, resize, compact toggle and restore."
+
+    %% ==================================================================
+    %% Persistence
+    %% ==================================================================
+    namespace PERSIST["Persistence (database/*)"] {
+
+        class Db {
+            -conn: Mutex~Connection~
+            +open(path) AppResult
+            +open_in_memory() AppResult
+            +conn() MutexGuard
+            +get_kv(key) AppResult~Option~String~~
+            +set_kv(key, value) AppResult
+            +attachment_ids() AppResult~HashSet~String~~
+        }
+
+        class Conversation {
+            +id: String
+            +title: String
+            +created_at: String
+            +updated_at: String
+            +model: Option~String~
+            +language: Option~String~
+        }
+
+        class Message {
+            +id: String
+            +conversation_id: String
+            +role: String
+            +content: String
+            +language: Option~String~
+            +reasoning: Option~String~
+            +sources: Option~Value~
+            +tool_activity: Option~Value~
+            +tool_calls: Option~Value~
+            +tool_call_id: Option~String~
+            +attachments: Option~Value~
+            +stats: Option~Value~
+            +created_at: String
+        }
+
+        class SearchHit {
+            +conversation: Conversation
+            +snippet: String
+        }
+
+        class DictationEntry {
+            +id: String
+            +created_at: String
+            +raw: String
+            +text: String
+            +corrected: bool
+            +inserted: bool
+        }
+
+        class McpServerConfig {
+            +id: String
+            +name: String
+            +description: String
+            +transport: String
+            +command: Option~String~
+            +args: Vec~String~
+            +env: BTreeMap~String String~
+            +url: Option~String~
+            +headers: BTreeMap~String String~
+            +enabled: bool
+            +source: String
+            +created_at: String
+            +validate() AppResult
+        }
+
+        class ToolView {
+            +name: String
+            +description: String
+            +category: ToolCategory
+            +permission: Permission
+            +default_permission: Permission
+        }
+
+        class ServerStatus {
+            +config: McpServerConfig
+            +state: String
+            +error: Option~String~
+            +tools: Vec~ToolView~
+            +internet: bool
+        }
+
+        class ImportCandidate {
+            +name: String
+            +transport: String
+            +command: Option~String~
+            +args: Vec~String~
+            +url: Option~String~
+            +env_keys: Vec~String~
+            +already_configured: bool
+        }
+    }
+
+    note for Db "std::sync::Mutex around a single rusqlite::Connection.<br/>No pool: SQLite access here is short and serialised, and<br/>Connection is not Sync. Poison-tolerant lock.<br/>Schema: conversations, messages plus FTS5, kv, mcp_servers,<br/>mcp_tool_permissions, dictation_history, attachments."
+
+    note for Message "role is one of: user, assistant, tool, assistant_tool_calls.<br/>assistant_tool_calls carries tool_calls; each tool row carries tool_call_id.<br/>build_history drops an exchange whose results are missing, so a<br/>cancelled turn never poisons the next prompt."
+
+    %% ==================================================================
+    %% Voice and models
+    %% ==================================================================
+    namespace VOICE["Voice and models"] {
+
+        class VoiceInfo {
+            +id: String
+            +model_id: String
+            +name: String
+            +language: String
+            +speaker_id: i32
+            +engine: Engine
+            +quality: u8
+            +gender: String
+        }
+
+        class InstalledModel {
+            +id: String
+            +name: String
+            +kind: ModelKind
+            +engine: Engine
+            +languages: Vec~String~
+            +path: PathBuf
+            +source: String
+            +family: Option~String~
+            +streaming: bool
+            +gender: String
+            +size_bytes: u64
+        }
+
+        class CatalogEntry {
+            +id: String
+            +kind: ModelKind
+            +engine: Engine
+            +name: String
+            +languages: Vec~String~
+            +quality: u8
+            +min_ram_gb: u32
+            +license: String
+            +download_bytes: u64
+            +installed: bool
+            +recommended: bool
+            +downloading: bool
+            +deletable: bool
+        }
+
+        class IncompatibleModel {
+            +name: String
+            +path: PathBuf
+            +reason: String
+        }
+
+        class Recommendation {
+            +stt: String
+            +vad: String
+            +tts: String
+        }
+
+        class MemoryItem {
+            +key: String
+            +kind: String
+            +role: String
+            +model: String
+            +state: String
+            +detail: Option~String~
+            +autoload_key: String
+            +autoload: bool
+        }
+
+        class GpuStatus {
+            +supported: bool
+            +gpu_name: Option~String~
+            +installed: bool
+            +size_bytes: u64
+            +download_bytes: u64
+            +active: bool
+            +restart_required: bool
+        }
+
+        class GpuProgress {
+            +state: String
+            +downloaded_bytes: u64
+            +total_bytes: u64
+            +error: Option~String~
+        }
+
+        class DownloadProgress {
+            +model_id: String
+            +state: String
+            +downloaded_bytes: u64
+            +total_bytes: u64
+            +error: Option~String~
+        }
+
+        class ModelKind {
+            <<enumeration>>
+            Stt
+            Vad
+            Tts
+        }
+
+        class Engine {
+            <<enumeration>>
+            Whisper
+            SileroVad
+            Kokoro
+            Piper
+            Kitten
+            Supertonic
+        }
+    }
+
+    note for CatalogEntry "download_bytes is the sum of RemoteFile.size_bytes. The SHA-256<br/>digest and the pinned release URL come from the catalogue, so nothing<br/>is fetched until the user clicks Download. The built-in voice is<br/>supertonic-3-int8, 123 MB, 31 languages; built-in STT is whisper-small."
+
+    note for GpuStatus "The GPU pack is a directory of CUDA libraries, not a model.<br/>active stays false until the app has been relaunched from gpu/launcher,<br/>at which point restart_required flips to false."
+
+    note for MemoryItem "key is stt, voice:en, voice:ar, voice:de or llm:model-id.<br/>state is loaded, loading, idle, missing or failed. detail carries the<br/>real device (GPU or CPU) from services::gpu::is_active, which is the<br/>value VoiceCapability.acceleration hardcodes to cpu instead."
+
+    %% ==================================================================
+    %% Chat payloads
+    %% ==================================================================
+    namespace CHAT["Chat payloads"] {
+
+        class SendInput {
+            +turn_id: String
+            +conversation_id: Option~String~
+            +text: String
+            +spoken_language: Option~String~
+            +voice: bool
+            +attachment_ids: Vec~String~
+        }
+
+        class ChatEvent {
+            <<enumeration>>
+            Started
+            Delta
+            Reasoning
+            ToolStarted
+            ToolAwaitingConfirmation
+            ToolFinished
+            Done
+            Error
+        }
+
+        class ExplainEvent {
+            <<enumeration>>
+            Delta
+            Done
+            Error
+        }
+
+        class VoiceEvent {
+            <<enumeration>>
+            State
+            Level
+            Partial
+            Transcript
+            Error
+        }
+
+        class TtsEvent {
+            <<enumeration>>
+            Speaking
+            Sentence
+            Paused
+            Resumed
+            Idle
+            VoiceUnavailable
+            Error
+        }
+
+        class DictationStateEvent {
+            <<enumeration>>
+            Listening
+            Transcribing
+            Idle
+            Correcting
+            Review
+            Inserted
+            Empty
+            Cancelled
+            Error
+        }
+
+        class ToolSpec {
+            +llm_name: String
+            +server_id: String
+            +server_name: String
+            +tool_name: String
+            +description: String
+            +input_schema: Value
+            +category: ToolCategory
+            +permission: Permission
+        }
+
+        class ToolOutput {
+            +text: String
+            +is_error: bool
+            +sources: Vec~Source~
+        }
+
+        class Source {
+            +url: String
+            +title: Option~String~
+        }
+
+        class ActivityRecord {
+            +call_id: String
+            +server_name: String
+            +tool_name: String
+            +category: ToolCategory
+            +args: Value
+            +ok: bool
+            +denied: bool
+            +duration_ms: u64
+            +result_preview: String
+        }
+
+        class MessageStats {
+            +completion_tokens: u32
+            +tokens_per_second: Option~f32~
+            +first_token_ms: Option~u64~
+            +context_used: Option~u32~
+            +context_length: Option~u32~
+        }
+
+        class ToolCategory {
+            <<enumeration>>
+            Search
+            Fetch
+            Read
+            Write
+            Execute
+            Other
+        }
+
+        class Permission {
+            <<enumeration>>
+            Allow
+            Ask
+            Deny
+        }
+
+        class ListenMode {
+            <<enumeration>>
+            PushToTalk
+            HandsFree
+            Dictation
+            Test
+        }
+    }
+
+    note for ChatEvent "8 variants, delivered over Channel ChatEvent. Every variant<br/>carries turn_id, and the store ignores events whose turn_id is not the<br/>current turn, so a late event from a stopped turn cannot corrupt the<br/>visible conversation. Delta and Reasoning are batched at 50 ms on arrival."
+
+    note for VoiceEvent "5 variants, delivered on the voice://event global event. State<br/>carries a session number, so the idle of an older session cannot end a<br/>newer one in the UI. Level carries a 24-band spectrum at about 20 Hz."
+
+    note for TtsEvent "7 variants, delivered on the tts://event global event. Sentence<br/>carries the text and its duration so SpokenText can highlight each word in<br/>step; it is emitted by the tts-progress thread when playback actually<br/>starts, not when the clip is queued for synthesis."
+
+    note for DictationStateEvent "9 states, delivered on dictation://state to the overlay window<br/>only. Carries an optional result with raw, inserted, corrected and<br/>correctionError."
+
+    %% ==================================================================
+    %% Traits and their implementations
+    %% ==================================================================
+    namespace TRAITS["Traits and implementations"] {
+
+        class AiService {
+            <<interface>>
+            +test_connection() AppResult~ConnectionStatus~
+            +list_models() AppResult~Vec~ModelInfo~~
+            +load_model(id, ctx) AppResult
+            +chat(req, cancel, on_chunk) AppResult~ChatCompletion~
+        }
+
+        class ToolProvider {
+            <<interface>>
+            +available_tools() Vec~ToolSpec~
+            +call_tool(spec, args) AppResult~ToolOutput~
+        }
+
+        class SpeechSink {
+            <<interface>>
+            +begin(turn_id)
+            +push_text(turn_id, text)
+            +finish(turn_id)
+            +cancel(turn_id)
+            +expressive() bool
+        }
+
+        class LmStudioService {
+            -client: reqwest::Client
+            -remote_client: reqwest::Client
+            -native: AtomicBool
+            -base_url: RwLock~String~
+            -api_key: RwLock~Option~String~~
+            -timeout: RwLock~Duration~
+        }
+
+        class ModelResolver {
+            -ai: Arc~dyn AiService~
+            -cache: Mutex~Option~CacheEntry~~
+            +resolve(ai) AppResult~ResolvedModel~
+            +auto_selection() AppResult~Option~ModelSelection~~
+            +models(force) AppResult~Vec~ModelInfo~~
+            +invalidate()
+        }
+
+        class ChatEngine {
+            -db: Arc~Db~
+            -settings: Arc~SettingsStore~
+            -ai: Arc~dyn AiService~
+            -resolver: Arc~ModelResolver~
+            -tools: Arc~dyn ToolProvider~
+            -speech: Arc~dyn SpeechSink~
+            -attachments: Arc~AttachmentStore~
+            -active: Mutex~HashMap~String~CancellationToken~~
+            -confirmations: Mutex~HashMap~String~Sender~bool~~~
+            +send(input, emit) AppResult
+            +explain(id, selection, passage, emit)
+            +stop(turn_id)
+            +stop_all()
+            +confirm_tool(call_id, approved) bool
+            +is_busy() bool
+        }
+
+        class CombinedTools {
+            -providers: Vec~Arc~dyn ToolProvider~~
+        }
+
+        class WebSearch {
+            -http: reqwest::Client
+            -settings: Arc~SettingsStore~
+            -cache: Mutex~HashMap~String~CacheEntry~~
+            -instances: Mutex~Option~InstanceList~~
+        }
+
+        class McpManager {
+            -db: Arc~Db~
+            -inner: RwLock~Inner~
+            -on_change: Arc~dyn Fn~
+            -safe_mode: AtomicBool
+            +connect_enabled()
+            +connect(id) AppResult
+            +disconnect(id)
+            +statuses() AppResult~Vec~ServerStatus~~
+            +internet_available() bool
+            +safe_mode() bool
+            +set_safe_mode(on)
+        }
+
+        class TtsService {
+            -store: Arc~ModelStore~
+            -player: Arc~Player~
+            -jobs: Sender~Job~
+            -generation: Arc~AtomicU64~
+            -turns: Mutex~HashMap~String~TurnState~~
+            -queued: Arc~Mutex~HashMap~u64~QueuedSentence~~
+            -cancelled: Arc~Mutex~HashSet~String~~
+            -engines: Arc~Mutex~HashMap~String~OfflineTts~~
+            +voices() Vec~VoiceInfo~
+            +is_available(lang) bool
+            +is_speaking() bool
+            +speak(tag, text, lang_hint)
+            +replay_last() bool
+            +stop_all()
+            +preload_lang(lang, threads) AppResult
+        }
+
+        class SttService {
+            -store: Arc~ModelStore~
+            -hardware: HardwareInfo
+            +resolve_model(stt) Option~InstalledModel~
+            +loaded_model() Option~String~
+            +with_recognizer(settings, f)
+            +is_ready(stt) bool
+            +is_streaming(stt) bool
+            +vad_model_path() Option~PathBuf~
+            +unload()
+        }
+
+        class VoiceSessions {
+            -stt: Arc~SttService~
+            -settings: Arc~SettingsStore~
+            -emit: VoiceEmit
+            -speaking: SpeakingProbe
+            -muted: Arc~AtomicBool~
+            -active: Mutex~Option~Active~~
+            -previous: Mutex~Option~JoinHandle~~
+            -sessions: AtomicU64
+            +start(mode) AppResult~u64~
+            +stop(discard) Option~ListenMode~
+            +active_mode() Option~ListenMode~
+            +set_muted(muted)
+            +is_muted() bool
+        }
+
+        class ModelStore {
+            +dir: PathBuf
+            +installed() Vec~InstalledModel~
+            +find_installed(id) Option~InstalledModel~
+            +is_installed(id) bool
+            +model_dir(id) PathBuf
+            +install_bundled() AppResult
+            +set_extra_dirs(dirs)
+            +extra_dirs() Vec~PathBuf~
+        }
+
+        class AttachmentStore {
+            -dir: PathBuf
+            +ingest_path(path) AppResult~Attachment~
+            +ingest_bytes(name, mime, bytes) AppResult~Attachment~
+            +ingest_text(name, text) AppResult~Attachment~
+            +claim(ids) Vec~Attachment~
+            +text(id) Option~String~
+            +bytes(id) AppResult~Vec~u8~~
+            +data_url(a) AppResult~String~
+            +remove(id)
+            +gc(keep)
+        }
+
+        class Attachment {
+            +id: String
+            +name: String
+            +mime: String
+            +kind: AttachmentKind
+            +size_bytes: u64
+            +text_chars: u32
+            +truncated: bool
+            +note: Option~String~
+            +created_at: String
+        }
+
+        class Player {
+            -volume: Arc~AtomicU32~
+            -rate: Arc~AtomicU32~
+            -playing: Arc~AtomicBool~
+            -paused: Arc~AtomicBool~
+            -current_clip: Arc~AtomicU64~
+            +enqueue(clip) AppResult~u64~
+            +current_clip() u64
+            +stop(tag)
+            +set_paused(paused)
+            +is_paused() bool
+            +is_active() bool
+        }
+    }
+
+    %% ==================================================================
+    %% Errors and diagnostics
+    %% ==================================================================
+    namespace DIAG["Errors and diagnostics"] {
+
+        class AppError {
+            <<enumeration>>
+            LmStudioUnavailable
+            LmStudio
+            NoModel
+            Timeout
+            Database
+            Stt
+            Tts
+            Audio
+            Mcp
+            PermissionDenied
+            Download
+            NotFound
+            Invalid
+            Io
+            Cancelled
+            Other
+            +code() String
+        }
+
+        class CapabilityReport {
+            +lm_studio: LmStudioCapability
+            +hardware: HardwareInfo
+            +voice: VoiceCapability
+            +microphones: Vec~AudioDevice~
+            +audio_outputs: Vec~AudioDevice~
+            +mcp: McpCapability
+        }
+
+        class LmStudioCapability {
+            +connected: bool
+            +server_url: String
+            +api: Option~String~
+            +model_count: usize
+            +error_code: Option~String~
+            +error_detail: Option~String~
+            +selection: Option~ModelSelection~
+            +loaded_models: Vec~String~
+        }
+
+        class VoiceCapability {
+            +stt_model: Option~String~
+            +vad_ready: bool
+            +tts_en: Option~String~
+            +tts_ar: Option~String~
+            +tts_de: Option~String~
+            +installed: Vec~InstalledModel~
+            +recommendation: Recommendation
+            +acceleration: String
+        }
+
+        class McpCapability {
+            +enabled: usize
+            +connected: usize
+            +internet: bool
+        }
+
+        class HardwareInfo {
+            +os: String
+            +cpu_name: String
+            +physical_cores: u32
+            +logical_cores: u32
+            +total_ram_bytes: u64
+            +available_ram_bytes: u64
+            +gpus: Vec~GpuInfo~
+            +best_vram() u64
+            +has_nvidia() bool
+            +inference_threads() i32
+        }
+
+        class GpuInfo {
+            +name: String
+            +vendor: String
+            +vram_bytes: u64
+        }
+
+        class AudioDevice {
+            +id: String
+            +name: String
+            +is_default: bool
+        }
+
+        class ModelInfo {
+            +id: String
+            +display_name: String
+            +kind: String
+            +size_bytes: Option~u64~
+            +params: Option~String~
+            +quantization: Option~String~
+            +bits_per_weight: Option~f32~
+            +max_context_length: Option~u32~
+            +loaded: bool
+            +loaded_context_length: Option~u32~
+            +tool_use: bool
+            +vision: bool
+            +reasoning: bool
+            +free: bool
+            +is_chat_model() bool
+        }
+
+        class ModelSelection {
+            +model_id: String
+            +needs_load: bool
+            +score: i32
+            +reasons: Vec~String~
+        }
+    }
+
+    note for AppError "16 variants. code() returns the stable wire string: lmstudio_unavailable,<br/>lmstudio_error, no_model, timeout, database, stt_unavailable,<br/>tts_unavailable, audio, mcp, permission_denied, download, not_found,<br/>invalid, io, cancelled, other. Serialised as { code, detail } and NOT as the<br/>Diagnostic problem-cause-fix shape that AGENTS.md section 3 mandates."
+
+    note for VoiceCapability "DRIFT: acceleration is hardcoded to the string cpu, while<br/>commands/memory.rs computes the real device from services::gpu::is_active.<br/>The two disagree on the same machine."
+
+    %% ==================================================================
+    %% Relationships
+    %% ==================================================================
+    AppState *-- AppPaths
+    AppState o-- Db
+    AppState o-- SettingsStore
+    AppState o-- LmStudioService
+    AppState o-- ModelResolver
+    AppState o-- ChatEngine
+    AppState o-- AttachmentStore
+    AppState o-- McpManager
+    AppState o-- WebSearch
+    AppState o-- ModelStore
+    AppState o-- SttService
+    AppState o-- TtsService
+    AppState o-- VoiceSessions
+    AppState o-- HardwareInfo
+
+    SettingsStore --> Settings : current
+    SettingsStore --> Db : app_settings kv row
+
+    Settings *-- GeneralSettings
+    Settings *-- AiSettings
+    Settings *-- LanguageSettings
+    Settings *-- SttSettings
+    Settings *-- TtsSettings
+    Settings *-- DictationSettings
+    Settings *-- SearchSettings
+    GeneralSettings *-- WindowGeometry
+    AiSettings o-- ProviderProfile
+    LanguageSettings *-- "1..12" LanguageEntry
+
+    Db --> Conversation : CRUD
+    Db --> Message : CRUD
+    Db --> DictationEntry : history
+    Db --> McpServerConfig : mcp_servers
+    Db --> SearchHit : FTS5
+    Conversation "1" *-- "0..n" Message : contains
+    SearchHit --> Conversation : hit
+    ServerStatus *-- McpServerConfig
+    ServerStatus *-- "0..n" ToolView
+    ToolView --> ToolCategory
+    ToolView --> Permission
+
+    Message --> MessageStats : stats
+    Message --> Source : sources
+    Message --> ActivityRecord : tool_activity
+    Message --> Attachment : attachments
+    Message --> ToolCategory
+    ActivityRecord --> ToolCategory
+
+    VoiceInfo --> Engine
+    InstalledModel --> ModelKind
+    InstalledModel --> Engine
+    CatalogEntry --> ModelKind
+    CatalogEntry --> Engine
+    VoiceInfo ..> InstalledModel : derived from
+    ModelStore o-- InstalledModel
+    ModelStore o-- CatalogEntry : pinned catalogue
+    ModelStore ..> IncompatibleModel
+    HardwareInfo *-- GpuInfo
+    GpuStatus ..> GpuProgress
+
+    ChatEngine *-- SendInput
+    ChatEngine --> ChatEvent
+    ChatEngine --> ExplainEvent
+    ChatEvent --> Message : Started, Done, Error.partialMessage
+    ChatEvent --> ActivityRecord : ToolFinished mirrors
+    ChatEvent --> Source : ToolFinished.sources
+    ChatEvent --> ToolCategory
+    ChatEvent --> ToolSpec : ToolAwaitingConfirmation
+    VoiceSessions --> VoiceEvent
+    VoiceEvent --> ListenMode
+    TtsService --> TtsEvent
+    TtsService o-- Player
+    DictationStateEvent --> AppError : error payload
+
+    LmStudioService ..|> AiService
+    McpManager ..|> ToolProvider
+    WebSearch ..|> ToolProvider
+    CombinedTools ..|> ToolProvider
+    TtsService ..|> SpeechSink
+
+    ChatEngine --> AiService : holds Arc dyn
+    ChatEngine --> ToolProvider : holds Arc dyn
+    ChatEngine --> SpeechSink : holds Arc dyn
+    ChatEngine --> ModelResolver
+    ChatEngine --> AppError
+    CombinedTools o-- ToolProvider : fan-out
+
+    ModelResolver --> AiService : list and load models
+    ModelResolver --> HardwareInfo : scores VRAM and RAM
+    ModelResolver ..> ModelSelection
+
+    McpManager --> Db
+    McpManager --> ToolSpec : available_tools
+    McpManager ..> Source : extracts
+    McpManager --> ServerStatus
+    WebSearch --> ToolSpec : one spec, category Search
+    WebSearch --> Source
+    WebSearch --> SearchSettings
+
+    SttService --> ModelStore
+    TtsService --> ModelStore
+    TtsService --> VoiceInfo : voices and select_voice
+    VoiceSessions --> SttService
+    VoiceSessions ..> TtsService : speaking probe
+    AttachmentStore *-- Attachment
+    ModelStore ..> DownloadProgress : install emits
+    AppState --> DownloadProgress : downloads token table
+    AppState --> MemoryItem : model_loading flag
+    AppState ..> DictationEntry : via history_enabled
+
+    CapabilityReport *-- LmStudioCapability
+    CapabilityReport *-- VoiceCapability
+    CapabilityReport *-- McpCapability
+    CapabilityReport o-- HardwareInfo
+    CapabilityReport o-- AudioDevice
+    LmStudioCapability o-- ModelSelection
+    VoiceCapability o-- InstalledModel
+    VoiceCapability o-- Recommendation
+    VoiceCapability ..> GpuStatus : same GPU pack, reported separately
+    LmStudioCapability --> ModelInfo : loaded models
+    ModelInfo --> ModelSelection

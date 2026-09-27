@@ -1,0 +1,916 @@
+DATA MODELS — Open Local Assistant (`local-ai-assistant` v1.0.0)
+Schemas, domain types, wire types and on-disk formats.
+Companion documents: `catalog.txt` (symbol index), `relationships.txt` (edges),
+`full_documentation.md` (per-file analysis), `runtime.md` (pipeline state).
+
+================================================================================
+=== SQLITE SCHEMA ===
+================================================================================
+
+Engine: `rusqlite` 0.40.2 with the `bundled` feature (SQLite compiled in).
+File:   %APPDATA%\com.localassistant.app\assistant.db
+
+--- PRAGMAS (database/mod.rs::Db::init, applied once at open) ---
+PRAGMA journal_mode = WAL;        -- readers do not block the writer
+PRAGMA foreign_keys = ON;         -- makes ON DELETE CASCADE in mcp_* and messages effective
+PRAGMA synchronous = NORMAL;      -- safe under WAL, materially faster than FULL
+
+--- MIGRATION MECHANISM (database/migrations.rs) ---
+`PRAGMA user_version` holds the highest applied migration index.
+Indices are 1-based and the array `MIGRATIONS: &[&str]` is APPEND-ONLY: a new
+migration is added at the end, never edited in place. On open, every migration
+whose 1-based index exceeds `user_version` is applied inside its own
+transaction and then the version is stamped:
+
+    for (i, sql) in MIGRATIONS.iter().enumerate() {
+        let target = (i + 1) as i64;
+        if version < target {
+            conn.execute_batch(&format!("BEGIN; {sql}; PRAGMA user_version = {target}; COMMIT;"))?;
+        }
+    }
+
+There are exactly 4 migrations. Verified distribution: 5 regular tables
+(conversations, messages, settings, mcp_servers, mcp_tool_permissions) plus
+dictation_history added later = 6, 1 FTS5 virtual table (messages_fts),
+3 indexes, 3 triggers.
+
+--- MIGRATION 1: initial schema (verbatim) ---
+
+    CREATE TABLE conversations (
+        id          TEXT PRIMARY KEY,
+        title       TEXT NOT NULL,
+        created_at  TEXT NOT NULL,
+        updated_at  TEXT NOT NULL,
+        model       TEXT,
+        language    TEXT
+    );
+    CREATE INDEX idx_conversations_updated ON conversations(updated_at DESC);
+
+    CREATE TABLE messages (
+        id                 TEXT PRIMARY KEY,
+        conversation_id    TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+        role               TEXT NOT NULL,
+        content            TEXT NOT NULL,
+        language           TEXT,
+        reasoning          TEXT,
+        sources_json       TEXT,
+        tool_activity_json TEXT,
+        tool_calls_json    TEXT,
+        tool_call_id       TEXT,
+        created_at         TEXT NOT NULL
+    );
+    CREATE INDEX idx_messages_conversation ON messages(conversation_id, created_at);
+
+    CREATE VIRTUAL TABLE messages_fts USING fts5(
+        content, conversation_id UNINDEXED, message_id UNINDEXED,
+        tokenize = 'unicode61 remove_diacritics 2'
+    );
+    CREATE TRIGGER messages_ai AFTER INSERT ON messages
+      WHEN new.role IN ('user', 'assistant') BEGIN
+        INSERT INTO messages_fts(content, conversation_id, message_id)
+        VALUES (new.content, new.conversation_id, new.id);
+    END;
+    CREATE TRIGGER messages_au AFTER UPDATE OF content ON messages BEGIN
+        DELETE FROM messages_fts WHERE message_id = old.id;
+        INSERT INTO messages_fts(content, conversation_id, message_id)
+        SELECT new.content, new.conversation_id, new.id WHERE new.role IN ('user', 'assistant');
+    END;
+    CREATE TRIGGER messages_ad AFTER DELETE ON messages BEGIN
+        DELETE FROM messages_fts WHERE message_id = old.id;
+    END;
+
+    CREATE TABLE settings (
+        key   TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+    );
+
+    CREATE TABLE mcp_servers (
+        id           TEXT PRIMARY KEY,
+        name         TEXT NOT NULL,
+        description  TEXT,
+        transport    TEXT NOT NULL,
+        command      TEXT,
+        args_json    TEXT,
+        env_json     TEXT,
+        url          TEXT,
+        headers_json TEXT,
+        enabled      INTEGER NOT NULL DEFAULT 0,
+        source       TEXT NOT NULL DEFAULT 'user',
+        created_at   TEXT NOT NULL
+    );
+
+    CREATE TABLE mcp_tool_permissions (
+        server_id  TEXT NOT NULL REFERENCES mcp_servers(id) ON DELETE CASCADE,
+        tool_name  TEXT NOT NULL,
+        permission TEXT NOT NULL,
+        PRIMARY KEY (server_id, tool_name)
+    );
+
+--- MIGRATION 2: files and images attached to a message (verbatim) ---
+
+    ALTER TABLE messages ADD COLUMN attachments_json TEXT;
+
+--- MIGRATION 3: generation stats of assistant replies (verbatim) ---
+
+    ALTER TABLE messages ADD COLUMN stats_json TEXT;
+
+--- MIGRATION 4: past dictations (verbatim) ---
+
+    CREATE TABLE dictation_history (
+        id         TEXT PRIMARY KEY,
+        created_at TEXT NOT NULL,
+        raw        TEXT NOT NULL,
+        text       TEXT NOT NULL,
+        corrected  INTEGER NOT NULL DEFAULT 0,
+        inserted   INTEGER NOT NULL DEFAULT 1
+    );
+    CREATE INDEX idx_dictation_history_created ON dictation_history(created_at DESC);
+
+--- PER-TABLE COLUMNS ---
+
+conversations
+  column       type        constraints                      notes
+  id           TEXT        PRIMARY KEY                      UUIDv4
+  title        TEXT        NOT NULL                         trimmed; empty rejected on rename
+  created_at   TEXT        NOT NULL                         RFC 3339, millisecond precision, UTC
+  updated_at   TEXT        NOT NULL                         same format; DESC index drives listing
+  model        TEXT        nullable                         model id that served the conversation
+  language     TEXT        nullable                         ISO 639-1 code
+
+messages
+  column                type   constraints                  notes
+  id                    TEXT   PRIMARY KEY                  UUIDv4
+  conversation_id       TEXT   NOT NULL, FK -> conversations(id) ON DELETE CASCADE
+  role                  TEXT   NOT NULL                     "user" | "assistant" | "tool" | "assistant_tool_calls"
+  content               TEXT   NOT NULL                     assistant Markdown or user text
+  language              TEXT   nullable
+  reasoning             TEXT   nullable                     added in migration 1
+  sources_json          TEXT   nullable                     JSON array of {url, title}
+  tool_activity_json    TEXT   nullable                     JSON array of ActivityRecord
+  tool_calls_json       TEXT   nullable                     OpenAI tool calls, kept for faithful replay
+  tool_call_id          TEXT   nullable                     links a "tool" row to its call
+  attachments_json      TEXT   nullable                     added in migration 2; JSON array of Attachment
+  stats_json            TEXT   nullable                     added in migration 3; MessageStats
+  created_at            TEXT   NOT NULL                     (created_at, rowid) is the message order
+
+settings  (generic key/value store; one row in practice)
+  column   type   constraints   notes
+  key      TEXT   PRIMARY KEY   "app_settings"
+  value    TEXT   NOT NULL      the entire Settings document as pretty-free JSON
+
+mcp_servers
+  column        type    constraints                   notes
+  id            TEXT    PRIMARY KEY                   UUIDv4
+  name          TEXT    NOT NULL                      matched case-insensitively on import
+  description   TEXT    nullable                      deserialises to "" when NULL
+  transport     TEXT    NOT NULL                      "stdio" | "http"
+  command       TEXT    nullable                      required for stdio
+  args_json     TEXT    nullable                      JSON array of strings
+  env_json      TEXT    nullable                      JSON object; values are secrets
+  url           TEXT    nullable                      required for http
+  headers_json  TEXT    nullable                      JSON object
+  enabled       INTEGER NOT NULL DEFAULT 0            0 | 1; never flipped by `mcp_save`
+  source        TEXT    NOT NULL DEFAULT 'user'       "user" | "lmstudio"
+  created_at    TEXT    NOT NULL
+
+mcp_tool_permissions
+  column      type   constraints                                    notes
+  server_id   TEXT   NOT NULL, FK -> mcp_servers(id) ON DELETE CASCADE
+  tool_name   TEXT   NOT NULL                                        MCP tool name as the server reports it
+  permission  TEXT   NOT NULL                                        "allow" | "ask" | "deny"
+  PRIMARY KEY (server_id, tool_name)
+
+dictation_history
+  column       type    constraints               notes
+  id           TEXT    PRIMARY KEY               UUIDv4
+  created_at   TEXT    NOT NULL
+  raw          TEXT    NOT NULL                  untransformed transcript
+  text         TEXT    NOT NULL                  what was typed/pasted (may be corrected)
+  corrected    INTEGER NOT NULL DEFAULT 0        0 | 1
+  inserted     INTEGER NOT NULL DEFAULT 1       0 = typing/pasting into the target app failed
+
+--- messages_fts (FTS5 virtual table) ---
+  column            indexed   notes
+  content           yes       the message text; tokenize = 'unicode61 remove_diacritics 2'
+  conversation_id    no       UNINDEXED, only carried for the JOIN back to conversations
+  message_id         no       UNINDEXED, the join key used by the delete triggers
+
+  The `remove_diacritics 2` option is why an Arabic or accented query matches
+  unvocalised / unaccented input. Only roles in ('user','assistant') are
+  indexed; `tool` rows are deliberately invisible to search.
+
+--- 3 INDEXES ---
+  idx_conversations_updated    ON conversations(updated_at DESC)
+  idx_messages_conversation    ON messages(conversation_id, created_at)
+  idx_dictation_history_created ON dictation_history(created_at DESC)
+
+--- 3 TRIGGERS ---
+  messages_ai  AFTER INSERT ON messages
+               WHEN new.role IN ('user','assistant') -> insert into messages_fts
+  messages_au  AFTER UPDATE OF content ON messages
+               -> delete old row by message_id, re-insert only when the new role is indexed
+  messages_ad  AFTER DELETE ON messages -> delete from messages_fts by message_id
+
+--- SEARCH QUERY SHAPE (Db::search_conversations) ---
+  Every whitespace-separated term is wrapped in double quotes (inner quotes
+  doubled) so user input cannot inject FTS5 syntax. The FTS match and a title
+  `LIKE ?2 ESCAPE '\'` (with `%`, `_` and `\` escaped) are UNION ALL'd, grouped
+  by conversation id, ordered by MIN(pri) then `updated_at DESC`, and limited.
+  `pri` is 0 for an FTS hit and 1 for a title-only hit, so content wins.
+  An empty query short-circuits to `list_conversations(limit, 0)` with an
+  empty snippet, so "" behaves exactly like "list everything".
+
+--- IMPORT INVARIANT (Db::import_conversations) ---
+  Every imported conversation receives a fresh UUID (an import can never
+  overwrite existing data), the whole run is one transaction, only roles in
+  ("user","assistant","assistant_tool_calls","tool") are inserted, and
+  `attachments_json` is deliberately NOT imported because the files it points
+  at live outside the bundle and the references would dangle.
+
+================================================================================
+=== RUST DOMAIN TYPES ===
+================================================================================
+
+--- database ---
+database::conversations::Conversation   — `#[serde(rename_all="camelCase")]`
+  id, title, created_at, updated_at, model: Option<String>, language: Option<String>
+database::conversations::Message        — `#[serde(rename_all="camelCase")]`
+  id, conversation_id, role, content, language: Option<String>,
+  reasoning / sources / tool_activity / tool_calls: Option<serde_json::Value>,
+  tool_call_id: Option<String>, attachments: Option<Value>, stats: Option<Value>,
+  created_at
+  Seven fields carry `#[serde(default)]`, which is why a pre-migration row
+  still deserialises.
+database::conversations::SearchHit      — `{ conversation: Conversation, snippet: String }`
+database::dictation::DictationEntry     — id, created_at, raw, text, corrected, inserted
+database::export::ExportFormat          — `#[serde(rename_all="lowercase")]` Json | Markdown | Txt
+database::export::ExportedConversation  — `{ conversation, messages }`
+database::export::ExportBundle          — `{ format, version, exported_at, conversations }`
+  `format` is always the literal "local-assistant-conversations"; `version` is 1.
+
+--- settings ---
+settings::WindowGeometry        — x: i32, y: i32, width: u32, height: u32 (default 0,0,480,640)
+settings::GeneralSettings       — theme, accent, assistant_name, high_contrast, font_scale,
+  start_with_os, start_minimized, preload_models, autoload_models: BTreeMap<String,bool>,
+  always_on_top, window_position, window: WindowGeometry, compact, global_shortcut,
+  push_to_talk_shortcut, developer_mode, first_run_complete, log_conversation_content,
+  bubble_x: Option<i32>, bubble_y: Option<i32>, suggested_prompts: Vec<String>   [21 fields]
+settings::ProviderProfile       — server_url, api_key: Option<String>, model: Option<String>, model_mode
+settings::AiSettings             — provider, server_url, api_key: Option<String>,
+  provider_profiles: BTreeMap<String,ProviderProfile>, model_mode, model: Option<String>,
+  temperature, context_length: Option<u32>, max_tokens: Option<u32>, system_prompt,
+  user_gender, streaming, request_timeout_secs, show_reasoning, show_stats,
+  model_aliases: BTreeMap<String,String>, hidden_models: Vec<String>, free_models_only,
+  paste_as_file_chars, explain_mode   [20 fields + provider_profiles = 22 wire keys]
+settings::LanguageEntry          — code, display_name, direction, stt_language, tts_voice, built_in
+settings::LanguageSettings       — response_language, entries: Vec<LanguageEntry>,
+  arabic_tashkeel_enabled, arabic_tashkeel_instruction
+settings::SttSettings            — model, language, microphone: Option<String>, hardware,
+  auto_submit, hands_free, push_to_talk, vad_threshold, silence_ms, extra_model_dirs,
+  call_view, auto_stop_silence_secs, hands_free_timeout_secs   [14 fields]
+settings::TtsSettings            — speak_responses, legacy_voice_en, legacy_voice_ar,
+  legacy_voice_de, speed, volume, output_device: Option<String>, preferred_gender,
+  voice_hardware: BTreeMap<String,String>, speak_after_reply, expressive_sounds,
+  expressive_instruction   [12 fields, 3 of them legacy-only]
+settings::DictationSettings      — enabled, shortcut, mode, correction_enabled,
+  correction_model: Option<String>, insert_method, add_trailing_space, language,
+  review_before_insert, history_enabled, overlay_x: Option<i32>, overlay_y: Option<i32>  [12 fields]
+settings::SearchSettings         — enabled, max_results, searxng_url, searxng_enabled,
+  searxng_source, searxng_public_url, primary   [7 fields]
+settings::Settings               — general, ai, language, stt, tts, dictation, search,
+  last_conversation_id: Option<String>, version: u32   (CURRENT_VERSION = 4)
+  Every section carries `#[serde(rename_all = "camelCase", default)]`, so a blob
+  written by an older version still loads and gains defaults for new fields.
+
+--- mcp ---
+services::mcp::config::McpServerConfig — id, name, description, transport, command: Option<String>,
+  args: Vec<String>, env: BTreeMap<String,String>, url: Option<String>,
+  headers: BTreeMap<String,String>, enabled: bool, source: String, created_at: String
+  (`source` defaults to "user" via `#[serde(default = "user_source")]`)
+services::mcp::config::ImportCandidate  — name, transport, command, args, url,
+  env_keys: Vec<String>, already_configured: bool
+  `env_keys` carries key NAMES only, never values.
+services::mcp::ToolView     — name, description, category: ToolCategory, permission, default_permission
+services::mcp::ServerStatus — config: McpServerConfig, state: String, error: Option<String>,
+  tools: Vec<ToolView>, internet: bool
+  `state` is one of "disabled" | "connecting" | "connected" | "error" | "offline"
+services::chat::tools::Permission     — `#[serde(rename_all="lowercase")]` allow | ask | deny
+services::chat::tools::ToolCategory   — `#[serde(rename_all="lowercase")]` search | fetch | read | write | execute | other
+services::chat::tools::ToolSpec       — llm_name, server_id, server_name, tool_name,
+  description, input_schema: serde_json::Value, category, permission
+services::chat::tools::ToolOutput     — text, is_error, sources: Vec<Source> (not serialised)
+services::chat::tools::Source         — url, title: Option<String>
+
+--- models ---
+services::models::InstalledModel   — id, name, kind: ModelKind, engine: Engine, languages: Vec<String>,
+  path, source, family: Option<String>, streaming, gender, size_bytes
+services::models::Recommendation   — stt, vad, tts (all `&'static str` catalogue ids)
+services::models::IncompatibleModel— name, path, reason
+services::models::catalog::ModelKind — `#[serde(rename_all="lowercase")]` Stt | Vad | Tts
+services::models::catalog::Engine    — Whisper | SileroVad | Kokoro | Piper | Kitten | Supertonic
+services::models::catalog::RemoteFile— url, sha256: Option<&str>, dest, archive: bool, size_bytes
+services::models::catalog::CatalogModel — id, kind, engine, name, languages: &[&str],
+  files: &[RemoteFile], quality: u8, min_ram_gb: u32, license, gender
+services::models::download::DownloadProgress — model_id, state, downloaded_bytes, total_bytes, error
+  `state` is downloading | verifying | extracting | done | error | cancelled
+
+--- gpu ---
+services::gpu::GpuStatus   — supported, gpu_name: Option<String>, installed, size_bytes,
+  download_bytes, active, restart_required
+services::gpu::GpuProgress — state, downloaded_bytes, total_bytes, error: Option<String>
+
+--- capabilities ---
+capabilities::LmStudioCapability — connected, server_url, api: Option<String>, model_count,
+  error_code: Option<String>, error_detail: Option<String>, selection: Option<ModelSelection>,
+  loaded_models: Vec<String>
+capabilities::VoiceCapability    — stt_model: Option<String>, vad_ready, tts_en, tts_ar, tts_de,
+  installed: Vec<InstalledModel>, recommendation: Recommendation, acceleration: String
+capabilities::McpCapability      — enabled: usize, connected: usize, internet: bool
+capabilities::CapabilityReport   — lm_studio, hardware, voice, microphones, audio_outputs, mcp
+
+--- commands (response payloads) ---
+commands::app::AppInfo        — version: String, paths: AppPaths, hardware: HardwareInfo, os: String
+commands::app::PrivacyStatus  — llm, llm_server, llm_is_local_address, llm_is_cloud, stt_local,
+  tts_local, conversations_local, settings_local, telemetry, internet_via_mcp,
+  internet_servers: Vec<String>
+commands::attachments::AttachResult — attachments: Vec<Attachment>, failures: Vec<String>
+commands::voice::AudioDevices  — inputs: Vec<AudioDevice>, outputs: Vec<AudioDevice>
+commands::voice::TtsState      — speaking: bool, paused: bool
+commands::voice::CatalogEntry — `#[serde(flatten)] model: &'static CatalogModel` plus
+  download_bytes, installed, recommended, downloading, deletable
+  (flatten is what makes the catalogue fields appear inline on the wire)
+commands::mcp::SearchTestResult — engine: String, count: usize, first_title: Option<String>
+commands::memory::MemoryItem   — key, kind, role, model, state, detail: Option<String>,
+  autoload_key, autoload
+  `key` is "stt" | "voice:<code>" | "llm" | "llm:<model id>"; `state` is
+  loaded | loading | idle | missing | failed
+
+--- other shared types ---
+services::ai::ModelInfo        — id, display_name, kind, size_bytes, params, quantization,
+  bits_per_weight, max_context_length, loaded, loaded_context_length, tool_use, vision,
+  reasoning, free
+services::ai::ConnectionStatus — connected, server_url, model_count, latency_ms, api
+services::ai::ModelSelection   — model_id, needs_load, score, reasons: Vec<String>
+services::hardware::HardwareInfo — os, cpu_name, physical_cores, logical_cores,
+  total_ram_bytes, available_ram_bytes, gpus: Vec<GpuInfo>
+services::hardware::GpuInfo      — name, vendor, vram_bytes
+services::attachments::AttachmentKind — `#[serde(rename_all="camelCase")]` image | text | binary
+services::attachments::Attachment     — id, name, mime, kind, size_bytes, text_chars,
+  truncated, note: Option<String>, created_at
+services::audio::devices::AudioDevice — id, name, is_default
+services::tts::voices::VoiceInfo      — id ("<model_id>:<speaker_id>"), model_id, name,
+  language, speaker_id, engine, quality, gender
+services::language::Lang              — `#[serde(rename_all="lowercase")]` En | Ar | De (closed)
+services::language::Detection         — lang: Lang, confidence: f32
+services::stt::Transcription          — text, language: Option<String>, model_id, audio_ms, elapsed_ms
+services::stt::session::ListenMode    — PushToTalk | HandsFree | Dictation | Test
+services::stt::session::VoiceEvent    — State{mode,session,state,device,streaming} |
+  Level{mode,value,bands} | Partial{mode,text} | Transcript{mode,text,language,audio_ms,elapsed_ms} |
+  Error{mode,code,detail}
+services::tts::TtsEvent               — Speaking{tag} | Sentence{tag,text,duration_ms} | Paused |
+  Resumed | Idle | VoiceUnavailable{language} | Error{detail}
+services::search::SearchResult        — title, url, snippet
+services::search::PublicInstance      — url, search_success: f64, search_time: Option<f64>, version
+services::dictation::DictationResult  — raw, inserted, corrected, correction_error: Option<String>
+services::dictation::ReviewPending    — raw, corrected, correction_error: Option<String>
+services::chat::orchestrator::SendInput  — turn_id, conversation_id: Option<String>, text,
+  spoken_language: Option<String>, voice, attachment_ids: Vec<String>
+services::chat::orchestrator::ChatEvent  — 8 variants, see IPC WIRE FORMAT
+
+================================================================================
+=== TYPESCRIPT TYPES ===
+================================================================================
+
+Source: `src/app/types.ts`, 519 lines, zero runtime code. Hand-mirrored from the
+Rust types above; every name is a mirror of a Rust struct with
+`#[serde(rename_all = "camelCase")]`.
+
+Verified counts: 3 base aliases, 4 closed value unions, 5 event unions,
+38 interfaces (the `full_documentation.md` §4.2 figure of 27 interfaces is an
+undercount; 38 are declared).
+
+--- NULLABILITY CONVENTION ---
+The prevailing style is a REQUIRED property typed `| null`, not `?`.
+`number | null` universally means "measure unknown / not loaded / unset"
+(sizeBytes, maxContextLength, bubbleX/Y, overlayX/Y, latency-adjacent fields).
+`apiKey: string | null` is never an empty string on the wire — `sanitize` turns
+"" into `None` before saving.
+Optional (`?`) properties are used only where the *stored column* may not
+exist yet, so a pre-migration row still deserialises. There are exactly
+THIRTEEN of them, and they are the ones `chatStore.messageToUi` has to guard
+(`m.attachments ?? []`):
+  Source.title, Source.  |  Message.reasoning, Message.sources,
+  Message.toolActivity, Message.attachments, Message.stats  (5),
+  MessageStats.tokensPerSecond, MessageStats.firstTokenMs,
+  MessageStats.contextUsed, MessageStats.contextLength  (4),
+  DictationStateEvent.text, DictationStateEvent.error, DictationStateEvent.result  (3)
+The Rust side mirrors this with seven `#[serde(default)]` Option fields on
+`database::conversations::Message`.
+
+--- 3 BASE ALIASES ---
+type LangCode     = "en" | "ar" | "de";
+type LangSetting  = "auto" | LangCode;
+type ProviderId   = "lmstudio" | "openrouter" | "gemini" | "huggingface";
+  `LangCode` and `LangSetting` are declared but unreferenced: the Settings tree
+  uses open `string` language codes because the user can add languages, while
+  the Rust `Lang` enum is a closed 3-variant type.
+
+--- 4 CLOSED VALUE UNIONS ---
+type AttachmentKind = "image" | "text" | "binary";
+type ToolCategory   = "search" | "fetch" | "read" | "write" | "execute" | "other";
+type Permission     = "allow" | "ask" | "deny";
+type ListenMode     = "pushToTalk" | "handsFree" | "dictation" | "test";
+
+--- EVENT UNION 1 of 5: ChatEvent (8 variants, all carry `type`) ---
+  { type:"started";  turnId; conversationId; userMessage: Message; model; language; newConversation: boolean }
+  { type:"delta";    turnId; text: string }
+  { type:"reasoning";turnId; text: string }
+  { type:"toolStarted"; turnId; callId; serverName; toolName; category: ToolCategory; args: unknown }
+  { type:"toolAwaitingConfirmation"; turnId; callId; serverName; toolName; category; args }
+  { type:"toolFinished"; turnId; callId; ok: boolean; durationMs; resultPreview; sources: Source[]; denied: boolean }
+  { type:"done";     turnId; message: Message }
+  { type:"error";    turnId; code; detail; partialMessage: Message | null }
+
+--- EVENT UNION 2 of 5: ExplainEvent (3 variants) ---
+  { type:"delta"; text: string }
+  { type:"done" }
+  { type:"error"; code: string; detail: string }
+  No `turnId`: the stream is identified by the caller-supplied id and cancelled
+  with `chatStop(id)`.
+
+--- EVENT UNION 3 of 5: VoiceEvent (5 variants) ---
+  { type:"state";      mode: ListenMode; session: number; state: "listening"|"transcribing"|"idle"; device: string | null; streaming: boolean }
+  { type:"partial";    mode: ListenMode; text: string }
+  { type:"level";      mode: ListenMode; value: number; bands: number[] }
+  { type:"transcript"; mode: ListenMode; text: string; language: string | null; audioMs: number; elapsedMs: number }
+  { type:"error";      mode: ListenMode; code: string; detail: string }
+
+--- EVENT UNION 4 of 5: TtsEvent (7 variants) ---
+  { type:"speaking";           tag: string }
+  { type:"sentence";           tag: string; text: string; durationMs: number }
+  { type:"paused" }
+  { type:"resumed" }
+  { type:"idle" }
+  { type:"voiceUnavailable";   language: string }
+  { type:"error";              detail: string }
+
+--- EVENT UNION 5 of 5: DictationStateEvent (9 states, an interface) ---
+  state: "listening" | "transcribing" | "idle" | "correcting" | "review" |
+         "inserted" | "empty" | "cancelled" | "error"
+  text?:   string
+  error?:  AppErrorPayload
+  result?: { raw: string; inserted: string; corrected: boolean; correctionError: string | null }
+
+--- Settings (the root persisted document) ---
+Leaf-key counts: general 21, ai 20 (+ providerProfiles), language 4,
+stt 14, tts 9, dictation 12, search 7.
+
+  general: {
+    theme: "system"|"light"|"dark"; accent: "teal"|"blue"|"green"|"amber"|"rose"|"slate";
+    assistantName: string; highContrast: boolean; fontScale: number;
+    startWithOs: boolean; startMinimized: boolean; preloadModels: boolean;
+    autoloadModels: Record<string, boolean>;
+    alwaysOnTop: boolean; windowPosition: "bottom-right"|"bottom-left"|"center"|"custom";
+    window: WindowGeometry; compact: boolean; globalShortcut: string;
+    pushToTalkShortcut: string; developerMode: boolean; firstRunComplete: boolean;
+    logConversationContent: boolean; bubbleX: number|null; bubbleY: number|null;
+    suggestedPrompts: string[];
+  }
+  ai: {
+    provider: ProviderId; serverUrl: string; apiKey: string|null;
+    providerProfiles: Record<string, ProviderProfile>;
+    modelMode: "auto"|"manual"; model: string|null; temperature: number;
+    contextLength: number|null; maxTokens: number|null; systemPrompt: string;
+    userGender: "unspecified"|"male"|"female"; streaming: boolean;
+    requestTimeoutSecs: number; showReasoning: boolean; showStats: boolean;
+    modelAliases: Record<string,string>; hiddenModels: string[];
+    freeModelsOnly: boolean; pasteAsFileChars: number;
+    explainMode: "chat"|"popup";
+  }
+  language: {
+    responseLanguage: string; entries: LanguageEntry[];
+    arabicTashkeelEnabled: boolean; arabicTashkeelInstruction: string;
+  }
+  stt: {
+    model: string; language: string; microphone: string|null;
+    hardware: "auto"|"cpu"; autoSubmit: boolean; handsFree: boolean; pushToTalk: boolean;
+    vadThreshold: number; silenceMs: number; extraModelDirs: string[];
+    callView: boolean; autoStopSilenceSecs: number; handsFreeTimeoutSecs: number;
+  }
+  tts: {
+    speakResponses: boolean; speed: number; volume: number; outputDevice: string|null;
+    preferredGender: "any"|"female"|"male"; voiceHardware: Record<string,string>;
+    speakAfterReply: boolean; expressiveSounds: boolean; expressiveInstruction: string;
+    // voiceEn / voiceAr / voiceDe are deliberately NOT declared: the Rust legacy
+    // fields exist only so a pre-v4 blob deserialises and the v4 migration runs.
+  }
+  dictation: {
+    enabled: boolean; shortcut: string; mode: "hold"|"toggle";
+    correctionEnabled: boolean; correctionModel: string|null;
+    insertMethod: "type"|"paste"; addTrailingSpace: boolean; language: string;
+    reviewBeforeInsert: boolean; historyEnabled: boolean;
+    overlayX: number|null; overlayY: number|null;
+  }
+  search: {
+    enabled: boolean; maxResults: number; searxngUrl: string; searxngEnabled: boolean;
+    searxngSource: "local"|"public"; searxngPublicUrl: string;
+    primary: "searxng"|"duckduckgo";
+  }
+  lastConversationId: string | null;
+  version: number;
+
+--- REMAINING INTERFACES (38) ---
+ProviderProfile    { serverUrl: string; apiKey: string|null; model: string|null; modelMode: "auto"|"manual"|"" }
+WindowGeometry     { x: number; y: number; width: number; height: number }
+LanguageEntry      { code: string; displayName: string; direction: "ltr"|"rtl"; sttLanguage: string; ttsVoice: string; builtIn: boolean }
+AppErrorPayload    { code: string; detail: string }
+ModelInfo          { id; displayName; kind: string; sizeBytes: number|null; params: string|null;
+                     quantization: string|null; bitsPerWeight: number|null; maxContextLength: number|null;
+                     loaded: boolean; loadedContextLength: number|null; toolUse: boolean; vision: boolean;
+                     reasoning: boolean; free: boolean }
+ModelSelection     { modelId: string; needsLoad: boolean; score: number; reasons: string[] }
+ConnectionStatus   { connected: boolean; serverUrl: string; modelCount: number; latencyMs: number; api: string }
+Conversation       { id; title; createdAt; updatedAt; model: string|null; language: string|null }
+Attachment         { id; name; mime; kind: AttachmentKind; sizeBytes: number; textChars: number;
+                     truncated: boolean; note: string|null; createdAt: string }
+AttachResult       { attachments: Attachment[]; failures: string[] }
+Source             { url: string; title?: string|null }
+ActivityRecord     { callId; serverName; toolName; category: ToolCategory; args: unknown;
+                     ok: boolean; denied: boolean; durationMs: number; resultPreview: string }
+Message            { id; conversationId; role: "user"|"assistant"|"tool"|"assistant_tool_calls";
+                     content: string; language: string|null; reasoning?: string|null;
+                     sources?: Source[]|null; toolActivity?: ActivityRecord[]|null;
+                     attachments?: Attachment[]|null; stats?: MessageStats|null; createdAt: string }
+MessageStats       { completionTokens: number; tokensPerSecond?: number|null; firstTokenMs?: number|null;
+                     contextUsed?: number|null; contextLength?: number|null }
+SearchHit          { conversation: Conversation; snippet: string }
+GpuStatus          { supported: boolean; gpuName: string|null; installed: boolean; sizeBytes: number;
+                     downloadBytes: number; active: boolean; restartRequired: boolean }
+MemoryItem         { key: string; kind: "stt"|"voice"|"llm"; role: string; model: string;
+                     state: "loaded"|"loading"|"idle"|"missing"|"failed"; detail: string|null;
+                     autoloadKey: string; autoload: boolean }
+GpuProgress        { state: "downloading"|"extracting"|"done"|"error"|"cancelled";
+                     downloadedBytes: number; totalBytes: number; error: string|null }
+AudioDevice        { id: string; name: string; isDefault: boolean }
+VoiceInfo          { id; modelId; name; language; speakerId: number; engine: string; quality: number; gender: string }
+CatalogEntry       { id; kind: "stt"|"vad"|"tts"; engine: string; name: string; languages: string[];
+                     quality: number; minRamGb: number; license: string; downloadBytes: number;
+                     installed: boolean; recommended: boolean; downloading: boolean; deletable: boolean }
+InstalledModel     { id; name; kind: "stt"|"vad"|"tts"; engine: string; languages: string[];
+                     path: string; source: "catalog"|"custom"; family: string|null;
+                     streaming: boolean; gender: string; sizeBytes: number }
+IncompatibleModel  { name: string; path: string; reason: string }
+DownloadProgress   { modelId: string;
+                     state: "downloading"|"verifying"|"extracting"|"done"|"error"|"cancelled";
+                     downloadedBytes: number; totalBytes: number; error: string|null }
+McpServerConfig    { id; name; description: string; transport: "stdio"|"http"; command: string|null;
+                     args: string[]; env: Record<string,string>; url: string|null;
+                     headers: Record<string,string>; enabled: boolean; source: string; createdAt: string }
+ToolView           { name; description; category: ToolCategory; permission: Permission;
+                     defaultPermission: Permission }
+ServerStatus       { config: McpServerConfig; state: "disabled"|"connecting"|"connected"|"error"|"offline";
+                     error: string|null; tools: ToolView[]; internet: boolean }
+PublicSearxInstance{ url: string; searchSuccess: number; searchTime: number|null; version: string|null }
+SearchTestResult   { engine: string; count: number; firstTitle: string|null }
+ImportCandidate    { name: string; transport: string; command: string|null; args: string[];
+                     url: string|null; envKeys: string[]; alreadyConfigured: boolean }
+GpuInfo            { name: string; vendor: string; vramBytes: number }
+HardwareInfo       { os: string; cpuName: string; physicalCores: number; logicalCores: number;
+                     totalRamBytes: number; availableRamBytes: number; gpus: GpuInfo[] }
+CapabilityReport   { lmStudio: { connected; serverUrl; api: string|null; modelCount;
+                                 errorCode: string|null; errorDetail: string|null;
+                                 selection: ModelSelection|null; loadedModels: string[] };
+                     hardware: HardwareInfo;
+                     voice: { sttModel: string|null; vadReady: boolean; ttsEn: string|null;
+                              ttsAr: string|null; ttsDe: string|null; installed: InstalledModel[];
+                              recommendation: { stt: string; vad: string; tts: string };
+                              acceleration: string };
+                     microphones: AudioDevice[]; audioOutputs: AudioDevice[];
+                     mcp: { enabled: number; connected: number; internet: boolean } }
+AppInfo            { version: string;
+                     paths: { dataDir; modelsDir; logsDir; database };
+                     hardware: HardwareInfo; os: string }
+PrivacyStatus      { llm: string; llmServer: string; llmIsLocalAddress: boolean; llmIsCloud: boolean;
+                     sttLocal: boolean; ttsLocal: boolean; conversationsLocal: boolean;
+                     settingsLocal: boolean; telemetry: boolean; internetViaMcp: boolean;
+                     internetServers: string[] }
+DictationEntry     { id; createdAt; raw; text; corrected: boolean; inserted: boolean }
+DictationStateEvent — see "EVENT UNION 5 of 5" above
+
+================================================================================
+=== IPC WIRE FORMAT ===
+================================================================================
+
+--- Naming ---
+  `#[serde(rename_all = "camelCase")]` on every payload struct crossing IPC.
+  Struct *fields* become camelCase; struct *variant* names use a separate
+  attribute where noted below. There is no `#[serde(rename_all = "snake_case")]`
+  anywhere in the payload set except the deliberate exception in (3).
+
+--- (1) ERROR SHAPE: { code, detail } ---
+  `errors.rs` holds a private `WireError<'a> { code, detail }` and a
+  hand-written `Serialize` that emits exactly:
+
+      { "code": self.code(), "detail": self.to_string() }
+
+  `detail` is the FULL Display string ("LM Studio error: connection refused"),
+  never the raw inner payload. Every command returns
+  `CmdResult<T> = Result<T, AppError>`, so a rejection reaches the frontend as
+  a resolved `AppErrorPayload`; the frontend's `isAppError` / `toAppError` in
+  `src/app/ipc.ts` recognise exactly this `{code, detail}` shape and map
+  `errors.<code>` through `strings.en.json`.
+  The 16 codes: lmstudio_unavailable, lmstudio_error, no_model, timeout,
+  database, stt_unavailable, tts_unavailable, audio, mcp, permission_denied,
+  download, not_found, invalid, io, cancelled, other.
+  Documented divergence: AGENTS.md §3 asks for `Diagnostic{problem,cause,fix}`;
+  the shipped wire format is `{code, detail}`.
+
+--- (2) INTERNALLY TAGGED EVENT ENUMS: #[serde(tag = "type")] ---
+  services::chat::orchestrator::ChatEvent
+    #[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
+  -> `{"type":"toolStarted", "turnId":..., "callId":..., ...}`
+  services::chat::explain::ExplainEvent
+    #[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
+  -> `{"type":"delta","text":...}`
+  services::stt::session::VoiceEvent  — tagged, payload keys stay snake_case on the wire
+                                        and are camelCased by the TS union
+  services::tts::TtsEvent             — tagged
+  services::ai::ContentPart
+    #[serde(tag = "type", rename_all = "snake_case")]
+  -> `{"type":"text","text":...}` / `{"type":"image_url","image_url":{...}}`
+  The `rename_all_fields` attribute is what makes `turnId` / `partialMessage` /
+  `durationMs` appear inside a variant; without it the fields would stay
+  snake_case. Dictation state events are NOT Rust enums — they are built as
+  `serde_json::json!({ "state": ... })` objects.
+
+--- (3) UNTAGGED ENUM: #[serde(untagged)] ---
+  services::ai::MessageContent
+    #[serde(untagged)] enum MessageContent { Text(String), Parts(Vec<ContentPart>) }
+  A plain string body and a parts array are both valid; the receiver tries
+  `Text` first. This is the only untagged enum in the crate.
+
+--- (4) #[serde(default)] AND ITS EXACT USES ---
+  * On 7 Option fields of `database::conversations::Message`: reasoning,
+    sources, tool_activity, tool_calls, tool_call_id, attachments, stats —
+    so a row written before migration 2 or 3 still deserialises.
+  * At CONTAINER level (`#[serde(rename_all="camelCase", default)]`) on every
+    `Settings` struct: a missing section or field falls back to `Default`.
+    This is the single mechanism that lets an old settings blob keep loading
+    after fields are added. `String::new()` values for new String fields come
+    from the container `Default`, then `sanitize` replaces empty/invalid
+    values with real defaults.
+  * Per-field overrides: `#[serde(default = "default_true")]` on
+    `SearchSettings::enabled` and `#[serde(default = "default_paste_as_file_chars")]`
+    on `AiSettings::paste_as_file_chars` (2000), because the container default
+    would be `false` / `0` and both are wrong for these fields.
+  * `#[serde(default = "user_source")]` on `McpServerConfig::source` -> "user".
+  * `#[serde(skip_serializing_if = "Option::is_none", default)]` on
+    `ChatMessage::tool_calls` and `ChatMessage::tool_call_id`, so a request
+    without tools omits the keys entirely instead of sending nulls.
+  * `#[serde(skip)]` on `orchestrator::ReplyStats::generation_ms` — computed
+    locally, never persisted or sent.
+  * `#[serde(flatten)]` on `commands::voice::CatalogEntry::model`, so every
+    `CatalogModel` field appears inline next to download_bytes / installed /
+    recommended / downloading / deletable.
+  * `#[serde(rename = "type")]` on `ToolDefinition::kind` and `sse::ToolCall::kind`
+    (the OpenAI wire calls it `type`).
+  * `#[serde(rename = "voiceEn")]` on `TtsSettings::legacy_voice_en` (and
+    voiceAr / voiceDe): a legacy blob's key must be read exactly, while the
+    container-level `rename_all` would otherwise have produced `legacyVoiceEn`.
+
+--- (5) ENUM RENAME RULES ACTUALLY USED ---
+  rename_all = "camelCase"    payload structs and event enums (the default choice)
+  rename_all = "lowercase"    Permission, ToolCategory, ModelKind, AttachmentKind,
+                              Lang, ExportFormat
+  rename_all = "snake_case"   ContentPart only (matches the OpenAI content-part format)
+  no attribute                VoiceEvent / TtsEvent variants and fields (camelCase by hand)
+  Case-insensitive strings    `Permission` and `ModelKind` are read back from SQLite
+                              through `serde_json::from_value` on a JSON string, so
+                              a stored "Allow" or "Allow" variant still parses.
+
+--- (6) STREAMING CHANNELS ---
+  The two streaming commands are the ONLY place that does not use `app.emit`:
+  they take a per-invocation `tauri::ipc::Channel<T>` as a parameter SIBLING of
+  the payload object:
+      chat_send(state, input: SendInput, on_event: Channel<ChatEvent>)
+      chat_explain(state, id, selection, passage, on_event: Channel<ExplainEvent>)
+  The frontend constructs `new Channel<T>()`, assigns `onmessage`, and passes
+  it as `{ input, onEvent: channel }`. `Channel::send` is a no-throw,
+  best-effort push: a dropped chunk never fails the turn. Both commands always
+  return `Ok(())`; errors arrive as a `type:"error"` event instead.
+
+--- (7) ARGUMENT NAMING ---
+  Tauri 2 converts Rust snake_case parameter names to camelCase on the JS side,
+  so `attach_files(paths)` becomes `invoke("attach_files", { paths })` and
+  `mcp_set_permission(server_id, tool, permission)` becomes
+  `invoke("mcp_set_permission", { serverId, tool, permission })`.
+  `Option<T>` parameters may be omitted or passed as `null`; the frontend passes
+  `undefined`/`null` for them (e.g. `{ url, apiKey, provider }`).
+
+================================================================================
+=== ENCRYPTED BACKUP FORMAT ===
+================================================================================
+
+Signature: `LAIA-BK1`  (settings/backup.rs)
+
+  offset  size  content
+  0       8     magic  b"LAIA-BK1"  (file signature + format version)
+  8       12    nonce  ChaCha20Poly1305 random nonce from OsRng
+  20      N     sealed ChaCha20-Poly1305 ciphertext of the Settings JSON,
+                   including the 16-byte Poly1305 authentication tag
+
+  total length = 8 + 12 + (plaintext_len + 16)
+
+Key derivation:
+  KEY_SEED = b"local-ai-assistant/settings-backup/v1/7c1e9a42f0d84b6b"
+  key      = SHA-256(KEY_SEED)  ->  32 bytes  ->  ChaCha20Poly1305::new(key)
+
+  The seed is HARD-CODED and compiled into the binary. This protects a backup
+  that is copied around or opened by accident and makes the file tamper-evident,
+  but it is not a secret: anyone who extracts the key from the binary can
+  decrypt it. Changing the seed makes every previously written backup
+  unreadable, which is why it carries a `/v1/` segment and a fixed hex suffix.
+
+Plaintext: `serde_json::to_vec(&Settings)` — the complete settings document,
+camelCase, no encryption of any inner field. API keys are included ONLY when
+the user ticks "include keys" in the export dialog; otherwise
+`backup::strip_keys` blanks `ai.api_key` and every
+`ai.providerProfiles[*].api_key` before encryption.
+
+Decrypt failure modes (all the same message, so no oracle):
+  wrong magic, truncated body (<= 12 bytes after the magic), authentication
+  failure (tampered or damaged), or unparseable JSON
+  -> AppError::Invalid("this is not an Open Local Assistant settings backup, or it was damaged")
+
+Import merge (`merge_import`), i.e. what an imported backup may NOT change:
+  version                        <- kept from the current settings
+  lastConversationId             <- kept
+  general.firstRunComplete       <- kept
+  general.window                 <- kept (this machine's window placement)
+  general.bubbleX / bubbleY      <- kept
+  dictation.overlayX / overlayY  <- kept
+  any API key missing from the backup keeps its current value
+  everything else is taken from the backup, then `sanitize()` runs on the result.
+
+Related but separate format — the conversation export bundle:
+  `ExportBundle` is PLAIN JSON (not encrypted), `format = "local-assistant-conversations"`,
+  `version = 1`. Markdown and TXT exports are plain text.
+
+================================================================================
+=== CATALOGUE ===
+================================================================================
+
+Source: `src-tauri/src/services/models/catalog.rs`, `pub static CATALOG`.
+Exactly 4 entries. URL bases: HF = `https://huggingface.co/csukuangfj`,
+GH_ASR = `.../releases/download/asr-models`, GH_TTS = `.../releases/download/tts-models`
+(both under `https://github.com/k2-fsa/sherpa-onnx`), built at compile time by a
+local `const_format_concat!` macro.
+
+id                 kind  engine      name                                            languages  quality  min RAM  license       total download
+-----------------  ----  ----------  ----------------------------------------------  --------  -------  -------  -----------  ---------------
+whisper-turbo      Stt   Whisper     Whisper large-v3 turbo (int8)                    ["*"]     5        12 GB     MIT              1 036 616 730 B
+whisper-small      Stt   Whisper     Whisper small (int8)                             ["*"]     3         4 GB     MIT                375 416 730 B
+silero-vad         Vad   SileroVad   Silero VAD                                      ["*"]     5         1 GB     MIT                      629 000 B
+supertonic-3-int8  Tts   Supertonic  Supertonic 3 multilingual - small (31 languages) ["*"]     3         2 GB     OpenRAIL-M        128 774 318 B
+
+Totals: starter set (whisper-small + silero-vad + supertonic-3-int8) = 504 820 048 B
+        full catalogue                                          = 1 540 820 348 B
+A test asserts the combined starter download stays below 550 000 000 B.
+
+--- PER-FILE DETAIL AND SHA-256 DIGESTS (every download is verified) ---
+model              file                                                    bytes          SHA-256
+-----------------  ------------------------------------------------------  -------------  ----------------------------------------------------------------
+whisper-turbo      encoder.int8.onnx                                       674 700 000    b02dcdf54f348741e93fe732b67d933c8dcb6735655f710640143081db38878b
+whisper-turbo      decoder.int8.onnx                                       361 100 000    20accd02388482eb3a46bd615631adfdc85e1eb2c7db9ea3f02a40ffe6b81547
+whisper-turbo      tokens.txt                                                 816 730    b34b360dbb493e781e479794586d661700670d65564001f23024971d1f2fa126
+whisper-small      encoder.int8.onnx                                       112 400 000    4cbe7b22fa9026b843b60a68640c747de05bafb1a11b57edc0e66c232d9f33a9
+whisper-small      decoder.int8.onnx                                       262 200 000    acad50b5c782696e91b55914cc5ab4f756f1532f76e22aa6fc615f39fb69a8ee
+whisper-small      tokens.txt                                                 816 730    b34b360dbb493e781e479794586d661700670d65564001f23024971d1f2fa126
+silero-vad         silero_vad.onnx                                             629 000    9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6
+supertonic-3-int8  sherpa-onnx-supertonic-3-tts-int8-2026-05-11.tar.bz2    128 774 318    82fa96f91c4ef8abaae3a14a3f4153facf88bed821d1f7331cec2700f432c427
+                                                                                        (only file; `archive: true`, `dest: ""`)
+
+Verification: `sha2::Sha256` is fed in the same loop that writes the bytes, so
+the digest covers exactly what was written. The comparison is
+`eq_ignore_ascii_case`. There is NO retry and NO resume; a non-2xx status is
+`AppError::Download("{url} returned {status}")`.
+
+--- PROTECTED / BUILT-IN ---
+PROTECTED_MODELS = ["whisper-small", "supertonic-3-int8", "silero-vad"]
+  These cannot be deleted (`deletable: false`) and their ids are the autoload
+  keys. `silero-vad` additionally ships INSIDE the executable
+  (`include_bytes!` of `assets/silero_vad.onnx`, ~630 KB) and is written by
+  `install_bundled`, so it is never downloaded; `models_catalog` filters it
+  out of the catalogue view because there is nothing to manage.
+`whisper-turbo` is catalogue-only and fully user-managed.
+
+--- CUSTOM (non-catalogue) MODEL DETECTION ORDER (services::models::detect_custom) ---
+1. a file starting `silero_vad` or `ten-vad`                        -> ModelKind::Vad
+2. tts.json + unicode_indexer.bin + voice.bin                       -> Supertonic, ["*"], "mixed"
+3. voices.bin + tokens.txt  (a `kitten` path hint disambiguates)     -> Kitten or Kokoro
+4. tokens.txt + (espeak-ng-data | lexicon.txt)                      -> Piper
+5. otherwise services::stt::engine::detect                          -> ModelKind::Stt
+A folder with no `.onnx` but containing `.safetensors` / `.pt` / `.pth` /
+`.ckpt` / `pytorch_model.bin` / `.gguf` is reported by `incompatible()` with a
+reason: "GGUF models run in LM Studio, not in the local speech engine" or
+"PyTorch weights: this app needs an ONNX export (sherpa-onnx format)".
+
+--- GPU PACK (not in the catalogue; separate lifecycle) ---
+PACK_VERSION = "1.13.8"; PACK_BYTES = 595 017 373 + 3 521 238 + 549 755 186 + 624 633 536
+             = 1 772 927 333 B (~1.65 GiB) from FOUR archives
+  sherpa-onnx CUDA archive  595 017 373 B
+  cuda_cudart 12.9.79          3 521 238 B
+  libcublas 12.9.1.4         549 755 186 B
+  cudnn 9.14.0.64            624 633 536 B
+REQUIRED DLLs (all must be present or `is_installed` is false):
+  onnxruntime.dll, onnxruntime_providers_cuda.dll, sherpa-onnx-c-api.dll,
+  cudart64_12.dll, cublas64_12.dll, cublasLt64_12.dll, cudnn64_9.dll
+
+================================================================================
+=== ON-DISK LOCATIONS ===
+================================================================================
+
+Root:  %APPDATA%\com.localassistant.app
+       (C:\Users\<user>\AppData\Roaming\com.localassistant.app)
+       Resolved once at startup from `app.path().app_data_dir()` in
+       `lib::init_state`; the Tauri bundle identifier is `com.localassistant.app`.
+
+  <root>\assistant.db            SQLite database (WAL; the -wal and -shm
+                                 sidecars appear next to it)
+  <root>\settings.json           DOES NOT EXIST — the settings live in the
+                                 `settings` table of assistant.db, one row,
+                                 key `app_settings`
+  <root>\models\                 Local voice and speech models
+      <root>\models\<id>\         one folder per model, recognised by
+                                 <id>\.complete   (a JSON marker:
+                                 {"id","installedAt","bundled"?})
+      <root>\models\.staging-<id> transient download/extraction staging
+                                 directory, removed on success, failure or cancel
+      <root>\models\silero-vad\  bundled VAD written from the executable
+                                 (silero_vad.onnx + .complete with
+                                 "bundled": true); never downloaded
+  <root>\logs\                   Rolling text logs
+      local-assistant.2026-09-27.log  (Rotation::DAILY, prefix `local-assistant`,
+      local-assistant.2026-09-28.log   suffix `log`, 7 files retained)
+      If <root>\logs cannot be created, logging falls back to
+      %TEMP%\local-assistant-logs\ and startup continues.
+  <root>\attachments\            One file per stored attachment
+      <id>                       the raw bytes exactly as ingested
+      <id>.txt                   the extracted text copy (attachments only)
+      Startup GC deletes every file whose id is not referenced by
+      `Db::attachment_ids()`; the same GC runs on `conv_clear_all`.
+  <root>\gpu\                    Optional NVIDIA CUDA pack
+      <root>\gpu\cuda-1.13.8\    PACK_VERSION folder; contains the 7 required
+                                 DLLs plus the four extracted archives' contents
+      <root>\gpu\<flags>         the `enabled` marker consumed by
+                                 `gpu::is_enabled`; takes effect at next start
+  <root>\.mcp.json               DOES NOT EXIST — MCP server config lives in the
+                                 `mcp_servers` and `mcp_tool_permissions` tables
+
+Build and release output (not application data, listed for completeness):
+  <repo>\dist\                   Vite frontend bundle, embedded into the exe at
+                                 compile time via `tauri::generate_context!`;
+                                 `build.rs` forces a rebuild on any change
+  <repo>\release\                 Portable exe + 4 speech DLLs + Inno Setup
+                                 installer, published as GitHub release assets
+  <repo>\.build-cache\           The sherpa-onnx source archive; deliberately
+                                 survives `cargo clean` so a cleaned tree does
+                                 not re-download ~hundreds of MB
+  %USERPROFILE%\.lmstudio\mcp.json  Read-only import source for
+                                 `mcp_import_preview` / `mcp_import`; a missing
+                                 file is an empty preview, not an error.
+
+--- HUGGING FACE CACHE LAYOUT THE SCANNER UNDERSTANDS ---
+`services::models::ModelStore::scan_dir` recurses to MAX_DEPTH = 4 and treats
+any folder recognised by `detect_custom` as a LEAF. It therefore works
+unmodified on three layouts:
+
+  1. flat              <extra-dir>\<model-folder>\
+  2. grouped            <extra-dir>\<publisher>\<model-folder>\
+  3. Hugging Face cache <cache-root>\models--<org>--<name>\snapshots\<commit-hash>\
+       e.g.  models--k2-fsa--kitten-nano\snapshots\abc123\
+             models--Qwen--Qwen3-TTS-12Hz-0.6B-Base\snapshots\def456\
+
+  `display_name` rewrites layout 3 to a friendly name: when the parent folder
+  is literally `snapshots`, the grandparent `models--<org>--<name>` is
+  converted to `<org>/<name>` (`--` becomes `/`); anything else falls back to
+  the folder's own name.
+  Folders that must be skipped while walking: `.git`, `blobs`, `refs`, `dict`,
+  `node_modules`, `espeak-ng-data`, `test_wavs`, and any dot-entry.
+  At depth 0, a child whose name matches a catalogue id is skipped when the
+  catalogue copy is already known, so the same model is not listed twice;
+  the final merge deduplicates strictly BY PATH.
+  `incompatible()` scans extra folders only, aborting at depth > 4 or after
+  50 findings.
+
+--- SECURITY NOTES ON STORED DATA ---
+  * API keys live in the `settings` table, not in the OS keyring, despite
+    what PRIVACY.md and the architecture table imply; the `windows` crate's
+    `Security_Credentials_UI` feature is used only for the Windows Hello
+    consent prompt in `desktop/verify.rs`.
+  * MCP server `env_json` / `headers_json` hold user-supplied secrets; the
+    import preview exposes key NAMES only.
+  * The voice/Speech model downloads are the only inbound files, and every
+    one is SHA-256 verified before it is committed to the models folder.
+  * Logs contain no conversation content unless
+    `general.logConversationContent` is explicitly turned on.

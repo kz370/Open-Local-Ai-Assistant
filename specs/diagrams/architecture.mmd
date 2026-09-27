@@ -1,0 +1,121 @@
+%% Open Local Assistant - System Architecture
+%% Layered view of the Tauri 2 desktop application.
+%% Rust backend (src-tauri/src) + React 19 / TypeScript frontend (src).
+%% All labels in English.
+
+flowchart TB
+
+    subgraph USERS["User Surface"]
+        U["Human User"]
+        SYS["Windows Desktop<br/>(tray, global hotkeys, other apps)"]
+    end
+
+    subgraph PRESENTATION["Presentation Layer - React 19 + TypeScript (src/)"]
+        direction TB
+        MAIN["main.tsx<br/>Hash Router + Boot Sequence"]
+        subgraph PAGES["Pages (src/pages)"]
+            CHAT["Chat/ChatApp.tsx<br/>Primary chat window"]
+            SET["Settings/SettingsApp.tsx<br/>Dashboard + 9 sections"]
+            OVL["Overlay/Overlay.tsx<br/>Dictation overlay"]
+            BUB["Bubble/Bubble.tsx<br/>Compact answer bubble"]
+            WIZ["Setup/SetupWizard.tsx<br/>First-run wizard"]
+        end
+        subgraph COMPS["Components (src/components)"]
+            CHATC["chat/*<br/>Composer, MessageBubble,<br/>Markdown, ModelPicker,<br/>SelectionMenu, Sources,<br/>ToolActivity, ToolConfirmDialog"]
+            VOICEC["voice/*<br/>CallView, LevelMeter,<br/>SpokenText, VoiceBars"]
+            SETC["settings/*<br/>GpuCard, LanguagePicker,<br/>ModelManager, ShortcutInput, layout"]
+            COMMC["common/*<br/>BrandMark, ErrorBoundary, controls"]
+            HISTC["history/HistoryPanel.tsx"]
+        end
+        APP["app/*<br/>ipc.ts (typed IPC client)<br/>chatStore / settingsStore / voiceStore (zustand)<br/>types.ts, strings.ts, providers.ts,<br/>knownLanguages.ts, attach.ts, vision.ts"]
+    end
+
+    subgraph IPC["IPC Boundary - Tauri 2 (invoke / listen / emit)"]
+        CMDS["commands/*<br/>app, chat, voice, mcp, memory, attachments<br/>All #[tauri::command] entry points"]
+    end
+
+    subgraph APPLICATION["Application / Orchestration Layer - Rust"]
+        CHATSVC["services/chat/*<br/>orchestrator (tool rounds, permissions)<br/>prompt, freshness, think, explain,<br/>attach, tools, resolver"]
+        AISVC["services/ai/*<br/>OpenAI-compatible client, SSE streaming,<br/>model_selector scoring"]
+    end
+
+    subgraph DOMAIN["Domain Services - Rust (src-tauri/src/services)"]
+        direction LR
+        STT["stt/*<br/>Speech recognition<br/>engine, session (VAD)"]
+        TTS["tts/*<br/>Speech synthesis<br/>sentence_buffer, voices,<br/>speech_text"]
+        AUD["audio/*<br/>cpal capture 16kHz mono,<br/>playback queue, devices"]
+        MODELS["models/*<br/>Catalogue, discovery,<br/>consented downloads"]
+        GPU["gpu/*<br/>Optional NVIDIA CUDA pack"]
+        MCP["mcp/*<br/>MCP manager (stdio + streamable HTTP),<br/>permissions, sources"]
+        SEARCH["search/*<br/>Web search<br/>SearXNG + DuckDuckGo fallback"]
+        LANG["language/*<br/>English/Arabic/German detection"]
+        ATTACH["attachments/*<br/>base64, office text extraction"]
+        DICT["dictation.rs<br/>Grammar cleanup, text insertion"]
+        CAPS["capabilities/mod.rs<br/>LocalCapabilityManager<br/>Local environment scan"]
+    end
+
+    subgraph INFRA["Infrastructure Layer"]
+        direction LR
+        DB["database/*<br/>SQLite: conversations, messages<br/>+ FTS5, settings, MCP config"]
+        CFG["settings/*<br/>Typed settings registry,<br/>backup / restore"]
+        STATE["state.rs<br/>AppState: Arc&lt;Mutex&lt;...&gt;&gt; singletons"]
+        ERR["errors.rs<br/>Diagnostic (problem, cause, fix)"]
+        LOG["logging.rs<br/>tracing + rolling file appender"]
+        DESKTOP["desktop/*<br/>window, tray, shortcuts,<br/>autostart, icon, verify"]
+    end
+
+    subgraph EXTERNAL["External Systems"]
+        LMS["LM Studio<br/>http://localhost:1234"]
+        OR["OpenRouter API"]
+        GEM["Google Gemini API"]
+        HF["Hugging Face API"]
+        SVC["Hosted MCP Servers<br/>(stdio or HTTP)"]
+        WEB["Web (SearXNG / DuckDuckGo)"]
+        OSKEY["Windows Credential Manager<br/>(API key storage)"]
+    end
+
+    U --> MAIN
+    SYS --> DESKTOP
+    MAIN --> PAGES
+    PAGES --> COMPS
+    COMPS --> APP
+    APP <-->|"invoke / listen / emit"| CMDS
+    CMDS --> CHATSVC
+    CMDS --> AISVC
+    CMDS --> DOMAIN
+    CHATSVC --> AISVC
+    CHATSVC --> SEARCH
+    CHATSVC --> MCP
+    AISVC --> LMS
+    AISVC --> OR
+    AISVC --> GEM
+    AISVC --> HF
+    MCP --> SVC
+    SEARCH --> WEB
+    STT --> AUD
+    TTS --> AUD
+    TTS --> MODELS
+    STT --> MODELS
+    MODELS --> GPU
+    DOMAIN --> STATE
+    DOMAIN --> DB
+    DOMAIN --> CFG
+    DOMAIN --> ERR
+    DOMAIN --> LOG
+    CMDS --> DESKTOP
+    SETC --> OSKEY
+    CAPS --> LMS
+
+    classDef ui fill:#e8f0fe,stroke:#4285f4,color:#1a1a1a
+    classDef ipc fill:#fef7e0,stroke:#f9ab00,color:#1a1a1a
+    classDef app fill:#e6f4ea,stroke:#34a853,color:#1a1a1a
+    classDef dom fill:#fce8e6,stroke:#ea4335,color:#1a1a1a
+    classDef infra fill:#f1f3f4,stroke:#5f6368,color:#1a1a1a
+    classDef ext fill:#ede7f6,stroke:#7e57c2,color:#1a1a1a
+
+    class MAIN,CHAT,SET,OVL,BUB,WIZ,CHATC,VOICEC,SETC,COMMC,HISTC,APP ui
+    class CMDS ipc
+    class CHATSVC,AISVC app
+    class STT,TTS,AUD,MODELS,GPU,MCP,SEARCH,LANG,ATTACH,DICT,CAPS dom
+    class DB,CFG,STATE,ERR,LOG,DESKTOP infra
+    class LMS,OR,GEM,HF,SVC,WEB,OSKEY ext

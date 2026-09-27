@@ -1,0 +1,261 @@
+%% Open Local Assistant - Data Flow
+%% How data moves through the app for the five runtime flows:
+%%   (a) chat turn   (b) voice turn   (c) spoken reply
+%%   (d) model download   (e) settings save
+%% The WebView is untrusted; the trust boundary is drawn explicitly.
+%% Node names match specs/diagrams/architecture.mmd.
+%% All labels in English.
+
+flowchart TB
+
+    %% ------------------------------------------------------------------
+    %% (a) Chat turn
+    %% ------------------------------------------------------------------
+    subgraph CHATFLOW["Flow A - Chat turn (text)"]
+        direction TB
+
+        subgraph CHATUI_A["WebView - Presentation"]
+            direction TB
+            COMPOSER["Composer<br/>text + staged attachments"]
+            CHATSTORE["chatStore.ts<br/>turnId, optimistic user message,<br/>pending assistant message, queue"]
+            BATCH["bufferStream()<br/>50 ms batched flush"]
+            MSGBUBBLE["MessageBubble<br/>Markdown re-render"]
+        end
+
+        subgraph CHATBACK["Rust - Application"]
+            direction TB
+            CMDA["commands/chat.rs<br/>chat_send(input, Channel)"]
+            ENGINE["ChatEngine.send<br/>orchestrator.rs"]
+            PROMPT["prompt.rs<br/>build_system_prompt (byte-stable)<br/>turn_note + freshness_hint"]
+            HISTORY["build_history<br/>drop incomplete tool exchanges,<br/>trim to 60 percent of context"]
+            LANGDET["language::detect<br/>en / ar / de"]
+            SELECT["ModelResolver.resolve<br/>+ model_selector scoring"]
+            TURN["ChatEvent<br/>started, delta, reasoning,<br/>toolStarted, toolAwaitingConfirmation,<br/>toolFinished, done, error"]
+        end
+
+        subgraph CHATEXT["Rust - External"]
+            direction TB
+            LLM["LM Studio or hosted provider<br/>POST /chat/completions<br/>stream true, include_usage"]
+            SSE["sse.rs<br/>SseDecoder + ToolCallAccumulator"]
+            TOOLBOX["ToolProvider<br/>McpManager + WebSearch<br/>(CombinedTools)"]
+        end
+
+        subgraph CHATDB["On disk - SQLite assistant.db"]
+            direction TB
+            CONVROW["conversations + messages<br/>(FTS5), settings KV, mcp_servers"]
+        end
+
+        COMPOSER -->|"1 send(text)"| CHATSTORE
+        CHATSTORE -->|"2 invoke chat_send<br/>Channel&lt;ChatEvent&gt;"| CMDA
+        CMDA --> ENGINE
+        ENGINE --> SELECT
+        SELECT --> LLM
+        ENGINE --> LANGDET
+        ENGINE --> PROMPT
+        ENGINE --> HISTORY
+        HISTORY --> CONVROW
+        ENGINE -->|"3 request"| LLM
+        LLM -->|"4 SSE bytes"| SSE
+        SSE -->|"5 StreamChunk"| ENGINE
+        ENGINE -->|"6 delta / reasoning"| TURN
+        TURN -->|"7 Channel send"| CHATSTORE
+        CHATSTORE --> BATCH
+        BATCH --> MSGBUBBLE
+        ENGINE -->|"8 up to 6 tool rounds"| TOOLBOX
+        TOOLBOX -->|"9 ToolOutput + Source"| ENGINE
+        ENGINE -->|"10 persist user, tool and assistant rows"| CONVROW
+    end
+
+    %% ------------------------------------------------------------------
+    %% (b) Voice turn (input)
+    %% ------------------------------------------------------------------
+    subgraph VOICEFLOW["Flow B - Voice turn (input)"]
+        direction TB
+
+        subgraph VOICEUI["WebView - Presentation"]
+            direction TB
+            CALLVIEW["CallView / Composer<br/>LevelMeter, VoiceBars"]
+            VSTORE["voiceStore.ts<br/>session number, phase, level, bands,<br/>partial text, lastTranscript"]
+        end
+
+        subgraph VOICEHW["Rust - Domain (named threads)"]
+            direction TB
+            MIC["mic-capture thread<br/>cpal input stream"]
+            DSP["audio::capture DSP<br/>downmix to mono, resample to 16 kHz,<br/>100 Hz high-pass, RMS level,<br/>24-band spectrum at 20 Hz"]
+            GATE["playback gate<br/>muted, or assistant speaking<br/>plus 700 ms tail"]
+            SESSION["voice-session thread<br/>SessionCtx::run"]
+            WARM["warm_up()<br/>scoped thread loads recogniser,<br/>backlog audio kept"]
+            VAD["VAD path<br/>512-sample windows into Silero<br/>provider cpu, always"]
+            STREAMR["streaming path<br/>live partials,<br/>endpoint from recogniser"]
+            RECOG["sherpa-onnx recogniser<br/>Whisper / Parakeet / SenseVoice / Moonshine"]
+            CLEAN["clean_transcript<br/>+ language::detect"]
+        end
+
+        VOICEVENT["VoiceEvent<br/>state, level, partial, transcript, error"]
+
+        MIC --> DSP
+        DSP -->|"CaptureEvent::Samples / Level"| SESSION
+        DSP --> GATE
+        SESSION --> WARM
+        WARM --> VAD
+        WARM --> STREAMR
+        VAD --> RECOG
+        STREAMR --> RECOG
+        RECOG --> CLEAN
+        GATE -->|"input_muted: drop samples"| SESSION
+        CLEAN --> VOICEVENT
+        VOICEVENT -->|"voice://event"| VSTORE
+        VSTORE --> CALLVIEW
+        VSTORE -->|"handsFree or autoSubmit:<br/>chatStore.send(text, voice)"| CHATSTORE
+    end
+
+    %% ------------------------------------------------------------------
+    %% (c) Spoken reply (output)
+    %% ------------------------------------------------------------------
+    subgraph SPEECHFLOW["Flow C - Spoken reply (output)"]
+        direction TB
+
+        TTSBUF["SentenceBuffer<br/>skip code fences,<br/>decimals / abbreviations / URLs do not end,<br/>4 chars for the first, 16 after, 280 max"]
+        TTSLANG["sentence_lang<br/>detect, threshold 0.5,<br/>else previous sentence's language"]
+        VOICESEL["voices::select_voice<br/>language entry ttsVoice + preferred gender"]
+        SYNTH["tts-synth thread<br/>Job queue, generation counter drops<br/>jobs from a stopped turn,<br/>speech_text sound_tags, OfflineTts"]
+        PLAYER["audio-playback thread<br/>Clip queue, volume, pause, current clip id"]
+        PROGRESS["tts-progress thread<br/>polls current clip every 40 ms"]
+        TTSEV["TtsEvent<br/>speaking, sentence, paused,<br/>resumed, idle, voiceUnavailable, error"]
+        SPOKEN["SpokenText<br/>startedAt = performance.now,<br/>word-by-word highlight,<br/>clock shifted across pauses"]
+
+        TTSBUF --> TTSLANG
+        TTSLANG --> VOICESEL
+        VOICESEL --> SYNTH
+        SYNTH --> PLAYER
+        PLAYER --> PROGRESS
+        PROGRESS --> TTSEV
+        TTSEV -->|"tts://event"| SPOKEN
+        TURN -->|"ChatEvent::delta"| TTSBUF
+        PLAYER -->|"speaking probe"| GATE
+    end
+
+    %% ------------------------------------------------------------------
+    %% (d) Consented model download
+    %% ------------------------------------------------------------------
+    subgraph DLFLOW["Flow D - Consented model download"]
+        direction TB
+
+        subgraph DLUI["WebView - Presentation"]
+            direction TB
+            MODELMGR["ModelManager / setup wizard<br/>explicit Download click"]
+        end
+
+        subgraph DLBACK["Rust - Domain"]
+            direction TB
+            DLCMD["commands/voice.rs<br/>models_download reserves a<br/>CancellationToken per id, then returns"]
+            DLRUN["download::install<br/>sequential, one model at a time"]
+            STREAM["stream bytes<br/>emit progress at most every 250 ms"]
+            HASH["Sha256 in the SAME loop<br/>hex::encode of the finalized digest"]
+            VERIFY["compare with pinned RemoteFile.sha256"]
+            EXTRACT["extract_tar_bz2<br/>strip top folder, safe_join rejects<br/>absolute paths and dot dot,<br/>files and dirs only"]
+            RENAME["atomic rename<br/>staging to models/id,<br/>then write .complete marker"]
+            TOKENCANCEL["models_cancel<br/>CancellationToken::cancel"]
+        end
+
+        subgraph DLDISK["On disk - models directory"]
+            direction TB
+            STAGEDIR["models/.staging-id/<br/>download-n.part"]
+            MODELDIR["models/id/<br/>onnx, tokens, espeak data"]
+            MARKER["models/id/.complete<br/>id + installedAt"]
+        end
+
+        MODELMGR -->|"ipc.modelsDownload(ids)"| DLCMD
+        DLCMD --> DLRUN
+        DLRUN --> STREAM
+        STREAM --> HASH
+        HASH --> VERIFY
+        VERIFY -->|"match"| EXTRACT
+        VERIFY -->|"mismatch: Download error"| DLRUN
+        EXTRACT --> RENAME
+        RENAME --> MODELDIR
+        RENAME --> MARKER
+        STREAM --> STAGEDIR
+        DLRUN -.->|"models://download<br/>DownloadProgress"| MODELMGR
+        DLRUN -.->|"models://changed"| MODELMGR
+        TOKENCANCEL -.-> DLRUN
+        DLCMD -->|"token table in AppState"| TOKENCANCEL
+    end
+
+    %% ------------------------------------------------------------------
+    %% (e) Settings save
+    %% ------------------------------------------------------------------
+    subgraph SAVEFLOW["Flow E - Settings save"]
+        direction TB
+
+        subgraph SAVEUI["WebView - Presentation"]
+            direction TB
+            SECUI["SettingsApp section<br/>e.g. sections/Voice.tsx"]
+            OPT["settingsStore.update<br/>structuredClone(current) then mutate<br/>optimistic set + applyAppearance"]
+        end
+
+        subgraph SAVEBACK["Rust - Presentation and Infrastructure"]
+            direction TB
+            SAVECMD["commands/app.rs<br/>save_settings"]
+            SANITIZE["Settings::sanitize<br/>clamp enums, numbers, language refs;<br/>force manual model mode for hosted providers"]
+            SETSTORE["SettingsStore::set<br/>serialize to one JSON document"]
+            SIDE["diff before vs saved<br/>provider, url, key, timeout, model dirs,<br/>reload_stt, unload voices, apply device,<br/>preload, re-register shortcuts,<br/>autostart, always on top, position, accent"]
+        end
+
+        subgraph SAVEDISK["On disk - SQLite assistant.db"]
+            direction TB
+            KVROW["kv row app_settings<br/>one JSON document, version field"]
+        end
+
+        SECUI -->|"useSettings.update(mutate)"| OPT
+        OPT -->|"1 invoke save_settings(draft)"| SAVECMD
+        SAVECMD --> SANITIZE
+        SANITIZE --> SETSTORE
+        SETSTORE --> KVROW
+        SETSTORE --> SIDE
+        SIDE -.->|"2 emit settings://changed(sanitised)"| SECUI
+        SIDE -.->|"3 other windows adopt it"| OPT
+        OPT -->|"on failure: restore the pre-update object<br/>and re-apply the old appearance"| SECUI
+    end
+
+    %% ------------------------------------------------------------------
+    %% Trust boundary and cross-flow notes
+    %% ------------------------------------------------------------------
+    TB["TRUST BOUNDARY<br/>The WebView is untrusted: CSP default-src self,<br/>script-src self, freezePrototype, no withGlobalTauri.<br/>Every side effect is re-validated in Rust."]
+    CHATUI_A -.- TB
+    VOICEUI -.- TB
+    DLUI -.- TB
+    SAVEUI -.- TB
+    TB -.- CMDA
+    TB -.- SAVECMD
+
+    NOTE1["Event transport:<br/>turn-scoped streams use Channel (chat_send, chat_explain)<br/>and are dropped with the call.<br/>Machine state uses global events:<br/>voice://event, tts://event, settings://changed,<br/>models://changed, models://download, mcp://changed,<br/>memory://changed, dictation://state, voice://error."]
+    CHATSTORE -.- NOTE1
+
+    NOTE2["Data dir: %APPDATA%\\com.localassistant.app<br/>assistant.db, models/, models/.staging-id/, attachments/,<br/>gpu/cuda-1.13.8/, gpu/launcher/, logs (daily, 7 kept)."]
+    CHATDB -.- NOTE2
+    DLDISK -.- NOTE2
+    SAVEDISK -.- NOTE2
+
+    NOTE3["Secrets: apiKey lives in settings.ai.apiKey in the local database,<br/>is never logged, and is stripped from exports unless explicitly included.<br/>Exports are ChaCha20-Poly1305 encrypted."]
+    SAVEUI -.- NOTE3
+
+    classDef ui fill:#e8f0fe,stroke:#4285f4,color:#1a1a1a
+    classDef ipc fill:#fef7e0,stroke:#f9ab00,color:#1a1a1a
+    classDef app fill:#e6f4ea,stroke:#34a853,color:#1a1a1a
+    classDef dom fill:#fce8e6,stroke:#ea4335,color:#1a1a1a
+    classDef infra fill:#f1f3f4,stroke:#5f6368,color:#1a1a1a
+    classDef ext fill:#ede7f6,stroke:#7e57c2,color:#1a1a1a
+    classDef disk fill:#fff4e5,stroke:#e37400,color:#1a1a1a
+    classDef note fill:#ffffff,stroke:#9aa0a6,color:#1a1a1a,stroke-dasharray:4 3
+    classDef bound fill:#ffe0e0,stroke:#d93025,color:#1a1a1a,stroke-width:2px
+
+    class COMPOSER,CHATSTORE,BATCH,MSGBUBBLE,CALLVIEW,VSTORE,SPOKEN,MODELMGR,SECUI,OPT ui
+    class CMDA,SAVECMD ipc
+    class ENGINE,PROMPT,HISTORY,LANGDET,SELECT,TURN app
+    class LLM,SSE,TOOLBOX ext
+    class WARM,VAD,STREAMR,RECOG,CLEAN,SESSION,MIC,DSP,GATE,TTSBUF,TTSLANG,VOICESEL,SYNTH,PLAYER,PROGRESS dom
+    class CHATDB,CONVROW,STAGEDIR,MODELDIR,MARKER,KVROW disk
+    class SANITIZE,SETSTORE,SIDE,DLCMD,DLRUN,STREAM,HASH,VERIFY,EXTRACT,RENAME,TOKENCANCEL infra
+    class NOTE1,NOTE2,NOTE3 note
+    class TB,VOICEVENT,TTSEV bound

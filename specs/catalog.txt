@@ -1,0 +1,817 @@
+CATALOG — Open Local Assistant (`local-ai-assistant` v1.0.0)
+Complete index of public symbols. Format: `path :: symbol — one-line description`.
+Companion documents: `full_documentation.md` (per-file analysis), `relationships.txt`
+(dependency edges), `data_models.txt` (schemas and types), `runtime.md` (pipeline state).
+Tally: 93 Tauri commands, 67 sync / 26 async, across 6 command modules.
+
+================================================================================
+=== RUST: CORE ===
+================================================================================
+
+src-tauri/src/main.rs :: main — Six-line binary entry point; calls `local_ai_assistant_lib::run()` and nothing else.
+src-tauri/src/main.rs :: windows_subsystem — `#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]`; keeps release builds console-free.
+
+src-tauri/src/lib.rs :: run — Tauri entry point (mobile-aware); orders GPU activation, plugins, logging, state, tray, shortcuts, windows, preload, MCP connect.
+src-tauri/src/lib.rs :: preload_models — `pub(crate) fn preload_models(app: &AppHandle)`; warms autoload-enabled models at startup.
+src-tauri/src/lib.rs :: confirm_review — `pub(crate) async fn confirm_review(app, text)`; settles, inserts and dismisses the dictation review card.
+src-tauri/src/lib.rs :: retry_dictation — `pub(crate) async fn retry_dictation(app)`; re-arms dictation from the review or listening state.
+src-tauri/src/lib.rs :: init_state — Private; builds `AppState` in a fixed 14-step dependency order.
+src-tauri/src/lib.rs :: on_voice_event — Private; routes `VoiceEvent` to `voice://event` on the overlay (dictation) or globally.
+src-tauri/src/lib.rs :: run_dictation — Private; the dictation state machine (transcribe -> correct -> review/insert).
+src-tauri/src/lib.rs :: insert_and_report — Private; inserts text and emits `dictation://state` for the real outcome.
+src-tauri/src/lib.rs :: LINGER_OK_MS / LINGER_MSG_MS — 800 / 2200 ms overlay linger constants.
+
+src-tauri/src/state.rs :: AppState — Managed Tauri state: paths, Db, SettingsStore, every service Arc, download/loading maps, dictation atomics, shortcut errors.
+src-tauri/src/state.rs :: AppState.downloads — `Mutex<HashMap<String, CancellationToken>>`; shared reserve table for model ids and the literal `"gpu-pack"`.
+src-tauri/src/state.rs :: AppState.model_loading — `Mutex<HashSet<String>>`; the `memory://` key namespace while a model loads.
+src-tauri/src/state.rs :: AppState.dictation_busy / dictation_cancel — `AtomicBool`; busy covers the whole take, cancel is swap-consumed.
+src-tauri/src/state.rs :: AppState.dictation_live_typer — `LiveTyper`; incremental typing into the foreground application.
+src-tauri/src/state.rs :: AppState.dictation_review — `Mutex<Option<ReviewPending>>`; text awaiting user confirmation.
+src-tauri/src/state.rs :: AppState.dictation_target — `AtomicIsize`; remembered foreground HWND, `0` = none.
+src-tauri/src/state.rs :: AppState.shortcut_errors — `Mutex<Vec<String>>`; non-fatal global-shortcut registration failures.
+src-tauri/src/state.rs :: AppState.capabilities — `fn capabilities(&self) -> LocalCapabilityManager`; per-scan snapshot and the crate's only `Arc<dyn AiService>` coercion.
+src-tauri/src/state.rs :: AppPaths — `#[derive(Clone, Serialize)] #[serde(rename_all = "camelCase")]`; resolved `data_dir`, `models_dir`, `logs_dir`, `database`.
+
+src-tauri/src/errors.rs :: AppError — Single application error enum, 16 variants, each with a stable machine-readable `code`.
+src-tauri/src/errors.rs :: AppError::LmStudioUnavailable(String) — code `lmstudio_unavailable` — "LM Studio is unavailable: {0}".
+src-tauri/src/errors.rs :: AppError::LmStudio(String) — code `lmstudio_error` — "LM Studio error: {0}".
+src-tauri/src/errors.rs :: AppError::NoModel — code `no_model` — "No suitable model is available in LM Studio".
+src-tauri/src/errors.rs :: AppError::Timeout(String) — code `timeout` — "Request timed out: {0}".
+src-tauri/src/errors.rs :: AppError::Database(String) — code `database` — "Database error: {0}".
+src-tauri/src/errors.rs :: AppError::Stt(String) — code `stt_unavailable` — "Local speech recognition unavailable: {0}".
+src-tauri/src/errors.rs :: AppError::Tts(String) — code `tts_unavailable` — "Local text-to-speech unavailable: {0}".
+src-tauri/src/errors.rs :: AppError::Audio(String) — code `audio` — "Audio device error: {0}".
+src-tauri/src/errors.rs :: AppError::Mcp(String) — code `mcp` — "MCP error: {0}".
+src-tauri/src/errors.rs :: AppError::PermissionDenied(String) — code `permission_denied` — "Permission denied: {0}".
+src-tauri/src/errors.rs :: AppError::Download(String) — code `download` — "Model download failed: {0}".
+src-tauri/src/errors.rs :: AppError::NotFound(String) — code `not_found` — "Not found: {0}".
+src-tauri/src/errors.rs :: AppError::Invalid(String) — code `invalid` — "Invalid input: {0}".
+src-tauri/src/errors.rs :: AppError::Io(String) — code `io` — "I/O error: {0}".
+src-tauri/src/errors.rs :: AppError::Cancelled — code `cancelled` — "Cancelled"; also the "user backed out" signal from Windows Hello.
+src-tauri/src/errors.rs :: AppError::Other(String) — code `other` — "{0}"; the universal frontend fallback key.
+src-tauri/src/errors.rs :: AppError.code — `fn code(&self) -> &'static str`; the i18n lookup key.
+src-tauri/src/errors.rs :: AppResult — `pub type AppResult<T> = Result<T, AppError>`; the service-layer result alias.
+src-tauri/src/errors.rs :: from_lmstudio_http — Classifies `reqwest::Error`: timeout -> `Timeout`, connect/request -> `LmStudioUnavailable`, else `LmStudio`.
+src-tauri/src/errors.rs :: WireError — Private `Serialize` shim; emits exactly `{ code, detail }` across IPC.
+
+src-tauri/src/logging.rs :: init — `pub fn init(log_dir: &Path) -> Option<WorkerGuard>`; daily rolling file appender, 7 files retained, env-filtered.
+src-tauri/src/logging.rs :: LOCAL_ASSISTANT_LOG — Env var controlling the `EnvFilter`; invalid values fall back to `info`.
+
+src-tauri/src/capabilities/mod.rs :: LocalCapabilityManager — Per-scan snapshot bundling `ai`, `resolver`, `store`, `stt`, `tts`, `mcp` and `hardware`.
+src-tauri/src/capabilities/mod.rs :: LocalCapabilityManager::detect_lm_studio — `async`; never fails: encodes an `AppError` into `errorCode`/`errorDetail` instead of returning `Err`.
+src-tauri/src/capabilities/mod.rs :: LocalCapabilityManager::detect_voice — Probes en/ar/de voices, VAD readiness, installed models and the recommendation.
+src-tauri/src/capabilities/mod.rs :: LocalCapabilityManager::scan — `async`; one complete `CapabilityReport` (LM Studio, hardware, voice, devices, MCP).
+src-tauri/src/capabilities/mod.rs :: LmStudioCapability — Connected state, URL, discovery API, model count, error pair, selection, loaded ids.
+src-tauri/src/capabilities/mod.rs :: VoiceCapability — `stt_model`, `vad_ready`, `tts_en/ar/de`, installed models, recommendation, `acceleration`.
+src-tauri/src/capabilities/mod.rs :: McpCapability — Counts of enabled and connected servers plus `internet` availability.
+src-tauri/src/capabilities/mod.rs :: CapabilityReport — Root serialisable report returned by `scan_capabilities`.
+
+================================================================================
+=== RUST: COMMANDS (93 Tauri IPC commands) ===
+================================================================================
+
+--- commands/app.rs (24 commands: 6 async, 18 sync) ---
+commands/app.rs :: get_settings — SYNC `(state) -> Settings` — returns a clone of the in-memory settings document.
+commands/app.rs :: save_settings — ASYNC `(app, state, settings) -> CmdResult<Settings>` — sanitises, persists, applies the diff-driven side-effect table, emits `settings://changed`.
+commands/app.rs :: settings_export — SYNC `(state, path, include_keys) -> CmdResult<()>` — optionally strips API keys, encrypts and writes the backup to an absolute path.
+commands/app.rs :: settings_import — SYNC `(state, path) -> CmdResult<Settings>` — decrypts and returns `merge_import(current, imported)`; does NOT persist.
+commands/app.rs :: shortcuts_capture — SYNC `(app, capturing) -> ()` — unregisters/re-registers all global shortcuts so the recorder is not swallowed.
+commands/app.rs :: shortcut_errors — SYNC `(state) -> Vec<String>` — non-fatal registration failures for the settings UI.
+commands/app.rs :: app_info — SYNC `(app, state) -> AppInfo` — version, resolved paths, hardware inventory, OS string.
+commands/app.rs :: open_folder — SYNC `(state, which) -> CmdResult<()>` — opens `logs | models | data`; any other key is `AppError::Invalid`.
+commands/app.rs :: read_log_tail — SYNC `(state, lines) -> CmdResult<String>` — newest `*.log`, default 200 lines, hard cap 2000.
+commands/app.rs :: scan_capabilities — ASYNC `(state) -> CmdResult<CapabilityReport>` — the whole local-capability scan.
+commands/app.rs :: lmstudio_test — ASYNC `(state, url, api_key, provider) -> CmdResult<ConnectionStatus>` — probes the shared service only when nothing relevant changed, otherwise a throwaway 10 s client.
+commands/app.rs :: lmstudio_models — ASYNC `(state, refresh) -> CmdResult<Vec<ModelInfo>>` — model list from the resolver cache or a hard refresh.
+commands/app.rs :: lmstudio_auto_selection — ASYNC `(state) -> CmdResult<Option<ModelSelection>>` — the automatic model pick with its machine-readable reasons.
+commands/app.rs :: window_set_compact — SYNC `(app, compact) -> ()` — toggles the 380x170 compact chat shell.
+commands/app.rs :: window_hide — SYNC `(app) -> ()` — hides the chat window to the tray.
+commands/app.rs :: bubble_open_chat — SYNC `(app) -> ()` — bubble click: morph the bubble into the chat window.
+commands/app.rs :: window_minimize — SYNC `(app) -> ()` — shrinks the chat into the launcher bubble.
+commands/app.rs :: window_toggle_maximize — SYNC `(app) -> bool` — toggles maximize and returns the new state.
+commands/app.rs :: window_show_main — SYNC `(app) -> ()` — shows the chat window and focuses the composer.
+commands/app.rs :: open_settings_window — SYNC `(app, section) -> CmdResult<()>` — must run on the worker thread; navigates to `/settings/<section>`.
+commands/app.rs :: complete_first_run — SYNC `(app, state) -> CmdResult<()>` — sets `general.firstRunComplete` and releases the startup hold.
+commands/app.rs :: quit_app — SYNC `(app) -> ()` — delegates to the tray's bounded shutdown sequence.
+commands/app.rs :: privacy_status — ASYNC `(state) -> CmdResult<PrivacyStatus>` — where data goes, computed from the live provider and server URL.
+commands/app.rs :: app_ready — SYNC `(app) -> ()` — backend hold release: shows the main window on first run, otherwise the bubble or nothing when `startMinimized`.
+commands/app.rs :: AppInfo — `{ version, paths, hardware, os }`.
+commands/app.rs :: PrivacyStatus — `{ llm, llmServer, llmIsLocalAddress, llmIsCloud, sttLocal, ttsLocal, conversationsLocal, settingsLocal, telemetry, internetViaMcp, internetServers }`.
+commands/mod.rs :: CmdResult — `pub type CmdResult<T> = Result<T, AppError>`; the return type of every fallible command.
+
+--- commands/attachments.rs (6 commands: 0 async, 6 sync) ---
+commands/attachments.rs :: attach_files — SYNC `(state, paths) -> CmdResult<AttachResult>` — per-file fault-tolerant ingest; failures go in `failures`, not `Err`.
+commands/attachments.rs :: attach_bytes — SYNC `(state, name, mime, data) -> CmdResult<Attachment>` — accepts raw base64 or a full `data:` URL.
+commands/attachments.rs :: attach_text — SYNC `(state, name, text) -> CmdResult<Attachment>` — stores pasted/typed text as a text attachment.
+commands/attachments.rs :: attach_remove — SYNC `(state, id) -> ()` — fire-and-forget staged-attachment discard.
+commands/attachments.rs :: attachment_data_url — SYNC `(state, id, mime) -> CmdResult<String>` — `data:{mime};base64,{base64}` for image previews.
+commands/attachments.rs :: attachment_text — SYNC `(state, id) -> CmdResult<String>` — extracted text, or `AppError::NotFound` when none exists.
+commands/attachments.rs :: AttachResult — `{ attachments: Vec<Attachment>, failures: Vec<String> }`.
+
+--- commands/chat.rs (13 commands: 2 async, 11 sync) ---
+commands/chat.rs :: chat_send — ASYNC `(state, input: SendInput, on_event: Channel<ChatEvent>) -> CmdResult<()>` — never fails; errors arrive as `ChatEvent::Error`.
+commands/chat.rs :: chat_explain — ASYNC `(state, id, selection, passage, on_event: Channel<ExplainEvent>) -> CmdResult<()>` — out-of-conversation streamed explanation; cancelled by `chat_stop(id)`.
+commands/chat.rs :: chat_stop — SYNC `(state, turn_id) -> ()` — cancels the turn token and its speech.
+commands/chat.rs :: chat_confirm_tool — SYNC `(state, call_id, approved) -> bool` — resolves a pending confirmation; `false` means the request was stale.
+commands/chat.rs :: conv_list — SYNC `(state, limit, offset) -> CmdResult<Vec<Conversation>>` — `limit` defaults to 100 and is capped at 1000.
+commands/chat.rs :: conv_search — SYNC `(state, query) -> CmdResult<Vec<SearchHit>>` — FTS5 + title LIKE, hard-capped at 100 results.
+commands/chat.rs :: conv_get — SYNC `(state, id) -> CmdResult<(Conversation, Vec<Message>)>` — filters messages to `role IN ('user','assistant')`.
+commands/chat.rs :: conv_rename — SYNC `(state, id, title) -> CmdResult<()>` — trims and rejects an empty title.
+commands/chat.rs :: conv_delete — SYNC `(state, id) -> CmdResult<()>` — also clears `lastConversationId` when it pointed at this row.
+commands/chat.rs :: conv_clear_all — SYNC `(state) -> CmdResult<usize>` — deletes everything, clears the pointer, GCs attachment files, returns the count.
+commands/chat.rs :: conv_set_last — SYNC `(state, id: Option<String>) -> CmdResult<()>` — stores or clears the last-opened conversation.
+commands/chat.rs :: conv_export — SYNC `(state, ids, format: ExportFormat, path) -> CmdResult<()>` — empty `ids` is `AppError::Invalid("nothing to export")`.
+commands/chat.rs :: conv_import — SYNC `(state, path) -> CmdResult<Vec<String>>` — 200 MiB size gate, then `import_conversations`; returns the new ids.
+
+--- commands/mcp.rs (13 commands: 10 async, 3 sync) ---
+commands/mcp.rs :: mcp_list — ASYNC `(state) -> CmdResult<Vec<ServerStatus>>` — every configured server with its state, tools and internet flag.
+commands/mcp.rs :: mcp_save — ASYNC `(state, config) -> CmdResult<McpServerConfig>` — new servers are forced `enabled=false, source="user"`; existing servers keep their stored `enabled`.
+commands/mcp.rs :: mcp_delete — ASYNC `(state, id) -> CmdResult<()>` — disconnects first, then deletes the row.
+commands/mcp.rs :: mcp_set_enabled — ASYNC `(state, id, enabled) -> CmdResult<()>` — the only way to flip connection state.
+commands/mcp.rs :: mcp_reconnect — ASYNC `(state, id) -> CmdResult<()>` — fire-and-forget; always `Ok(())`.
+commands/mcp.rs :: mcp_set_permission — ASYNC `(state, server_id, tool, permission) -> CmdResult<Permission>` — returns the EFFECTIVE permission after safe-mode clamping.
+commands/mcp.rs :: mcp_set_all_permissions — ASYNC `(state, server_id, permission: Option<Permission>) -> CmdResult<()>` — `None` resets every tool of the server to its default.
+commands/mcp.rs :: mcp_safe_mode — SYNC `(state) -> bool` — always `true` at launch; never persisted.
+commands/mcp.rs :: mcp_set_safe_mode — ASYNC `(window: WebviewWindow, state, enabled) -> CmdResult<()>` — turning safe mode OFF requires Windows Hello; the only command taking a `WebviewWindow`.
+commands/mcp.rs :: mcp_import_preview — SYNC `(state) -> CmdResult<Vec<ImportCandidate>>` — parses LM Studio `mcp.json`; a missing file yields an empty list, `envKeys` never contains values.
+commands/mcp.rs :: mcp_import — ASYNC `(state, names) -> CmdResult<usize>` — saves the named candidates as `enabled=false, source="lmstudio"`; returns the number actually saved.
+commands/mcp.rs :: search_public_instances — ASYNC `(state, refresh) -> CmdResult<Vec<PublicInstance>>` — fetches the searx.space instance list.
+commands/mcp.rs :: search_test — ASYNC `(state) -> CmdResult<SearchTestResult>` — one uncached real search with the probe query "open source search engine".
+commands/mcp.rs :: SearchTestResult — `{ engine, count, first_title }`; `engine` names the engine that actually answered.
+
+--- commands/memory.rs (3 commands: 3 async) ---
+commands/memory.rs :: memory_status — ASYNC `(state) -> CmdResult<Vec<MemoryItem>>` — the "Models in memory" list; LLM items only exist for provider `lmstudio`.
+commands/memory.rs :: memory_load — ASYNC `(app, key) -> CmdResult<()>` — loads one key, or the special value `"all"` (load everything, fire-and-forget).
+commands/memory.rs :: memory_unload — ASYNC `(app, state, key) -> CmdResult<()>` — refuses `"stt"` while a listening mode is active; the bare key `"llm"` is not supported.
+commands/memory.rs :: load — `pub async fn load(app, key)`; shared dispatch used by `memory_load` and `preload_models`.
+commands/memory.rs :: load_all — `pub fn load_all(app, only_autoload)`; loads the four speech keys sequentially and the chat model in a parallel task.
+commands/memory.rs :: reload_stt — `pub fn reload_stt(app)`; swaps the STT model in place to avoid a cold next session.
+commands/memory.rs :: MemoryItem — `{ key, kind, role, model, state, detail, autoload_key, autoload }`.
+commands/memory.rs :: key namespace — `"stt"`, `"voice:en|ar|de"`, `"llm"`, `"llm:<model id>"`, and the load-only `"all"`.
+
+--- commands/voice.rs (34 commands: 5 async, 29 sync) ---
+commands/voice.rs :: audio_devices — ASYNC `() -> CmdResult<AudioDevices>` — `spawn_blocking` device enumeration (loopback inputs excluded).
+commands/voice.rs :: voice_start — SYNC `(state, mode: ListenMode) -> CmdResult<u64>` — stops TTS first (except `Test`); returns the monotonically increasing session number.
+commands/voice.rs :: voice_stop — SYNC `(state, discard) -> Option<ListenMode>` — the mode that was active, or `None` when idle.
+commands/voice.rs :: dictation_cancel — SYNC `(app) -> ()` — documented no-op when idle.
+commands/voice.rs :: dictation_insert_now — SYNC `(state) -> ()` — stops with `discard=false`, but only while the active mode is `Dictation`.
+commands/voice.rs :: dictation_confirm — ASYNC `(app, text) -> CmdResult<()>` — accepts the review card text and inserts it.
+commands/voice.rs :: dictation_retry — ASYNC `(app)` — re-arms dictation from the review or the listening state.
+commands/voice.rs :: dictation_set_language — SYNC `(app, state, language) -> CmdResult<()>` — sets the overlay dictation language.
+commands/voice.rs :: dictation_history — SYNC `(state) -> CmdResult<Vec<DictationEntry>>` — the last 100 local dictations, newest first.
+commands/voice.rs :: dictation_history_delete — SYNC `(state, id) -> CmdResult<()>` — removes one history row.
+commands/voice.rs :: dictation_history_clear — SYNC `(state) -> CmdResult<()>` — empties the history table.
+commands/voice.rs :: dictation_reset_overlay_position — SYNC `(app) -> ()` — re-centers the overlay near the bottom of the screen.
+commands/voice.rs :: dictation_overlay_menu — SYNC `(app, menu: Option<[f64;4]>) -> ()` — sets or clears the window region covering the language menu.
+commands/voice.rs :: voice_status — SYNC `(state) -> Option<ListenMode>` — the active listen mode.
+commands/voice.rs :: voice_set_muted — SYNC `(state, muted) -> bool` — optimistic microphone mute; returns the resulting state.
+commands/voice.rs :: voice_muted — SYNC `(state) -> bool` — current mute flag.
+commands/voice.rs :: tts_voices — SYNC `(state) -> Vec<VoiceInfo>` — every voice offered by the installed TTS models.
+commands/voice.rs :: tts_speak — SYNC `(state, text, language, tag) -> CmdResult<()>` — unknown language silently means the default voice; long text is sentence-split in the service.
+commands/voice.rs :: tts_test — SYNC `(state, language, text) -> CmdResult<()>` — fixed tag `test-voice`; blank text speaks a hardcoded per-language sample sentence.
+commands/voice.rs :: tts_stop — SYNC `(state) -> ()` — stops every queued and playing clip.
+commands/voice.rs :: tts_set_paused — SYNC `(state, paused) -> TtsState` — returns the post-command state so the UI never guesses.
+commands/voice.rs :: tts_state — SYNC `(state) -> TtsState` — `{ speaking, paused }`.
+commands/voice.rs :: tts_replay_last — SYNC `(state) -> bool` — replays the last finished turn; `false` when there is nothing to replay.
+commands/voice.rs :: models_catalog — SYNC `(state) -> Vec<CatalogEntry>` — catalogue plus `installed`, `recommended`, `downloading`, `deletable`; the bundled VAD is filtered out.
+commands/voice.rs :: models_installed — SYNC `(state) -> Vec<InstalledModel>` — catalogue, custom and extra-folder models, deduplicated by path.
+commands/voice.rs :: models_incompatible — SYNC `(state) -> Vec<IncompatibleModel>` — extra-folder models that cannot run in the ONNX engine, with the reason.
+commands/voice.rs :: models_download — ASYNC `(app, state, ids) -> CmdResult<()>` — all-or-nothing validation, then reserve every id and install sequentially in one spawned task.
+commands/voice.rs :: models_cancel — SYNC `(state, id) -> ()` — cancels the reservation's `CancellationToken`.
+commands/voice.rs :: models_delete — SYNC `(app, state, id) -> CmdResult<()>` — refuses protected models; unloads the STT model first when needed, then reloads STT.
+commands/voice.rs :: gpu_status — SYNC `(state) -> GpuStatus` — supported, installed, active, restart-required.
+commands/voice.rs :: gpu_set_enabled — SYNC `(app, state, enabled) -> CmdResult<()>` — writes the flag; takes effect only after a restart.
+commands/voice.rs :: gpu_install — ASYNC `(app, state) -> CmdResult<()>` — requires an NVIDIA GPU, is idempotent, and auto-enables the pack on success.
+commands/voice.rs :: gpu_cancel — SYNC `(state) -> ()` — cancels the `"gpu-pack"` download.
+commands/voice.rs :: gpu_remove — SYNC `(state) -> CmdResult<()>` — removes the pack and forces `set_enabled(false)`.
+commands/voice.rs :: AudioDevices — `{ inputs: Vec<AudioDevice>, outputs: Vec<AudioDevice> }`.
+commands/voice.rs :: TtsState — `{ speaking, paused }`.
+commands/voice.rs :: CatalogEntry — `#[serde(flatten)] &'static CatalogModel` plus `download_bytes`, `installed`, `recommended`, `downloading`, `deletable`.
+commands/voice.rs :: GPU_DOWNLOAD — `const GPU_DOWNLOAD: &str = "gpu-pack"`; the download-table key shared with `models_download`.
+
+================================================================================
+=== RUST: SERVICES ===
+================================================================================
+
+--- services/ai ---
+services/ai/mod.rs :: AiService — `#[async_trait]` trait: `test_connection`, `list_models`, `load_model`, `chat(req, cancel, on_chunk)`.
+services/ai/mod.rs :: ModelInfo — camelCase model metadata (id, kind, size, params, quantization, bits, context, capabilities, free).
+services/ai/mod.rs :: ModelInfo.is_chat_model — `self.kind != "embedding"`.
+services/ai/mod.rs :: ConnectionStatus — `{ connected, serverUrl, modelCount, latencyMs, api }` where `api` is `native-v1|native-v0|openai`.
+services/ai/mod.rs :: ContentPart — `#[serde(tag = "type", rename_all = "snake_case")]` `Text{text}` | `ImageUrl{image_url}`.
+services/ai/mod.rs :: ImageUrl — `{ url: String }`.
+services/ai/mod.rs :: MessageContent — `#[serde(untagged)]` `Text(String)` | `Parts(Vec<ContentPart>)`.
+services/ai/mod.rs :: MessageContent.as_text / len / is_empty — text projection, serialized size (context trimming), emptiness.
+services/ai/mod.rs :: ChatMessage — `{ role, content: Option<MessageContent>, tool_calls, tool_call_id }`; OpenAI wire format.
+services/ai/mod.rs :: ChatMessage.text / parts / content_text — constructors and the plain-text projection.
+services/ai/mod.rs :: ToolDefinition — `{ #[serde(rename="type")] kind, function }`.
+services/ai/mod.rs :: FunctionDefinition — `{ name, description, parameters }`.
+services/ai/mod.rs :: ChatRequest — `{ model, messages, tools, temperature, max_tokens, stream }`; not serialised.
+services/ai/mod.rs :: StreamChunk — `Content(String)` | `Reasoning(String)`.
+services/ai/mod.rs :: ChatCompletion — Aggregated reply plus token counts, `chunks`, `first_token_ms`, `generation_ms`.
+services/ai/mod.rs :: ToolCall — Re-exported from `sse`; `{ id, kind, function: {name, arguments} }`.
+services/ai/lmstudio.rs :: LmStudioService — The only `AiService` implementation; OpenAI-compatible HTTP client with provider/URL/key/timeout mutators.
+services/ai/lmstudio.rs :: LmStudioService::new / set_provider / set_base_url / set_api_key / api_key / set_timeout / base_url — Live-service configuration surface used by `save_settings`.
+services/ai/lmstudio.rs :: LmStudioService::unload_model — `async`; asks the server to evict a model.
+services/ai/lmstudio.rs :: parse_native_v1 — Parses LM Studio's native v1 discovery payload.
+services/ai/lmstudio.rs :: parse_native_v0 — Parses LM Studio's legacy native v0 payload.
+services/ai/lmstudio.rs :: parse_openai_models — Parses a standard `GET /v1/models` payload.
+services/ai/lmstudio.rs :: parse_hosted_models — Parses hosted-provider model lists and derives the `free` flag.
+services/ai/model_selector.rs :: ModelSelection — `{ modelId, needsLoad, score, reasons }`.
+services/ai/model_selector.rs :: parse_params_billions — Parses "9B", "1.5B", "30B-A3B", "270M" into billions.
+services/ai/model_selector.rs :: score_model — Heuristic score plus the machine-readable reasons that drive the UI.
+services/ai/model_selector.rs :: select_model — Best chat model for this machine; highest score, ties broken by id.
+services/ai/sse.rs :: SseDecoder — Incremental `data:` decoder; handles split UTF-8, CRLF, comments and a trailing unterminated event.
+services/ai/sse.rs :: SseDecoder.push / finish — Feed bytes / flush the last event.
+services/ai/sse.rs :: ToolCallFunction / ToolCall — Accumulated OpenAI tool call.
+services/ai/sse.rs :: DeltaToolCall / DeltaFunction — Partial streamed tool-call fragments.
+services/ai/sse.rs :: ToolCallAccumulator.push / finish — Index-keyed accumulation; synthesises `call_<i>_<uuid>` ids and `{}` arguments.
+
+--- services/chat ---
+services/chat/orchestrator.rs :: ChatEngine — The turn engine: history, prompt, streaming, tool rounds, persistence, speech.
+services/chat/orchestrator.rs :: ChatEngine::new — `pub fn new(db, settings, ai, resolver, tools, speech, attachments) -> Self`.
+services/chat/orchestrator.rs :: ChatEngine::send — `pub async fn send(&self, input: SendInput, emit: Emit) -> AppResult<()>`; the whole turn.
+services/chat/orchestrator.rs :: ChatEngine::explain — `pub async fn explain(id, selection, passage, emit)`; out-of-conversation explanation.
+services/chat/orchestrator.rs :: ChatEngine::stop / stop_all / is_busy — Turn cancellation and busy state over the `active` token map.
+services/chat/orchestrator.rs :: ChatEngine::confirm_tool — Resolves a pending `oneshot::Sender<bool>` confirmation.
+services/chat/orchestrator.rs :: SendInput — `{ turnId, conversationId, text, spokenLanguage, voice, attachmentIds }`.
+services/chat/orchestrator.rs :: ChatEvent — `#[serde(tag="type", rename_all="camelCase")]`; 8 variants `started|delta|reasoning|toolStarted|toolAwaitingConfirmation|toolFinished|done|error`.
+services/chat/orchestrator.rs :: Emit — `pub type Emit = Arc<dyn Fn(ChatEvent) + Send + Sync>`.
+services/chat/orchestrator.rs :: ActivityRecord — Persisted per-tool record stored in `tool_activity_json`.
+services/chat/orchestrator.rs :: title_from — Derives a conversation title from the first user message.
+services/chat/orchestrator.rs :: build_history — Converts stored `Message`s into `ChatMessage`s, trimming to the context window and inlining attachment text.
+services/chat/orchestrator.rs :: MAX_TOOL_ROUNDS / TOOL_RESULT_LIMIT — 6 tool rounds; 16 000 characters of tool result kept.
+services/chat/orchestrator.rs :: CONFIRM_TIMEOUT / TOOL_TIMEOUT — 180 s confirmation window; 90 s per tool call.
+services/chat/prompt.rs :: PromptContext — Borrowed inputs of the system prompt (name, language, provider, tools, voice, style, date).
+services/chat/prompt.rs :: DEFAULT_EXPRESSIVE_INSTRUCTION — The sound-cue instruction string; asserted equal to the UI default by `soundTags.test.ts`.
+services/chat/prompt.rs :: build_system_prompt — Assembles the stable system prompt for a turn.
+services/chat/prompt.rs :: turn_note — The per-turn note appended to the latest user message only (clock, language, freshness).
+services/chat/prompt.rs :: freshness_hint — The "look it up" line added when the web-search tool is available.
+services/chat/resolver.rs :: ModelResolver — Caches the model list and produces `ModelSelection` / `ResolvedModel` for the current `AiSettings`.
+services/chat/resolver.rs :: ResolvedModel — `{ id, selection, needs_load }`-style resolution result used by the turn.
+services/chat/resolver.rs :: ModelResolver::new / with_hardware — Constructors; the app uses the hardware-aware one.
+services/chat/resolver.rs :: ModelResolver::models / auto_selection / resolve / invalidate / hardware — Cache access, selection and invalidation.
+services/chat/freshness.rs :: needs_fresh_info — Heuristic: does this question require current information (so the freshness hint is added)?
+services/chat/think.rs :: ThinkFilter — Strips `<think>…</think>` from a stream, returning `(visible, held)` per chunk.
+services/chat/think.rs :: ThinkFilter.push / finish — Streaming filter and final flush.
+services/chat/explain.rs :: ExplainEvent — `#[serde(tag="type")]` `delta | done | error`; no `turnId` (the caller supplies the id).
+services/chat/explain.rs :: request — Builds the isolated `ChatRequest` that explains a selection.
+services/chat/attach.rs :: from_json — Rehydrates `Vec<Attachment>` from the stored `attachments_json` column.
+services/chat/attach.rs :: user_message — Builds the multimodal user `ChatMessage`; images become data URLs only when the model has vision.
+services/chat/tools.rs :: Permission — `#[serde(rename_all="lowercase")]` `allow | ask | deny`.
+services/chat/tools.rs :: ToolCategory — `#[serde(rename_all="lowercase")]` `search|fetch|read|write|execute|other`.
+services/chat/tools.rs :: ToolCategory.is_sensitive — True for `write`, `execute`, `other` (may change state outside the app).
+services/chat/tools.rs :: ToolSpec — `{ llmName, serverId, serverName, toolName, description, inputSchema, category, permission }`.
+services/chat/tools.rs :: Source — `{ url, title: Option<String> }`; a citation extracted from a tool result.
+services/chat/tools.rs :: ToolOutput — `{ text, is_error, sources }`; the value handed back to the model.
+services/chat/tools.rs :: ToolProvider — `#[async_trait]` trait: `available_tools`, `call_tool`.
+services/chat/tools.rs :: CombinedTools — Presents several providers as one list and routes each call to its owning provider.
+services/chat/tools.rs :: NoTools — No-op provider for tests and when MCP is unavailable.
+services/chat/tools.rs :: SpeechSink — `begin / push_text / finish / cancel / expressive`; receives assistant text while it streams.
+services/chat/tools.rs :: NoSpeech — No-op speech sink.
+
+--- services/attachments ---
+services/attachments/mod.rs :: MAX_FILE_BYTES / MAX_IMAGE_BYTES / MAX_TEXT_CHARS — 32 MiB per file, 12 MiB per image, 400 000 characters of extracted text.
+services/attachments/mod.rs :: AttachmentKind — `#[serde(rename_all="camelCase")]` `image | text | binary`.
+services/attachments/mod.rs :: Attachment — `{ id, name, mime, kind, sizeBytes, textChars, truncated, note, createdAt }`.
+services/attachments/mod.rs :: Attachment.is_image — Convenience predicate for the vision gate.
+services/attachments/mod.rs :: AttachmentStore — Owns `<data_dir>/attachments` plus the staged map of unsent attachments.
+services/attachments/mod.rs :: AttachmentStore::new / claim / discard — Lifecycle of staged attachments; `claim` hands them to a message, `discard` drops them.
+services/attachments/mod.rs :: AttachmentStore::ingest_path / ingest_bytes / ingest_text — The three ingest entry points (file, base64/bytes, text).
+services/attachments/mod.rs :: AttachmentStore::text / bytes / data_url / remove — Read-back helpers used by the prompt and the UI.
+services/attachments/mod.rs :: AttachmentStore::gc — Deletes every stored file whose id is not in the keep set (startup and `conv_clear_all`).
+services/attachments/mod.rs :: extension / format_size — Filename extension extraction and human-readable size.
+services/attachments/base64.rs :: encode / decode — Strict base64 with `data:` URL tolerance; re-exported as `base64_encode` / `base64_decode`.
+services/attachments/office.rs :: extract — Best-effort text extraction for `.docx`/`.xlsx`/`.pptx` (zip + XML) and plain text.
+
+--- services/language ---
+services/language/detect.rs :: Lang — `#[serde(rename_all="lowercase")]` closed 3-variant enum `En | Ar | De`.
+services/language/detect.rs :: Lang::code / english_name / from_code / is_rtl — Code, display name, tolerant parsing (accepts "english", `de-DE`), RTL test.
+services/language/detect.rs :: Detection — `{ lang, confidence: f32 }`.
+services/language/detect.rs :: detect — `whatlang` + Arabic-script ratio + stop-word voting; ignores code and URLs.
+services/language/detect.rs :: detect_or — `detect` with a fallback language.
+services/language/detect.rs :: strip_noise — Removes fenced/inline code and URLs so they cannot skew the vote.
+
+--- services/stt ---
+services/stt/mod.rs :: SttService — Model resolution, recogniser caching with in-place language switching, offline transcription.
+services/stt/mod.rs :: SttService::new / resolve_model / vad_model_path / is_ready / is_streaming / loaded_model / unload — Model slot management.
+services/stt/mod.rs :: SttService::with_recognizer — Runs a closure under the recogniser mutex; `Err(NotFound)` when nothing is loaded.
+services/stt/mod.rs :: SttService::transcribe — Blocking offline transcription in 28 s chunks; `MIN_AUDIO_MS` (350 ms) short-circuit.
+services/stt/mod.rs :: Transcription — `{ text, language, model_id, audio_ms, elapsed_ms }`.
+services/stt/mod.rs :: MIN_AUDIO_MS — 350 ms; shorter audio returns an empty transcript without loading a model.
+services/stt/mod.rs :: clean_transcript — Bracket stripping, note/punctuation repair, whitespace collapse and hallucination blacklist.
+services/stt/engine.rs :: SttFamily — `Whisper | OfflineTransducer | OnlineTransducer | NemoCtc | SenseVoice | Moonshine | Paraformer`.
+services/stt/engine.rs :: SttFamily.is_streaming / label — True only for `OnlineTransducer`; human-readable family name.
+services/stt/engine.rs :: SttModelFiles — The resolved file set for one model directory.
+services/stt/engine.rs :: detect — Ordered family detection from the folder's file names plus `README.md` hints.
+services/stt/engine.rs :: Recognizer — `Offline(sherpa_onnx::OfflineRecognizer)` | `Online(sherpa_onnx::OnlineRecognizer)`.
+services/stt/engine.rs :: Recognizer::transcribe / stream_session / is_streaming — Decode one buffer, or open a streaming session.
+services/stt/engine.rs :: StreamSession — `accept / text / is_endpoint / reset / finish`; the online transducer's incremental surface.
+services/stt/engine.rs :: EngineOptions — `{ threads, language, endpoint_silence, provider }`.
+services/stt/engine.rs :: create — Builds the recogniser; first statement is `gpu::mark_healthy()`; falls back offline -> online once.
+services/stt/engine.rs :: set_whisper_language — Hand-written `extern "C"` wrapper for the one call the Rust crate does not bind; compile-time size assertion.
+services/stt/session.rs :: ListenMode — `PushToTalk | HandsFree | Dictation | Test`.
+services/stt/session.rs :: VoiceEvent — `State{...} | Level{...} | Partial{...} | Transcript{...} | Error{...}`; serialised to `voice://event`.
+services/stt/session.rs :: VoiceEmit / SpeakingProbe — `Arc<dyn Fn(VoiceEvent)>` and the barge-in gate `Arc<dyn Fn() -> bool>`.
+services/stt/session.rs :: VoiceSessions — Owns the one active listening session and its OS thread.
+services/stt/session.rs :: VoiceSessions::new / set_muted / is_muted / active_mode — Construction and session introspection.
+services/stt/session.rs :: VoiceSessions::start — Stops any running session, allocates the session number, emits `listening` synchronously, spawns the thread.
+services/stt/session.rs :: VoiceSessions::stop — Never blocks; sets flags and joins on the NEXT `start`.
+services/stt/session.rs :: run_session_for_test — Test-only entry point driving a session loop with synthetic audio.
+services/stt/session.rs :: MAX_RECORDING / VAD_WINDOW / SPEECH_LEVEL / AUDIO_TAIL — 300 s cap, 512-sample window (32 ms), 0.22 level, 700 ms post-speech gate.
+
+--- services/tts ---
+services/tts/mod.rs :: TtsService — Neural TTS pipeline; two dedicated threads (`tts-synth`, `tts-progress`).
+services/tts/mod.rs :: TtsService::new — `pub fn new(store, settings, hw, emit) -> Arc<Self>`; starts both worker threads.
+services/tts/mod.rs :: TtsService::voices / is_available / selected_voice / loaded_models / unload_model — Voice discovery and model residency.
+services/tts/mod.rs :: TtsService::preload_lang — `pub fn preload_lang(&self, lang, threads)`; blocking, used by `commands::memory`.
+services/tts/mod.rs :: TtsService::apply_settings — Re-reads settings: output device, volume, per-voice hardware.
+services/tts/mod.rs :: TtsService::synthesize — `pub fn synthesize(text, lang, threads) -> AppResult<(Vec<f32>, u32)>`; returns samples and the sample rate.
+services/tts/mod.rs :: TtsService::speak / replay_last / stop_all / is_speaking / set_paused / is_paused / has_audio — Playback control and state.
+services/tts/mod.rs :: TtsEvent — `Speaking{tag} | Sentence{tag,text,durationMs} | Paused | Resumed | Idle | VoiceUnavailable{language} | Error{detail}`.
+services/tts/mod.rs :: SUPERTONIC_STEPS — 8 flow-matching steps (Supertonic's default is 5).
+services/tts/sentence_buffer.rs :: SentenceBuffer — Turns a token stream into complete speakable sentences, skipping code fences.
+services/tts/sentence_buffer.rs :: SentenceBuffer.push / flush — Feed text / emit the tail.
+services/tts/sentence_buffer.rs :: TERMINATORS / CLOSERS / ABBREVIATIONS — `. ! ? … ؟ 。`, quote/bracket closers, and 28 abbreviations that must not end a sentence.
+services/tts/sentence_buffer.rs :: MIN_CHARS / FIRST_MIN_CHARS / MAX_CHARS — 16, 4 and 280; over-long run-ons are soft-cut and forced.
+services/tts/speech_text.rs :: clean_for_speech — Nine regexes strip Markdown, links, list markers, quotes, emphasis, table rules and invented tags.
+services/tts/speech_text.rs :: sound_tags — Keeps `<laugh> <sigh> <breath>` only when the voice can perform them.
+services/tts/voices.rs :: VoiceInfo — `{ id: "<model_id>:<speaker_id>", model_id, name, language, speaker_id, engine, quality, gender }`.
+services/tts/voices.rs :: VoiceInfo.speaks — `language == lang.code() || language == MULTILINGUAL`.
+services/tts/voices.rs :: MULTILINGUAL — `pub const MULTILINGUAL: &str = "*"`.
+services/tts/voices.rs :: list_voices — Enumerates voices per engine (Kokoro 11, Kitten 8, Supertonic 10, Piper 1).
+services/tts/voices.rs :: select_voice — Manual id (must speak the language), then quality, then language-specific, then gender steering.
+
+--- services/audio ---
+services/audio/mod.rs :: STT_SAMPLE_RATE — `pub const STT_SAMPLE_RATE: u32 = 16_000`.
+services/audio/mod.rs :: SPECTRUM_BANDS — `pub const SPECTRUM_BANDS: usize = 24`; mirrored by `voiceStore.SPECTRUM_BANDS`.
+services/audio/mod.rs :: level — RMS meter mapped from about -60 dB..0 dB onto 0..1.
+services/audio/mod.rs :: HighPassFilter — One-pole IIR used at 100 Hz to remove fan hum and AC rumble.
+services/audio/mod.rs :: HighPassFilter::new / process — Construction and in-place filtering.
+services/audio/mod.rs :: spectrum — 24 log-spaced bands from 80 Hz to 4 kHz using precomputed twiddle tables in a `OnceLock`.
+services/audio/devices.rs :: AudioDevice — `{ id, name, is_default }` (camelCase on the wire).
+services/audio/devices.rs :: list_inputs / list_outputs — Enumeration; failures yield an empty vector, never an error.
+services/audio/devices.rs :: input_device / output_device — Resolution with the 14-entry loopback blacklist and fallbacks.
+services/audio/capture.rs :: CaptureEvent — `Samples(Vec<f32>) | Level(f32, Vec<f32>) | Error(String)`.
+services/audio/capture.rs :: Capture — Owns the cpal input stream on the `mic-capture` thread.
+services/audio/capture.rs :: Capture::start / stop — Start with a 5 s readiness handshake; stop by flag, joined within 20 ms.
+services/audio/playback.rs :: Clip — `{ id, samples, rate, tag }`; mono f32 PCM at the model's own rate.
+services/audio/playback.rs :: Player — Single output stream on the `audio-playback` thread; 8 public methods.
+services/audio/playback.rs :: Player::new / set_device / set_volume / enqueue / current_clip / stop / set_paused / is_paused / is_active / is_available — Playback control; clip id `0` is the "nothing playing" sentinel.
+
+--- services/models ---
+services/models/mod.rs :: COMPLETE_MARKER / BUILT_IN_VOICE / BUILT_IN_STT / BUILT_IN_VAD — `.complete`, `supertonic-3-int8`, `whisper-small`, `silero-vad`.
+services/models/mod.rs :: PROTECTED_MODELS — The three built-ins that can never be deleted or downloaded.
+services/models/mod.rs :: InstalledModel — `{ id, name, kind, engine, languages, path, source, family, streaming, gender, size_bytes }`.
+services/models/mod.rs :: Recommendation — `{ stt, vad, tts }`; the starter set, hardware-independent by design.
+services/models/mod.rs :: Recommendation::ids — The three catalogue ids as `Vec<&'static str>`.
+services/models/mod.rs :: recommend — `pub fn recommend(_hw: &HardwareInfo) -> Recommendation`; the hardware argument is deliberately ignored.
+services/models/mod.rs :: ModelStore — Owns the models directory, the extra directories and the bundled-VAD installation.
+services/models/mod.rs :: ModelStore::new / set_extra_dirs / extra_dirs / model_dir — Layout and extra-directory management.
+services/models/mod.rs :: ModelStore::is_installed / installed / find_installed / incompatible — Discovery of catalogue, custom, extra-folder and unusable models.
+services/models/mod.rs :: ModelStore::install_bundled — Writes the embedded `silero_vad.onnx` plus a `.complete` marker; idempotent and never downloaded.
+services/models/mod.rs :: ModelStore::delete — Traversal-protected delete; only models inside the app's own folder can be removed.
+services/models/mod.rs :: IncompatibleModel — `{ name, path, reason }`; GGUF or PyTorch weights in an extra folder.
+services/models/mod.rs :: display_name — Resolves the Hugging Face cache layout to a friendly `org/name`.
+services/models/mod.rs :: detect_custom — Recognises a model folder by its files: VAD, Supertonic, Kitten/Kokoro, Piper, then STT.
+services/models/mod.rs :: find_file — First file in a directory matching a predicate.
+services/models/catalog.rs :: ModelKind — `#[serde(lowercase)]` `Stt | Vad | Tts`.
+services/models/catalog.rs :: Engine — `Whisper | SileroVad | Kokoro | Piper | Kitten | Supertonic`.
+services/models/catalog.rs :: RemoteFile — `{ url, sha256, dest, archive, size_bytes }`.
+services/models/catalog.rs :: CatalogModel — The full catalogue entry including `quality`, `min_ram_gb`, `license`, `gender`.
+services/models/catalog.rs :: CatalogModel::download_size — Sum of the file sizes.
+services/models/catalog.rs :: CATALOG — `pub static CATALOG: &[CatalogModel]`; four pinned entries.
+services/models/catalog.rs :: find — `pub fn find(id: &str) -> Option<&'static CatalogModel>`.
+services/models/download.rs :: DownloadProgress — `{ model_id, state, downloaded_bytes, total_bytes, error }`.
+services/models/download.rs :: install — `pub async fn install(...)`; staging dir, streamed write+hash, SHA-256 verify, extract, atomic rename, `.complete`.
+services/models/download.rs :: extract_tar_bz2 — Blocking `.tar.bz2` extraction that strips the archive's top-level folder and rejects links/devices.
+
+--- services/gpu ---
+services/gpu/mod.rs :: PACK_VERSION / PACK_BYTES — `1.13.8`; 1 772 927 333 bytes across four archives.
+services/gpu/mod.rs :: provider / is_active / provider_for — ONNX Runtime provider selection; `provider_for("cpu")` always returns `"cpu"`.
+services/gpu/mod.rs :: default_data_dir / pack_dir / is_installed / launcher_exe — `<data_dir>/gpu/cuda-1.13.8`, completeness and the installed executable.
+services/gpu/mod.rs :: is_enabled / set_enabled — The `enabled` flag file; takes effect only at process start.
+services/gpu/mod.rs :: mark_healthy — Clears the "starting" marker once a speech engine has actually run.
+services/gpu/mod.rs :: activate_early — Runs before Tauri and the single-instance guard; relaunches the process with the pack's DLLs.
+services/gpu/mod.rs :: status / activate / remove — Status snapshot, in-process activation, uninstall.
+services/gpu/mod.rs :: install — `pub async fn install(...)`; reserve-then-work download of the four archives.
+services/gpu/mod.rs :: GpuStatus — `{ supported, gpu_name, installed, size_bytes, download_bytes, active, restart_required }`.
+services/gpu/mod.rs :: GpuProgress — `{ state, downloaded_bytes, total_bytes, error }`.
+
+--- services/mcp ---
+services/mcp/mod.rs :: McpManager — Generic MCP client manager (stdio child process and streamable HTTP).
+services/mcp/mod.rs :: McpManager::new — Takes the `Db` and the change callback installed at construction, so `mcp://changed` can never be missed.
+services/mcp/mod.rs :: McpManager::safe_mode / set_safe_mode — Not persisted; every launch starts with it on.
+services/mcp/mod.rs :: McpManager::connect_enabled / connect / disconnect / shutdown / set_enabled — Connection lifecycle; connect has a 60 s timeout.
+services/mcp/mod.rs :: McpManager::set_permission / set_all_permissions — Store the request, return the EFFECTIVE permission after safe-mode clamping.
+services/mcp/mod.rs :: McpManager::statuses / internet_available — Per-server status; internet detection from search-category tools.
+services/mcp/mod.rs :: ToolView — `{ name, description, category, permission, default_permission }`.
+services/mcp/mod.rs :: ServerStatus — `{ config, state, error, tools, internet }` where `state` is `disabled|connecting|connected|error|offline`.
+services/mcp/mod.rs :: llm_tool_name — Unique, sanitised tool name exposed to the model (deduplicated against `taken`).
+services/mcp/config.rs :: McpServerConfig — `{ id, name, description, transport, command, args, env, url, headers, enabled, source, createdAt }`.
+services/mcp/config.rs :: McpServerConfig::validate — Name required; stdio needs a command; http needs an http(s) URL.
+services/mcp/config.rs :: ImportCandidate — `{ name, transport, command, args, url, env_keys, already_configured }`; key names only, never values.
+services/mcp/config.rs :: lmstudio_mcp_json_path — `%USERPROFILE%\.lmstudio\mcp.json` when it exists.
+services/mcp/config.rs :: parse_mcp_json — Parses `{"mcpServers": {name: {...}}}` into configurations.
+services/mcp/config.rs :: Db::list_mcp_servers / get_mcp_server / save_mcp_server / set_mcp_enabled / delete_mcp_server — MCP configuration persistence.
+services/mcp/config.rs :: Db::tool_permissions / set_tool_permission / clear_tool_permissions — Per-tool permission persistence.
+services/mcp/permissions.rs :: classify — Categorises a tool from its name, description and MCP annotations.
+services/mcp/permissions.rs :: default_permission — `search|fetch|read -> allow`, `write -> ask`, `execute|other -> deny`.
+services/mcp/permissions.rs :: clamp_permission — Safe mode caps every sensitive tool at `ask`.
+services/mcp/sources.rs :: extract_sources — Pulls citations from text and from structured MCP resource content.
+
+--- services/search ---
+services/search/mod.rs :: SERVER_ID / SERVER_NAME / TOOL_NAME — `builtin-web-search`, `Web Search`, `web_search`.
+services/search/mod.rs :: SearchResult — `{ title, url, snippet }`.
+services/search/mod.rs :: PublicInstance — `{ url, search_success, search_time, version }` from searx.space.
+services/search/mod.rs :: WebSearch — SearXNG primary with a DuckDuckGo fallback, a 10-minute result cache and instance discovery.
+services/search/mod.rs :: WebSearch::new — `pub fn new(settings: Arc<SettingsStore>) -> Self`; 20 s client timeout, desktop browser UA.
+services/search/mod.rs :: WebSearch::raw_html — The raw DuckDuckGo result page, exposed for diagnostics.
+services/search/mod.rs :: WebSearch::search — Cached search honouring `maxResults`.
+services/search/mod.rs :: WebSearch::search_uncached — One real search plus the name of the engine that answered.
+services/search/mod.rs :: WebSearch::public_instances — The searx.space list, cached for 3 hours.
+services/search/mod.rs :: CACHE_TTL / INSTANCES_TTL / MAX_SNIPPET / AUTO_INSTANCES — 600 s, 3 h, 320 characters, 3 automatic instance tries.
+
+--- services/dictation ---
+services/dictation.rs :: DictationResult — `{ raw, inserted, corrected, correction_error }`.
+services/dictation.rs :: ReviewPending — `{ raw, corrected, correction_error }`; the text held in the overlay for editing.
+services/dictation.rs :: correct_text — `pub async fn correct_text(ai, model, text)`; streaming grammar correction with emoji handling and a length sanity check.
+services/dictation.rs :: LiveTyper — Incremental typing into the foreground application with at most one operation in flight.
+services/dictation.rs :: LiveTyper::snapshot / reset / set_target / finish / retract — Read the on-screen text, arm it, type it, or backspace it.
+services/dictation.rs :: insert_text — `pub fn insert_text(text, settings)`; blocking. `"paste"` swaps the clipboard and restores it afterwards.
+services/dictation.rs :: finalize_text — Trims and applies the trailing-space setting.
+services/dictation.rs :: CORRECTION_PROMPT / EMOJI_PHRASE_CHARS — The corrector system prompt and the 10-character emoji cost estimate.
+
+--- services/hardware ---
+services/hardware/mod.rs :: HardwareInfo — `{ os, cpu_name, physical_cores, logical_cores, total_ram_bytes, available_ram_bytes, gpus }`.
+services/hardware/mod.rs :: GpuInfo — `{ name, vendor, vram_bytes }`.
+services/hardware/mod.rs :: HardwareInfo.best_vram / has_nvidia / inference_threads — VRAM headroom, NVIDIA gate, thread budget (capped at 4 for synthesis).
+services/hardware/mod.rs :: detect — `pub fn detect() -> HardwareInfo`; the single `sysinfo` scan performed at startup.
+
+================================================================================
+=== RUST: DATABASE & SETTINGS ===
+================================================================================
+
+--- database ---
+database/mod.rs :: Db — `pub struct Db { conn: Mutex<Connection> }`; the whole local store.
+database/mod.rs :: Db::open / open_in_memory — Constructors; `open` creates the parent directory.
+database/mod.rs :: Db::init — Private; applies the three PRAGMAs then runs the migrations.
+database/mod.rs :: Db::conn — `MutexGuard` accessor, poison-tolerant (`into_inner`).
+database/mod.rs :: Db::get_kv / set_kv — The `settings` key/value table used for the settings document.
+database/conversations.rs :: Conversation — `{ id, title, createdAt, updatedAt, model, language }`.
+database/conversations.rs :: Message — `{ id, conversationId, role, content, language, reasoning, sources, toolActivity, toolCalls, toolCallId, attachments, stats, createdAt }`.
+database/conversations.rs :: SearchHit — `{ conversation, snippet }`; the FTS5 snippet with `[…]` match markers.
+database/conversations.rs :: now / new_id — RFC 3339 millisecond timestamps and UUIDv4 ids.
+database/conversations.rs :: Db::create_conversation / insert_conversation / get_conversation — Creation and lookup.
+database/conversations.rs :: Db::list_conversations / rename_conversation / touch_conversation / delete_conversation / delete_all_conversations — Listing, rename, `updatedAt` bump, delete.
+database/conversations.rs :: Db::insert_message / list_messages / delete_messages_after — Message CRUD ordered by `created_at, rowid`.
+database/conversations.rs :: Db::attachment_ids — Every attachment id referenced by a stored message; the startup GC keep-set.
+database/conversations.rs :: Db::search_conversations — FTS5 (every term quoted) UNION title LIKE, grouped and ranked by FTS first.
+database/dictation.rs :: DictationEntry — `{ id, createdAt, raw, text, corrected, inserted }`.
+database/dictation.rs :: HISTORY_LIMIT — `pub const HISTORY_LIMIT: usize = 100`; older rows are dropped on every save.
+database/dictation.rs :: Db::dictation_add / dictation_list / dictation_delete / dictation_clear — Local dictation history.
+database/export.rs :: ExportFormat — `#[serde(rename_all="lowercase")]` `Json | Markdown | Txt`.
+database/export.rs :: ExportedConversation — `{ conversation, messages }`.
+database/export.rs :: ExportBundle — `{ format, version, exported_at, conversations }`; `format = "local-assistant-conversations"`.
+database/export.rs :: Db::export_conversations — Renders the bundle; Markdown and TXT include only user/assistant messages.
+database/export.rs :: Db::import_conversations — Transactional import; every conversation gets a fresh id and `attachments_json` is never imported.
+database/migrations.rs :: MIGRATIONS — `const MIGRATIONS: &[&str]`; four append-only migrations, 1-based.
+database/migrations.rs :: run — Applies every migration whose 1-based index exceeds `PRAGMA user_version`, each in its own transaction.
+
+--- settings ---
+settings/mod.rs :: KEY / CURRENT_VERSION — `app_settings`; schema version 4.
+settings/mod.rs :: DEFAULT_LMSTUDIO_URL — `http://localhost:1234/v1`.
+settings/mod.rs :: PROVIDERS — `(id, display name, default base URL)` for lmstudio, openrouter, gemini, huggingface.
+settings/mod.rs :: provider_name / provider_default_url — Lookup with LM Studio / the default URL as the fallback.
+settings/mod.rs :: WindowGeometry — `{ x, y, width, height }`; default 480x640.
+settings/mod.rs :: GeneralSettings — 21 fields: theme, accent, assistantName, highContrast, fontScale, startWithOs, startMinimized, preloadModels, autoloadModels, alwaysOnTop, windowPosition, window, compact, globalShortcut, pushToTalkShortcut, developerMode, firstRunComplete, logConversationContent, bubbleX, bubbleY, suggestedPrompts.
+settings/mod.rs :: GeneralSettings::autoloads — Startup-load opt-out lookup; a missing key means "on".
+settings/mod.rs :: AiSettings — 22 fields: provider, serverUrl, apiKey, providerProfiles, modelMode, model, temperature, contextLength, maxTokens, systemPrompt, userGender, streaming, requestTimeoutSecs, showReasoning, showStats, modelAliases, hiddenModels, freeModelsOnly, pasteAsFileChars, explainMode.
+settings/mod.rs :: ProviderProfile — `{ serverUrl, apiKey, model, modelMode }`; remembered per non-selected provider.
+settings/mod.rs :: LanguageSettings — `{ responseLanguage, entries, arabicTashkeelEnabled, arabicTashkeelInstruction }`.
+settings/mod.rs :: LanguageEntry — `{ code, displayName, direction, sttLanguage, ttsVoice, builtIn }`.
+settings/mod.rs :: SttSettings — 14 fields: model, language, microphone, hardware, autoSubmit, handsFree, pushToTalk, vadThreshold, silenceMs, extraModelDirs, callView, autoStopSilenceSecs, handsFreeTimeoutSecs.
+settings/mod.rs :: TtsSettings — 11 live fields: speakResponses, speed, volume, outputDevice, preferredGender, voiceHardware, speakAfterReply, expressiveSounds, expressiveInstruction, plus the three legacy `voiceEn`/`voiceAr`/`voiceDe` fields kept only for the v4 migration.
+settings/mod.rs :: DictationSettings — 13 fields: enabled, shortcut, mode, correctionEnabled, correctionModel, insertMethod, addTrailingSpace, language, reviewBeforeInsert, historyEnabled, overlayX, overlayY.
+settings/mod.rs :: SearchSettings — 7 fields: enabled, maxResults, searxngUrl, searxngEnabled, searxngSource, searxngPublicUrl, primary.
+settings/mod.rs :: Settings — Root document: the 7 section objects plus `lastConversationId` and `version`.
+settings/mod.rs :: Settings::sanitize — Clamps and validates every field; single-modifier shortcuts are replaced with safe defaults; language entries are de-duplicated, capped at 12 and must never hit zero.
+settings/mod.rs :: SettingsStore — `RwLock<Settings>` over the `settings` table.
+settings/mod.rs :: SettingsStore::load / get / set / update — Load, clone-read, sanitise-and-persist, and read-modify-write.
+settings/mod.rs :: SettingsStore::migrate — Private; v2 enables dictation, v4 carries legacy per-language voices into `language.entries`.
+settings/backup.rs :: MAGIC / NONCE_LEN / KEY_SEED — `LAIA-BK1`, 12 bytes, and the hard-coded seed hashed into the key.
+settings/backup.rs :: strip_keys — `pub fn strip_keys(s: &mut Settings)`; removes the current key and every remembered profile key.
+settings/backup.rs :: encrypt — `pub fn encrypt(settings: &Settings) -> AppResult<Vec<u8>>`; magic || nonce || ChaCha20-Poly1305(sealed JSON).
+settings/backup.rs :: decrypt — `pub fn decrypt(bytes: &[u8]) -> AppResult<Settings>`; any mismatch is `AppError::Invalid`.
+settings/backup.rs :: merge_import — `pub fn merge_import(current, imported) -> Settings`; keeps machine-local state and keys the backup does not carry.
+
+================================================================================
+=== RUST: DESKTOP ===
+================================================================================
+
+desktop/window.rs :: MAIN / BUBBLE / SETTINGS / OVERLAY — Window labels, matching `capabilities/default.json` exactly.
+desktop/window.rs :: COMPACT_SIZE / BUBBLE_SIZE — `(380.0, 170.0)`; `84.0`.
+desktop/window.rs :: main_window — Resolves the chat window handle if it exists.
+desktop/window.rs :: preset_position — Pure geometry: `bottom-right | bottom-left | center` against the work area.
+desktop/window.rs :: clamp_into — Pure geometry: keeps a window inside a work area.
+desktop/window.rs :: apply_position — Applies a preset, or a saved custom geometry, honouring the 50 px monitor slack.
+desktop/window.rs :: keep_off_taskbar — Re-asserts `skipTaskbar` after unminimize / show / restore.
+desktop/window.rs :: restore — Restores saved geometry at startup, healing unusable or collapsed sizes.
+desktop/window.rs :: create_bubble / show_bubble / hide_bubble — The 84x84 always-on-top launcher bubble.
+desktop/window.rs :: show_main — The bubble-to-chat morph: pre-arm `app://window-shown`, snap, hide, show, focus.
+desktop/window.rs :: hide_to_tray / minimize_to_bubble / toggle_main — Hide paths; minimize emits `app://window-closing` with the bubble centre.
+desktop/window.rs :: on_main_window_event — Persistence rules for `Moved`, `Resized` and `CloseRequested`.
+desktop/window.rs :: toggle_maximize / set_compact — Window chrome operations.
+desktop/window.rs :: ensure_settings / open_settings — The settings window is created once and never destroyed; navigation goes through `app://navigate`.
+desktop/window.rs :: remember_target / restore_target — Win32 `GetForegroundWindow` / `SetForegroundWindow` for dictation.
+desktop/window.rs :: set_overlay_menu / set_overlay_review / discard_review / create_overlay / show_overlay / hide_overlay / reset_overlay_position / cancel_dictation — Dictation overlay lifecycle and window-region clipping.
+desktop/window.rs :: SETTINGS_H / MARGIN / OVERLAY_W / OVERLAY_H / OVERLAY_BOTTOM_GAP / MENU_ROOM / CARD_MARGIN / CARD_RADIUS — Private geometry constants mirrored by `settings.css`.
+desktop/window.rs :: SUPPRESS_UNTIL / MENU_RECT — Statics: the 700 ms programmatic-move suppression window and the open overlay-menu rect.
+desktop/window.rs :: app://window-shown — Emitted to `MAIN` before the webview is shown: `{origin, animated, fx, fy}`.
+desktop/window.rs :: app://window-closing — Emitted to `MAIN`: `{fx, fy}`.
+desktop/window.rs :: app://focus-input — Emitted to `MAIN` to focus the composer.
+desktop/window.rs :: app://navigate — Emitted to `SETTINGS` with `/settings/<section>`.
+desktop/tray.rs :: create — `pub fn create(app) -> tauri::Result<()>`; 8-item tray menu, id `main`, left-click toggles the chat.
+desktop/tray.rs :: quit — Bounded shutdown: stop chat, discard voice, stop TTS, hide all windows, 3 s MCP timeout, `app.exit(0)`.
+desktop/tray.rs :: app://new-conversation / app://toggle-hands-free — Emitted to `MAIN` by the tray actions.
+desktop/shortcuts.rs :: start_dictation / toggle_dictation — Reentrancy-guarded dictation arming; failure still shows the overlay.
+desktop/shortcuts.rs :: unregister_all / register_all / handle — Global shortcut registration with non-fatal error collection.
+desktop/shortcuts.rs :: voice://error — Emitted when a push-to-talk session cannot start.
+desktop/shortcuts.rs :: dictation://state — Emitted with `{state:"error"}` when dictation cannot arm.
+desktop/shortcuts.rs :: trigger_modifier_watch — Private; the Windows-only 25 ms `GetAsyncKeyState` watcher for modifier-only and Esc-anywhere combos.
+desktop/autostart.rs :: set_enabled / sync — `auto_launch` registry entry pointing at `gpu::launcher_exe()` with `--minimized`.
+desktop/autostart.rs :: ARGS — `const ARGS: [&str; 1] = ["--minimized"]`.
+desktop/icon.rs :: apply_accent_to / apply_accent — Renders the 64x64 RGBA accent icon and pushes it to a window / every window plus the tray.
+desktop/icon.rs :: accent_rgb / mix / render_accent_icon — Palette lookup and the runtime icon rasteriser (accent circle, vertical gradient, 5 white wave bars).
+desktop/icon.rs :: set_taskbar_icon — Private, `#[cfg(windows)]`; `WM_SETICON` with a cached, never-destroyed `HICON` and a BGRA buffer.
+desktop/verify.rs :: verify_user — `#[cfg(windows)] pub async fn verify_user(window, message)`; Windows Hello gate for turning MCP safe mode off.
+desktop/verify.rs :: verify_user (non-Windows) — Always `AppError::PermissionDenied`; fail-closed, never a silent bypass.
+
+================================================================================
+=== FRONTEND: app/ ===
+================================================================================
+
+src/app/ipc.ts :: ipc — The single typed adapter over the Rust IPC surface: 93 command wrappers in 13 domains. No wrapper catches errors.
+src/app/ipc.ts :: isAppError — Structural `{code, detail}` type guard.
+src/app/ipc.ts :: toAppError — Normalises any rejection into an `AppErrorPayload`, falling back to code `other`.
+src/app/ipc.ts :: on<T> — `listen` wrapper that unwraps the Tauri `Event<T>` envelope to just the payload.
+src/app/ipc.ts :: newId — `crypto.randomUUID()`.
+src/app/ipc.ts :: ipc.chatSend / chatExplain — The two `Channel`-based streaming wrappers; the channel is a sibling of the payload object.
+
+src/app/types.ts :: LangCode / LangSetting — `"en"|"ar"|"de"` and `"auto" | LangCode` (declared, unreferenced).
+src/app/types.ts :: ProviderId / AttachmentKind / ToolCategory / Permission / ListenMode — Closed string unions mirroring the Rust enums.
+src/app/types.ts :: ProviderProfile / WindowGeometry / LanguageEntry — Leaf value objects.
+src/app/types.ts :: Settings — The root persisted document: 7 sections plus `lastConversationId` and `version`.
+src/app/types.ts :: AppErrorPayload — `{ code, detail }`, the IPC rejection shape.
+src/app/types.ts :: ModelInfo / ModelSelection / ConnectionStatus — Model discovery payloads.
+src/app/types.ts :: Conversation / Message / MessageStats / SearchHit — Conversation data.
+src/app/types.ts :: Attachment / AttachResult — Attachment payloads.
+src/app/types.ts :: Source / ActivityRecord — Citation and tool-activity records.
+src/app/types.ts :: ChatEvent — 8-variant union: `started | delta | reasoning | toolStarted | toolAwaitingConfirmation | toolFinished | done | error`.
+src/app/types.ts :: ExplainEvent — 3-variant union: `delta | done | error` (no `turnId`).
+src/app/types.ts :: VoiceEvent — 5-variant union: `state | partial | level | transcript | error`.
+src/app/types.ts :: TtsEvent — 7-variant union: `speaking | sentence | paused | resumed | idle | voiceUnavailable | error`.
+src/app/types.ts :: GpuStatus / GpuProgress — CUDA pack state and progress.
+src/app/types.ts :: MemoryItem — `{ key, kind, role, model, state, detail, autoloadKey, autoload }`.
+src/app/types.ts :: AudioDevice / VoiceInfo / CatalogEntry / InstalledModel / IncompatibleModel / DownloadProgress — Model and device payloads.
+src/app/types.ts :: McpServerConfig / ToolView / ServerStatus / ImportCandidate — MCP payloads.
+src/app/types.ts :: PublicSearxInstance / SearchTestResult — SearXNG payloads.
+src/app/types.ts :: GpuInfo / HardwareInfo / CapabilityReport / AppInfo / PrivacyStatus — Machine and privacy payloads.
+src/app/types.ts :: DictationEntry / DictationStateEvent — Dictation payloads; `DictationStateEvent` has the only 3 optional properties besides `Message`/`Source`.
+
+src/app/chatStore.ts :: useChat — Zustand store: 12 state fields, 16 actions, the send queue, the confirmation dialog and error banners.
+src/app/chatStore.ts :: ToolStatus / UiToolActivity / UiMessage / QueuedMessage — View-model types.
+src/app/chatStore.ts :: activityToUi / messageToUi — Pure wire-to-view converters.
+src/app/chatStore.ts :: useChat.send — Sends, or queues when a turn is live and the message is not voice (barge-in rule).
+src/app/chatStore.ts :: useChat.retryLast — Re-sends text only; the original turn's attachments were already consumed.
+src/app/chatStore.ts :: useChat.newConversation — Starts fresh and clears the draft; uses a DYNAMIC import of `voiceStore` to break the cycle.
+src/app/chatStore.ts :: useChat.restoreQueue (private) — Folds queued messages back into the composer after Stop.
+src/app/chatStore.ts :: PENDING_ID / STREAM_FLUSH_MS (private) — `pending-assistant` sentinel; 50 ms batched-streaming window.
+
+src/app/settingsStore.ts :: useSettings — Zustand store for the settings document plus `load` / `update` (optimistic with rollback) / `subscribe`.
+src/app/settingsStore.ts :: applyAppearance — Writes `data-theme`, `data-contrast`, `--font-scale` and the accent onto the document root.
+src/app/settingsStore.ts :: ACCENTS / ACCENT_PROPS / applyAccent (private) — 6 palettes, 13 custom properties, high contrast wins outright.
+
+src/app/voiceStore.ts :: useVoice — Zustand store for listening sessions, level and spectrum, transcripts and TTS playback with word timing.
+src/app/voiceStore.ts :: SPECTRUM_BANDS — `24`; must match `audio::SPECTRUM_BANDS`.
+src/app/voiceStore.ts :: SpokenSentence — The sentence currently being spoken, with its start time and duration.
+src/app/voiceStore.ts :: useVoice.startPushToTalk / stopPushToTalk / toggleHandsFree / toggleMuted / interrupt / clearError / subscribe — The 7 actions.
+src/app/voiceStore.ts :: useVoice.subscribe (private detail) — Registers `voice://event`, `tts://event` and `voice://error` exactly once per window; listeners are never torn down.
+
+src/app/attach.ts :: attachPaths — Ingests dropped/picked paths; drops images when the selected model is blind.
+src/app/attach.ts :: pickFiles — Opens the OS picker with no type filter; any file type is allowed.
+src/app/attach.ts :: attachFromPaste — Handles pasted files and oversized text; returns `true` when the paste was fully handled.
+src/app/attach.ts :: pastedName (private) — Derives an extension from the MIME type and stamps `YYYY-MM-DDTHH-mm-ss`.
+
+src/app/vision.ts :: modelWithoutVision — Returns a label for a model that cannot read images, or `null` (fail-open) when unknown or capable.
+src/app/vision.ts :: REPORTS_VISION (private) — `new Set(["lmstudio", "openrouter"])`; the only providers with a trustworthy `vision` flag.
+
+src/app/providers.ts :: PROVIDERS — Frontend mirror of the Rust provider table: id, label, default base URL.
+src/app/providers.ts :: providerLabel — Total lookup; an unknown id yields "LM Studio".
+
+src/app/knownLanguages.ts :: KNOWN_LANGUAGES — 77 two-letter ISO 639-1 entries with English name, native name and derived direction.
+src/app/knownLanguages.ts :: KnownLanguage — `{ code, name, native, direction }`.
+src/app/knownLanguages.ts :: RTL (private) — 9 RTL codes; the other 68 are LTR.
+
+src/app/settingsHighlight.ts :: useSettingsHighlight — Minimal store for the settings row that should pulse after a search jump.
+
+src/app/soundTags.ts :: stripSoundTags — Removes `<laugh> <sigh> <breath>` from shown and copied text without touching maths.
+
+src/app/strings.ts :: t / hasString / errorMessage / formatBytes / languageName / modelLabel — i18n lookup, error-code mapping, MiB-based size formatting, language and model display names.
+src/app/strings.en.json :: (data) — The only string table; dotted keys consumed by `t()`.
+
+================================================================================
+=== FRONTEND: components/ ===
+================================================================================
+
+src/components/chat/Attachments.tsx :: AttachmentList — The staged attachment chips above the composer, with per-item removal.
+src/components/chat/Attachments.tsx :: attachmentSize — Exported size formatter used by the chips.
+src/components/chat/Composer.tsx :: Composer — Text input, attachment staging, drag-and-drop, paste handling, send/stop, mic and the model chip.
+src/components/chat/Composer.tsx :: ComposerHandle — Imperative handle: focus, insert text, clear.
+src/components/chat/Markdown.tsx :: Markdown — Memoised react-markdown + remark-gfm renderer with sanitised HTML (no raw HTML is ever rendered).
+src/components/chat/MessageBubble.tsx :: MessageBubble — Memoised user/assistant bubble: markdown, reasoning block, tool activity, sources, stats, retry/resend, read-aloud.
+src/components/chat/ModelPicker.tsx :: ModelPicker — The model list popover with aliases, hidden models and hosted-provider flags.
+src/components/chat/SelectionMenu.tsx :: SelectionMenu — Right-click menu on reply text: copy, explain, ask.
+src/components/chat/Sources.tsx :: Sources — The citation list rendered under a reply.
+src/components/chat/ToolActivity.tsx :: ToolActivity — Per-tool status rows; developer mode adds arguments and result previews.
+src/components/chat/ToolConfirmDialog.tsx :: ToolConfirmDialog — The approval dialog for a tool that needs confirmation.
+src/components/common/BrandMark.tsx :: BrandMark — The inline SVG brand mark.
+src/components/common/ErrorBoundary.tsx :: ErrorBoundary — Per-surface React error boundary with a retry.
+src/components/common/controls.tsx :: Switch / Segmented / Dialog / ErrorNotice — The shared primitive control layer.
+src/components/common/controls.tsx :: openExternal — Opens an allow-listed URL through the opener plugin.
+src/components/common/controls.tsx :: textDir — Text-direction resolution for `dir` attributes.
+src/components/history/HistoryPanel.tsx :: HistoryPanel — Recency-grouped conversation list with search, rename, export and delete.
+src/components/settings/GpuCard.tsx :: GpuCard — CUDA pack status, install/remove and progress; subscribes to `gpu://changed` and `gpu://download`.
+src/components/settings/LanguagePicker.tsx :: LanguagePicker — Searchable picker over `KNOWN_LANGUAGES` for adding a language.
+src/components/settings/ModelManager.tsx :: ModelManager — Catalogue/extra-folder model manager: install, delete, incompatibilities.
+src/components/settings/ModelManager.tsx :: useModelCatalog — Catalogue + installed + incompatible + in-flight downloads, refreshed by `models://changed`.
+src/components/settings/ShortcutInput.tsx :: ShortcutInput — Key recorder that waits for the final modifier release.
+src/components/settings/ShortcutInput.tsx :: acceleratorFromEvent — Builds a Tauri accelerator; `null` for a bare key or a single modifier.
+src/components/settings/ShortcutInput.tsx :: prettyAccelerator — Platform-specific display form of an accelerator.
+src/components/settings/layout.tsx :: Card / Row / SectionHeader — The settings layout primitives; `Row` owns the highlight-pulse lifecycle.
+src/components/voice/CallView.tsx :: CallView — The hands-free call screen: spoken text, level meter, mute and interrupt.
+src/components/voice/LevelMeter.tsx :: LevelMeter — Rolling-window microphone level bars.
+src/components/voice/SpokenText.tsx :: SpokenText — The full reply with the word currently being spoken highlighted; handles Arabic diacritics.
+src/components/voice/VoiceBars.tsx :: VoiceBars — 24-band spectrum bars for the listening/speaking state.
+
+================================================================================
+=== FRONTEND: pages/ ===
+================================================================================
+
+src/pages/Bubble/Bubble.tsx :: Bubble — The 60x60 draggable launcher circle; morphs into the chat window and mirrors voice/dictation state.
+src/pages/Chat/ChatApp.tsx :: ChatApp — The chat window: header, message list, composer, history, call view, tool confirmation, selection menu.
+src/pages/Overlay/Overlay.tsx :: Overlay — The always-on-top dictation card: state, level, review editor, language menu.
+src/pages/Settings/SettingsApp.tsx :: SettingsApp — The 13-section dashboard shell with sidebar live search, jump highlighting and `app://navigate` routing.
+src/pages/Settings/searchIndex.ts :: SEARCH_INDEX — The search index built from `strings.en.json` label and hint keys.
+src/pages/Settings/sections/About.tsx :: AboutSection — Version, licence, build and repository links.
+src/pages/Settings/sections/Ai.tsx :: AiSection / useLmModels — Provider, server URL, API key, model mode, generation and explain settings.
+src/pages/Settings/sections/Basic.tsx :: GeneralSection / AppearanceSection / ShortcutsSection / useS — Window behaviour, theme, accent, font scale, shortcuts and startup.
+src/pages/Settings/sections/Dictation.tsx :: DictationSection — Hotkey, mode, correction, insert method, review and the dictation history table.
+src/pages/Settings/sections/Languages.tsx :: LanguageSection — The user-editable language list: order, direction, STT language, TTS voice, tashkeel.
+src/pages/Settings/sections/Mcp.tsx :: McpSection — Server table, per-tool permissions, safe mode, LM Studio import, public SearXNG instances.
+src/pages/Settings/sections/Memory.tsx :: MemorySection — "Models in memory": per-model state, load/unload, and the startup autoload switches.
+src/pages/Settings/sections/System.tsx :: PrivacySection / DiagnosticsSection / CheckItem — The privacy report, capability checks, log tail and open-folder shortcuts.
+src/pages/Settings/sections/Voice.tsx :: SpeechSection / VoiceSection — STT and TTS settings, model management, voice picker and the GPU card.
+src/pages/Settings/sections/WebSearch.tsx :: WebSearchSection — DuckDuckGo / SearXNG configuration and the live connectivity test.
+src/pages/Setup/SetupWizard.tsx :: SetupWizard — First-run wizard: language, model download progress, microphone test and the privacy summary.
+src/main.tsx :: (root) — Hash route selection, settings/voice bootstrap, first-run gate, boot watchdog; wraps everything in `ErrorBoundary`.
+
+================================================================================
+=== TESTS ===
+================================================================================
+
+--- Rust: unit tests inside src/ ---
+src-tauri/src/database/mod.rs :: tests — 2 — kv round trip; migrations are idempotent.
+src-tauri/src/database/conversations.rs :: tests — 5 — create/save/list/delete, delete-all, empty-title rejection, content+title+Arabic search, tool rows not indexed.
+src-tauri/src/database/dictation.rs :: tests — 1 — history round trip, trimming to HISTORY_LIMIT, newest-first ordering.
+src-tauri/src/database/export.rs :: tests — 3 — all three export formats, import creates new ids, garbage rejected.
+src-tauri/src/settings/mod.rs :: tests — 7 — defaults + persistence, provider sanitising, bad values, v2 migration, partial JSON, retired keys ignored, v4 voice migration.
+src-tauri/src/settings/backup.rs :: tests — 4 — round trip hides content, foreign/tampered files rejected, key stripping, import keeps local values.
+src-tauri/src/capabilities/mod.rs :: (none) — 0.
+src-tauri/src/lib.rs :: (none) — 0.
+src-tauri/src/services/ai/sse.rs :: tests — 5 — split events, CRLF + comments, UTF-8 split across chunks, unterminated tail, tool-call accumulation.
+src-tauri/src/services/ai/model_selector.rs :: tests — 8 — param parsing, loaded-model preference, not-largest, CPU-only, embeddings excluded, tool-use tie-break, unknown metadata, id fallback.
+src-tauri/src/services/ai/lmstudio.rs :: tests — 11 — the four model-list parsers plus native API fallback behaviour.
+src-tauri/src/services/chat/prompt.rs :: tests — 8 — system-prompt assembly, language and freshness notes.
+src-tauri/src/services/chat/think.rs :: tests — 3 — think-tag streaming and flush.
+src-tauri/src/services/chat/freshness.rs :: tests — 2 — fresh-information heuristic.
+src-tauri/src/services/chat/explain.rs :: tests — 1 — the isolated explain request.
+src-tauri/src/services/chat/attach.rs :: tests — 5 — attachment JSON rehydration and multimodal message construction.
+src-tauri/src/services/chat/orchestrator.rs :: tests — 9 — history trimming, title derivation and turn helpers.
+src-tauri/src/services/attachments/base64.rs :: tests — 3 — encode/decode and data-URL tolerance.
+src-tauri/src/services/attachments/office.rs :: tests — 3 — Office/plain text extraction.
+src-tauri/src/services/attachments/mod.rs :: tests — 6 — ingest paths, limits, text extraction, GC.
+src-tauri/src/services/language/detect.rs :: tests — 6 — en/ar/de detection, mixed text, code and URL stripping.
+src-tauri/src/services/stt/mod.rs :: tests — 4 — model resolution, transcript cleaning, hallucination blacklist.
+src-tauri/src/services/stt/engine.rs :: tests — 2 — family detection and weight selection.
+src-tauri/src/services/stt/session.rs :: tests — 4 — session lifecycle helpers.
+src-tauri/src/services/tts/sentence_buffer.rs :: tests — 8 — boundaries, abbreviations, decimals, code fences, run-on splitting.
+src-tauri/src/services/tts/speech_text.rs :: tests — 3 — Markdown cleaning, quote marks, sound tags.
+src-tauri/src/services/tts/voices.rs :: tests — 5 — listing per engine and selection/gender steering.
+src-tauri/src/services/audio/mod.rs :: tests — 4 (1 `#[ignore]`d) — level, filter, spectrum; the ignored one is a cost benchmark.
+src-tauri/src/services/audio/devices.rs :: tests — 1 — loopback-name blacklist.
+src-tauri/src/services/models/mod.rs :: tests — 5 — discovery, HF cache layout, incompatibility reasons, delete protection, recommendation size bound.
+src-tauri/src/services/models/catalog.rs :: tests — 1 — catalogue invariants (unique ids, https URLs, 64-hex digests, en/ar/de coverage, const-concat correctness).
+src-tauri/src/services/models/download.rs :: tests — 2 — archive path safety and progress handling.
+src-tauri/src/services/gpu/mod.rs :: tests — 7 (1 `#[ignore]`d) — provider selection, activation markers, pack completeness.
+src-tauri/src/services/mcp/mod.rs :: tests — 2 — status computation and content extraction.
+src-tauri/src/services/mcp/config.rs :: tests — 3 — validation, round trip, `mcp.json` parsing.
+src-tauri/src/services/mcp/permissions.rs :: tests — 2 — classification and default permissions.
+src-tauri/src/services/mcp/sources.rs :: tests — 3 — source extraction from text and structured content.
+src-tauri/src/services/search/mod.rs :: tests — 10 — result normalisation, base-URL rules, instance list parsing.
+src-tauri/src/services/dictation.rs :: tests — 2 — delta reconciliation and text finalisation.
+src-tauri/src/services/hardware/mod.rs :: tests — 2 — thread budget and VRAM/NVIDIA helpers.
+src-tauri/src/desktop/window.rs :: tests — 4 — pure geometry (preset, clamp, monitor detection).
+src-tauri/src/desktop/shortcuts.rs :: tests — 1 — accelerator/modifier-token classification.
+src-tauri/src/desktop/icon.rs :: tests — 2 — accent palette and rasteriser determinism.
+src-tauri/src/desktop/tray.rs :: (none) — 0.
+src-tauri/src/desktop/verify.rs :: (none) — 0.
+src-tauri/src/errors.rs :: (none) — 0.
+src-tauri/src/logging.rs :: (none) — 0.
+
+--- Rust: integration tests in src-tauri/tests/ ---
+src-tauri/tests/db_smoke.rs :: 1 test — reads a real on-disk database (gated on `LA_DB`); an empty query must behave like listing everything.
+src-tauri/tests/gpu_pack.rs :: 1 test (`#[ignore]`, gated on `LA_GPU_DIR`) — installs the CUDA pack and asserts all 7 required DLLs are present.
+src-tauri/tests/lmstudio_live.rs :: 1 test (gated on `LA_LIVE_LMSTUDIO=1`) — live chat in en/ar/de plus a web-search turn that must cite php.net.
+src-tauri/tests/mcp_integration.rs :: 3 tests — the full MCP contract against the fixture server: discovery, permission model, safe mode, missing command, unreachable HTTP.
+src-tauri/tests/voice_models.rs :: 7 tests (env-gated, no-op in a clean checkout) — TTS/STT round trip in three languages, in-place Whisper switching, one multilingual voice, a custom model folder, hands-free and dictation pipelines, microphone delivery.
+src-tauri/tests/web_search_live.rs :: 4 tests (all `#[ignore]`, network) — DuckDuckGo parsing, a sub-path SearXNG, a public instance, and exact `primary = "duckduckgo"` routing.
+src-tauri/src/bin/mcp_fixture_server.rs :: (helper) — stdio JSON-RPC MCP server with 4 fake tools; `test = false`, used via `CARGO_BIN_EXE_mcp_fixture_server`.
+src-tauri/src/bin/gpu_probe.rs :: (diagnostic) — Standalone CUDA speech probe; no Tauri, no app crate.
+
+--- Frontend tests in src/test/ ---
+src/test/setup.ts :: (harness) — Mocks `@tauri-apps/api/core`, `api/event`, `plugin-opener`, `plugin-dialog` and stubs `window.matchMedia`.
+src/test/ui.test.tsx :: 24 cases — text direction, SpokenText, MessageBubble (incl. the no-raw-HTML guard), chat-store streaming and queueing, Composer, CallView, accelerator building, and the Tauri capability file.
+src/test/settings.test.tsx :: 19 cases (6 `it` + 1 `it.each` over 13 sections) — every section mounts, model manager, model picker, bubble, web-search round trip.
+src/test/selection.test.tsx :: 5 cases — right-click selection menu and the explain pop-up.
+src/test/history.test.tsx :: 4 cases — recency grouping, empty state, delete resets the last-conversation pointer, a DB failure is not shown as empty.
+src/test/shortcutinput.test.tsx :: 3 cases — capture, modifier-release ordering, single-modifier rejection.
+src/test/strings.test.ts :: 5 cases — interpolation, error-code mapping, full-tree key coverage, dynamic key families, byte formatting.
+src/test/soundTags.test.ts :: 2 cases — tag stripping without touching maths; the UI default instruction equals the Rust prompt constant.
+src/test/voiceSessions.test.ts :: 2 cases — a late `idle` must not end a new session; a session that ended before its start returned stays ended.
+
+================================================================================
+=== BUILD & CONFIG ===
+================================================================================
+
+package.json :: scripts.dev — `vite` (dev server on 127.0.0.1:1420, strict port).
+package.json :: scripts.build — `tsc && vite build`; the `beforeBuildCommand` of Tauri.
+package.json :: scripts.preview — `vite preview` of `dist/`.
+package.json :: scripts.tauri — `tauri`; the Tauri CLI passthrough.
+package.json :: scripts.test — `vitest run`.
+package.json :: scripts.test:watch — `vitest`.
+package.json :: scripts.typecheck — `tsc --noEmit`.
+package.json :: dependencies — `@tauri-apps/api` 2, plugins (autostart, dialog, global-shortcut, opener), `lucide-react`, `react` 19.1, `react-dom` 19.1, `react-markdown` 10, `remark-gfm` 4, `zustand` 5.
+package.json :: devDependencies — `@tauri-apps/cli` 2, Testing Library (jest-dom, react, user-event), `@types/*`, `@vitejs/plugin-react`, `jsdom`, `typescript` ~6.0.3, `vite` 8, `vitest` 5.
+package.json :: name / version / license / type — `local-ai-assistant`, `1.0.0`, `GPL-3.0-only`, `module`.
+
+vite.config.ts :: plugins — `@vitejs/plugin-react` only; no Tailwind or PostCSS.
+vite.config.ts :: server — port 1420, strictPort, IPv4 host on purpose, `watch.ignored: ["**/src-tauri/**"]`.
+vite.config.ts :: build — `target: "es2022"`, `chunkSizeWarningLimit: 900`, default `outDir: dist`.
+vite.config.ts :: test — jsdom, `globals: true`, `setupFiles: ["./src/test/setup.ts"]`, `css: false`.
+
+tsconfig.json :: compilerOptions — `strict` only from the strict family; `noUnusedLocals`, `noUnusedParameters`, `noFallthroughCasesInSwitch`; `jsx: react-jsx`; `noEmit`.
+tsconfig.json :: types — `vitest/globals`, `@testing-library/jest-dom`, `node` (so tests can use `node:fs`).
+tsconfig.node.json :: — Composite project for `vite.config.ts`; no `types: ["node"]`, hence the inline `process` cast.
+
+src-tauri/Cargo.toml :: package — `local-ai-assistant` 1.0.0, GPL-3.0-only, edition 2021, `default-run = local-ai-assistant`.
+src-tauri/Cargo.toml :: lib — `local_ai_assistant_lib`, `crate-type = ["staticlib","cdylib","rlib"]`.
+src-tauri/Cargo.toml :: profile.release — `codegen-units = 1`, `lto = true`, `opt-level = 3`, `panic = "abort"`, `strip = true`.
+src-tauri/Cargo.toml :: profile.dev — `debug = "line-tables-only"`; `[profile.dev.package."*"] debug = false` (keeps `target\` from reaching 100+ GB).
+src-tauri/Cargo.toml :: key dependencies — tauri 2 (image-png, tray-icon), sherpa-onnx 1.13.8 (shared) + sherpa-onnx-sys, cpal 0.18.2, rmcp 3.4.0, reqwest 0.13, rusqlite 0.40 (bundled), tokio 1.53 (full), sysinfo 0.39.6, whatlang 0.18, chacha20poly1305 0.10, sha2 0.11, enigo 0.6.1, arboard 3.6.1, auto-launch 0.5, url, regex, tar, zip, bzip2.
+src-tauri/Cargo.toml :: [target."cfg(windows)".dependencies] — `windows` 0.62.2 (Dxgi, Gdi, UI_Input, UI_WindowsAndMessaging, WinRT, Threading, JobObjects, Security, Foundation, Security_Credentials_UI) and `windows-future`.
+src-tauri/Cargo.toml :: [[bin]] — `local-ai-assistant` and the test-only `mcp_fixture_server` (`test = false`).
+src-tauri/build.rs :: (build script) — `cargo:rerun-if-changed=../dist` then `tauri_build::build()`.
+
+src-tauri/tauri.conf.json :: productName / mainBinaryName / version / identifier — "Open Local Assistant" / `local-ai-assistant` / 1.0.0 / `com.localassistant.app`.
+src-tauri/tauri.conf.json :: build — `beforeDevCommand: npm run dev`, `devUrl: http://127.0.0.1:1420`, `beforeBuildCommand: npm run build`, `frontendDist: ../dist`.
+src-tauri/tauri.conf.json :: app.withGlobalTauri — `false`; the frontend has no `window.__TAURI__`.
+src-tauri/tauri.conf.json :: app.windows[0] — `main`, 480x640, min 380x160, max 760 width, `decorations:false`, `transparent:true`, `shadow:false`, `skipTaskbar:true`, `visible:false`, url `index.html#/`.
+src-tauri/tauri.conf.json :: app.security.csp — `default-src 'self'; img-src 'self' data: asset:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src ipc: http://ipc.localhost; script-src 'self'`; `freezePrototype: true`.
+src-tauri/tauri.conf.json :: bundle — `active: true`, `targets: ["nsis","msi"]`, publisher, descriptions, category `Productivity`, 5 icon paths, `nsis.installMode: perMachine`.
+
+src-tauri/capabilities/default.json :: windows — `["main","settings","overlay","bubble"]`; one capability for all windows, no per-window least-privilege split.
+src-tauri/capabilities/default.json :: permissions — `core:default`, three `core:window:allow-*` drag/position grants, `dialog:allow-open`, `dialog:allow-save`, `opener:allow-open-url`, `opener:allow-default-urls`, `global-shortcut:default`. No `fs`, `shell` or `http`.
+
+.github/workflows/build.yml :: triggers — `workflow_dispatch` and `push` on tags `v*`.
+.github/workflows/build.yml :: permissions — `contents: read`; the workflow never writes to the repository.
+.github/workflows/build.yml :: job build — `windows-latest`, `timeout-minutes: 90`, single job, no matrix, no lint/test job.
+.github/workflows/build.yml :: steps — checkout; `setup-node@v4` (Node 22, npm cache); `dtolnay/rust-toolchain@stable`; `Swatinem/rust-cache@v2` (`workspaces: src-tauri`); `choco install innosetup` guarded on the IS 6 path; `npm ci`; `build-installer.bat noupload < NUL`; PowerShell output verification; `upload-artifact@v4` (`release/`, `if-no-files-found: error`).
+.github/workflows/build.yml :: known gap — CI installs/checks Inno Setup 6 while the build script searches for Inno Setup 7, so the setup exe can be silently missing; no `cargo test`/`clippy`/`npm run lint` runs in CI.
+
+build-installer.bat :: modes — no argument (build + offer to publish), `install`, `upload`, `noupload` (what CI uses).
+build-installer.bat :: DIST — `release` (never `dist\`, which is the embedded frontend folder).
+build-installer.bat :: phases — preflight cache trim (8 GB cap) -> `npm run build` -> `cargo build --release` + sherpa-onnx cache copy-back -> locate Inno Setup -> `ISCC` with `/D` defines.
+build-installer.bat :: portable output — `Open Local Assistant.exe` plus 4 speech DLLs (`sherpa-onnx-c-api`, `sherpa-onnx-cxx-api`, `onnxruntime`, `onnxruntime_providers_shared`).
+upload-release.bat :: — Commits first, zips only the 5 portable files, then `gh release create` / `upload --clobber` with `release-notes/<tag>.md` when present.
+installer/open-local-assistant.iss :: — Inno Setup script receiving `AppVersion`, `SourceExe`, `LibDir`, `OutputDir` from the batch file.
+scripts/generate_icon.py :: — Generates the build-time icon (rounded teal square + white wave); deliberately different from the runtime icon in `desktop/icon.rs`.
+
+Quality gates (AGENTS.md §2, local only — not run in CI):
+  cargo fmt --all
+  cargo clippy -p ols-core -p ols-helper --all-targets
+  cargo test -p ols-core -p ols-helper
+  cd ui && npm run lint && npm run build
+Note: the clippy/test lines above name packages that do not exist in this
+repository; the applicable local commands are `cargo fmt --all`,
+`cargo clippy --all-targets`, `cargo test`, and `cd src && npm run typecheck && npm run test`.
