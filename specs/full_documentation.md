@@ -5202,6 +5202,1249 @@ default: `detect(text).map(|d| d.lang).unwrap_or(fallback)`.
 
 ---
 
+### 4.9 Rust Domain Services — MCP, Web Search and Persistence
+
+---
+
+#### File: `/src-tauri/src/services/mcp/mod.rs`
+
+### Purpose
+The MCP client manager: connects user-configured servers over stdio or streamable
+HTTP, classifies and filters their tools, and serves them as a `ToolProvider`.
+
+### Summary
+428 lines. `ToolView`, `ServerStatus`, the private `Connection`/`Inner` structs,
+`McpManager` with 11 public methods, the `ToolProvider` impl, and the Windows
+command builder. 2 unit tests plus 3 integration tests in
+`src-tauri/tests/mcp_integration.rs` (§4.7).
+
+### Technical Details
+```rust
+pub struct McpManager { db: Arc<Db>, inner: RwLock<Inner>, on_change: Arc<dyn Fn() + Send + Sync>,
+                        safe_mode: AtomicBool }
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(60);
+```
+- `ToolView { name, description, category, permission, default_permission }` —
+  both the effective and the default permission are exposed, which is what lets
+  the UI show what a tool *would* be allowed to do if safe mode were off.
+- `ServerStatus { config, state, error, tools, internet }` where `state` is one
+  of `"disabled" | "connecting" | "connected" | "error" | "offline"`.
+- `Inner` holds two maps keyed by server id: `connections:
+  HashMap<String, Arc<Connection>>` and `states: HashMap<String, (String,
+  Option<String>)>`.
+- `on_change` is installed **at construction** (`McpManager::new(db, callback)`),
+  so no manager can exist without its change notification — `lib.rs` wires it to
+  `app.emit("mcp://changed")`. Every state transition, connect, disconnect,
+  enable/disable and permission change calls it.
+
+### Business Logic — the permission policy
+`effective_permission(category, stored)` is the whole policy in three lines:
+```rust
+let p = stored.unwrap_or_else(|| default_permission(category));
+if self.safe_mode() { clamp_permission(category, p) } else { p }
+```
+- The **stored** value is never mutated by safe mode. That is what makes "turn
+  safe mode off" restore the user's earlier choices: the choices are still in
+  SQLite, only the *effective* value is capped.
+- `set_safe_mode(on)` swaps the `AtomicBool` and calls `on_change` **only when
+  the value actually changed** — a redundant toggle does not re-render the
+  settings page.
+- `set_permission` returns the **effective** permission, not the requested one,
+  so the UI's `<select>` always shows the truth.
+- `set_all_permissions(id, None)` calls `db.clear_tool_permissions`, which
+  restores the defaults for every tool; `Some(p)` writes `p` for every tool of
+  the connected server.
+- `call_tool` **re-reads the stored permission at call time** ("it may have
+  changed mid-turn") and returns `AppError::PermissionDenied` for a `Deny`.
+  There are therefore two gates, not one: `available_tools` hides the tool from
+  the model, and `call_tool` refuses to run it.
+- `available_tools` filters `Deny` entirely, and derives `llm_name` through
+  `llm_tool_name(&cfg.name, &t.name, &mut taken)`.
+- `statuses()` computes `internet` as `transport == "http"` **or** any tool
+  categorised `Search`/`Fetch`. `internet_available()` is stricter: it also
+  requires `state == "connected"` and `permission != Deny`.
+
+### Business Logic — the transports
+`open(&cfg)` matches `cfg.transport`:
+- **`"stdio"`** — builds the child command with `command_for`, applies
+  `cfg.env`, and spawns
+  `rmcp::transport::TokioChildProcess::builder(cmd).stderr(Stdio::null()).spawn()`.
+  The child's stderr is **discarded to null** so a chatty MCP server can never
+  fill the app's log or block on a full pipe; a spawn failure becomes
+  `AppError::Mcp("could not start '{command}': {e}")`.
+- **`"http"`** — builds a `reqwest::Client` with the configured headers as
+  `default_headers` and constructs
+  `rmcp::transport::StreamableHttpClientTransport::with_client(client, StreamableHttpClientTransportConfig::with_uri(url))`.
+  **An invalid header is silently skipped**: the loop is
+  `if let (Ok(name), Ok(value)) = (HeaderName::from_bytes(..), HeaderValue::from_str(..))`,
+  so a malformed header is dropped rather than failing the connection.
+- anything else → `AppError::Invalid("unknown transport {other}")`.
+- Both then call `service.list_all_tools()`; a failure is
+  `AppError::Mcp("tools/list failed: {e}")`.
+
+**The Windows `.cmd`-shim rule.** `command_for` is `#[cfg(windows)]` and
+detects `npx, npm, pnpm, yarn, bunx, corepack` — matched only when the program
+string has **no extension** — and runs them as
+`cmd /C <program> <args…>`. The source comment states the reason: "npx/npm/yarn/pnpm
+are .cmd shims on Windows and need cmd.exe." Every stdio child is also started
+with `creation_flags(CREATE_NO_WINDOW = 0x0800_0000)`, so an MCP server never
+flashes a console window. The non-Windows variant has neither behaviour.
+
+**Connection lifecycle.** `connect_enabled()` is spawned at startup and
+connects each enabled server in its **own** task, so one slow server cannot
+delay the others. `connect(id)` disconnects first, refuses a disabled server,
+sets `"connecting"`, and then `tokio::time::timeout(CONNECT_TIMEOUT, open(&cfg))`
+— **60 seconds**. An offline-looking error maps to state `"offline"`, anything
+else to `"error"`, and a timeout to `AppError::Timeout("MCP server {name} did
+not respond")`.
+
+**`is_offline_error`** matches the lower-cased error text against 8 substrings:
+`dns`, `resolve`, `network is unreachable`, `no route`, `connection refused`,
+`connect error`, `timed out`, `offline`. The UI distinguishes "your machine is
+offline" from "the server is broken".
+
+**`llm_tool_name(server, tool, taken)`** is the sanitiser:
+- each part maps every non-`[A-Za-z0-9_-]` character to `_`, then trims `_` and
+  lowercases;
+- the parts are joined with `__` and the result is **truncated to 60
+  characters**;
+- if that name is already in `taken`, a numeric suffix `2`, `3`, … is appended
+  until it is unique, and the final name is pushed onto `taken`.
+- A test asserts `"Web Search" + "searxng_web_search"` →
+  `web_search__searxng_web_search` and then `web_search__searxng_web_search2`,
+  and that a 100-character server name yields a name of at most 64 characters
+  (60 plus a one-digit suffix).
+
+**`result_to_text`** flattens the MCP `content` array into one string:
+`text` blocks verbatim; `resource` blocks as `Resource {uri}:\n{text}` (or
+`[binary resource]`); `resource_link` blocks as `Link: {name or title} {uri}`;
+`image` and `audio` become the literal placeholders `[image omitted]` and
+`[audio omitted]`; **unknown block types are dropped**. When nothing was
+collected, `structuredContent` is serialised instead. Parts are joined with a
+blank line.
+
+**Category-gated source extraction.** `call_tool` extracts sources **only** when
+`spec.category` is `Search` or `Fetch`:
+```rust
+if matches!(spec.category, ToolCategory::Search | ToolCategory::Fetch) {
+    sources::extract_sources(&text, value.get("structuredContent"))
+} else { Vec::new() }
+```
+A write or execute tool's output therefore never becomes a citation.
+
+### Concurrency
+`inner` is a `tokio::sync::RwLock`; reads (statuses, available_tools, the
+permission lookup in `call_tool`) take the read lock and never block each other.
+`disconnect` removes the entry **under the write lock** and then performs the
+async `service.cancel()` **outside** it, so a slow shutdown cannot stall a
+status read. It uses `Arc::try_unwrap` and simply skips the cancel when a
+clone is still alive.
+
+### Dependencies
+`rmcp` (`RoleClient`, `ServiceExt`, `RunningService`, `model::{CallToolRequestParams, Tool}`, `transport::{TokioChildProcess, StreamableHttpClientTransport, streamable_http_client::StreamableHttpClientTransportConfig}`),
+`tokio` (`process::Command`, `time::timeout`, `sync::RwLock`, `spawn`),
+`reqwest::header`, `async_trait`, `serde`, `serde_json`, the three sibling
+modules and `crate::{database::Db, errors, services::chat::tools}`.
+
+---
+
+#### File: `/src-tauri/src/services/mcp/permissions.rs`
+
+### Purpose
+Classifies an MCP tool into a `ToolCategory` and derives its default permission.
+
+### Summary
+99 lines. One `has_word` tokeniser, one `classify` cascade, `default_permission`,
+`clamp_permission`, and 2 tests.
+
+### Technical Details — the five word lists
+| List | Length | Entries |
+| --- | --- | --- |
+| `EXEC` | **16** | `exec, execute, run, shell, command, cmd, terminal, powershell, bash, script, eval, spawn, kill, process, sudo, install` |
+| `WRITE` | **28** | `write, create, delete, remove, update, edit, move, rename, upload, send, post, push, commit, set, modify, insert, drop, patch, append, save, merge, close, archive, publish, mkdir, rm, put` |
+| `SEARCH` | **10** | `search, query, lookup, google, bing, duckduckgo, searxng, brave, tavily, websearch` |
+| `FETCH` | **10** | `fetch, scrape, crawl, browse, navigate, url, webpage, page, extract, download` |
+| `READ` | **14** | `read, get, list, find, view, show, describe, stat, info, status, open, load, tree, cat` |
+
+Plus one **inline** list of **3**: `web`, `internet`, `news` (treated as
+`Search`).
+
+### Business Logic — the tokeniser
+```rust
+fn has_word(hay: &str, words: &[&str]) -> bool {
+    let tokens: Vec<&str> = hay.split(|c: char| !c.is_ascii_alphanumeric()).filter(|t| !t.is_empty()).collect();
+    words.iter().any(|w| tokens.iter().any(|t| t == w || (w.len() > 4 && t.starts_with(w))))
+}
+```
+- The name is first **camelCase → snake** transformed (`createIssue` →
+  `create_issue`) by inserting `_` before every uppercase letter that is not at
+  index 0 and lowercasing. That is what makes `createIssue` match `create`.
+- The haystack is split on **non-alphanumeric** characters, so `web-search` and
+  `web_search` and `webSearch` all tokenise the same.
+- **The prefix rule:** a token matches a word when it is equal, **or** when the
+  word is **longer than 4 characters** and the token *starts with* it. So
+  `search` (6) matches `searches` and `searching`, but `get` (3) and `url` (3)
+  never match by prefix. This widens recall without turning `read` into
+  `reader`-and-`readwrite` noise.
+
+### Business Logic — the ordered 8-rule cascade
+`classify(name, description, read_only_hint, destructive_hint)` returns on the
+**first** match:
+
+| # | Test | Result |
+| --- | --- | --- |
+| 1 | `has_word(name, EXEC)` | `Execute` |
+| 2 | `destructive_hint == Some(true)` **or** `has_word(name, WRITE)` | `Write` |
+| 3 | `has_word(name, SEARCH)` | `Search` |
+| 4 | `has_word(name, FETCH)` | `Fetch` |
+| 5 | `has_word(name, ["web","internet","news"])` | `Search` |
+| 6 | `read_only_hint == Some(true)` **or** `has_word(name, READ)` | `Read` |
+| 7 | the description contains `"search the web"`, `"web search"` or `"search engine"` | `Search` |
+| 8 | the description contains `"execute"`, `"shell command"` or `"run a command"` | `Execute` |
+| — | otherwise | `Other` |
+
+- **Order is the safety property.** `EXEC` is checked first, so
+  `execute_powershell` is `Execute` even though it also contains a read-ish
+  token. `WRITE` is second, so a `destructive_hint: true` annotation is enough
+  on its own. `SEARCH` before `FETCH` resolves `web_url_read` to `Search` (it
+  contains no `SEARCH` token, so it actually falls to `FETCH` via `url` — the
+  test pins that). `Other` is last, not first: it is the **residual** category,
+  which is why `default_permission(Other)` is `Ask` and `is_sensitive(Other)` is
+  true.
+- **The description fallbacks (rules 7 and 8) exist for uninformative names.**
+  A server that names a tool just `brave` with the description "Search the web
+  with Brave" would otherwise be `Other` and therefore require confirmation for
+  every call; a test proves it classifies as `Search`.
+- `destructive_hint` and `read_only_hint` come from the MCP tool
+  `annotations`, so a well-behaved server can classify itself.
+
+### Business Logic — `default_permission` and `clamp_permission`
+| Category | Default |
+| --- | --- |
+| `Search` | `Allow` |
+| `Fetch` | `Allow` |
+| `Read` | `Allow` |
+| `Write` | `Ask` |
+| `Other` | `Ask` |
+| `Execute` | **`Deny`** |
+
+```rust
+pub fn clamp_permission(category: ToolCategory, requested: Permission) -> Permission {
+    if requested == Permission::Allow && category.is_sensitive() { Permission::Ask } else { requested }
+}
+```
+- `is_sensitive()` is `Write | Execute | Other`, so safe mode can only demote
+  `Allow` → `Ask` for those three. It **never** invents a `Deny` and **never**
+  touches `Search`/`Fetch`/`Read`.
+- Execution therefore lands on `Ask` under safe mode, not `Deny` — a documented
+  consequence asserted by `mcp_integration.rs` step 7. Denying execution is the
+  *default*; safe mode lowers the ceiling for a user who has explicitly allowed
+  it.
+- Two tests pin the asymmetry: `clamp(Write, Deny) == Deny` and
+  `clamp(Read, Allow) == Allow`.
+
+### Business Logic — safe mode, the full semantics
+1. **Safe mode is in memory only.** It is an `AtomicBool` on `McpManager` that
+   `new()` initialises to `true`. **There is no database column and no settings
+   key for it** — `mcp_servers` and `mcp_tool_permissions` are the only MCP
+   tables.
+2. **It resets ON at every launch.** Because the flag is never persisted, a
+   process that is killed or crashes restarts with safe mode on. The invariant
+   is stated in `commands/mcp.rs` as: *safe mode resets to on at every launch,
+   so it can never persist as off across a restart*.
+3. **Stored permission values are never mutated.** `set_permission` writes the
+   user's request verbatim to `mcp_tool_permissions`; only
+   `effective_permission` applies the clamp. Turning safe mode off therefore
+   **restores the previous choices exactly** rather than resetting them to
+   defaults.
+4. **Windows Hello gates only turning it OFF.** `mcp_set_safe_mode` calls
+   `desktop::verify::verify_user(&window, "Confirm it's you to turn off MCP safe
+   mode")` when the new value is `false`, and never when it is `true` — so the
+   fail-safe direction is free. It is the only command in the crate that takes a
+   `WebviewWindow` rather than an `AppHandle`, because the OS prompt needs a
+   concrete window handle. On non-Windows `verify_user` **always denies**
+   (§4.7), so safe mode cannot be turned off there at all.
+5. **The UI mirrors the ceiling.** `McpSection` renders the `allow` option of a
+   sensitive tool's `<select>` as `disabled` while safe mode is on, and shows the
+   `settings.mcp.sensitiveHint` line; the server-side clamp is still the
+   authority.
+
+### Dependencies
+`crate::services::chat::tools::{Permission, ToolCategory}` only. No I/O, no
+`serde`.
+
+---
+
+#### File: `/src-tauri/src/services/mcp/sources.rs`
+
+### Purpose
+Extracts the web sources (URL + title) that actually appear in a tool result.
+
+### Summary
+90 lines. Three `LazyLock` regexes, `MAX_SOURCES = 12`, `push`, `walk_json` and
+`extract_sources`. 3 tests.
+
+### Technical Details — the 3 regexes
+| Name | Pattern | Purpose |
+| --- | --- | --- |
+| `MD_LINK` | `\[([^\]\n]{1,200})\]\((https?://[^\s)]+)\)` | Markdown link: capture 1 is the title, capture 2 the URL |
+| `TITLE_URL` | `(?im)^\s*(?:title\|name)\s*:\s*(.+?)\s*$\s*^\s*(?:url\|link\|href)\s*:\s*(https?://\S+)` | A `Title:` / `Url:` pair on consecutive lines; capture 1 is the title, capture 2 the URL |
+| `BARE_URL` | `https?://[^\s<>"'\])},]+` | Any bare URL |
+
+The `https?://` prefix in all three is the security boundary, not an accident.
+
+### Business Logic — the limits in `push`
+1. The candidate is trimmed of trailing `.,;:!?` and `)`.
+2. **It must start with `http://` or `https://`** and be **at most 2048
+   characters**, or it is dropped. This is why `"file:///etc/passwd
+   javascript:alert(1)"` produces nothing — a test asserts exactly that.
+3. Duplicate URLs are merged, and an existing entry with no title gains one.
+4. The list stops at **`MAX_SOURCES = 12`**.
+5. Titles are trimmed and truncated to **200 characters**.
+
+### Business Logic — the four passes, in order
+`extract_sources(text, structured)` runs:
+1. `walk_json(structured)` when a structured body exists.
+2. `walk_json(&Value::String(text))` — see the note below.
+3. `TITLE_URL` captures → `(title, url)`.
+4. `MD_LINK` captures → `(title, url)`.
+5. `BARE_URL` captures → `(url, no title)`.
+
+`walk_json` recurses through objects and arrays. On an object it looks for
+`url` / `link` / `href` / `uri` and, if found, pairs it with `title` / `name` /
+`headline` and pushes both. On a **string** it checks whether the trimmed text
+starts with `{` or `[` and, if so, re-parses it and recurses — "Tool servers
+often return JSON encoded inside a text block." That single line is why a server
+that returns its results as a JSON *string* still gets citations; a test feeds
+`{"results":[{"title":"NVIDIA news","url":"…"},{"title":"Dup","url":"…"}]}` and
+asserts the two identical URLs collapse to **one** source with the title kept.
+
+Ordering matters: JSON first (richest titles), then the `Title:`/`Url:` pairs
+(a tool's human-readable header), then Markdown links, then bare URLs. A URL
+found earlier without a title is upgraded in place when a later pass supplies
+one, because `push` fills a missing title.
+
+---
+
+#### File: `/src-tauri/src/services/mcp/config.rs`
+
+### Purpose
+Persists MCP server configurations in SQLite and imports LM Studio's `mcp.json`.
+
+### Summary
+251 lines. `McpServerConfig` (+ `validate`), the `Db` CRUD methods, the
+`ImportCandidate` preview type, `lmstudio_mcp_json_path` and `parse_mcp_json`.
+3 tests.
+
+### Technical Details — the field table
+| Field | Type | SQLite column | Notes |
+| --- | --- | --- | --- |
+| `id` | `String` | `id TEXT PRIMARY KEY` | empty → `new_id()` on save |
+| `name` | `String` | `name TEXT NOT NULL` | trimmed on write; must be non-empty |
+| `description` | `String` | `description TEXT` (nullable, `""` on read) | |
+| `transport` | `String` | `transport TEXT NOT NULL` | `"stdio"` or `"http"` |
+| `command` | `Option<String>` | `command TEXT` | required for `stdio` |
+| `args` | `Vec<String>` | `args_json TEXT` (JSON array) | |
+| `env` | `BTreeMap<String,String>` | `env_json TEXT` (JSON object) | |
+| `url` | `Option<String>` | `url TEXT` | required and http(s) for `http` |
+| `headers` | `BTreeMap<String,String>` | `headers_json TEXT` (JSON object) | |
+| `enabled` | `bool` | `enabled INTEGER NOT NULL DEFAULT 0` | `i64` 0/1 on read |
+| `source` | `String` | `source TEXT NOT NULL DEFAULT 'user'` | `"user"` or `"lmstudio"`; serde default fn `user_source` |
+| `created_at` | `String` | `created_at TEXT NOT NULL` | empty → `now()` on save |
+
+`row_to_config` reads the 12 columns positionally and degrades every nullable
+JSON column to an empty collection. `save_mcp_server` is an upsert that
+`ON CONFLICT(id) DO UPDATE`s all fields **except** `enabled` — that asymmetry is
+the point of the command-layer rule in §4.5 (the UI cannot flip connection state
+through a save).
+
+### Business Logic — `validate()`
+- `name.trim().is_empty()` → `AppError::Invalid("server name is required")`.
+- `stdio` without a non-blank `command` → `"command is required for local
+  (stdio) servers"`.
+- `http`: the URL must parse, and its scheme must be `http` or `https`; a parse
+  failure is `"a valid URL is required"` and a bad scheme is `"URL must use
+  http or https"`. A test drives `file:///x` and expects an error.
+- anything else → `"transport must be stdio or http"`.
+
+### Business Logic — LM Studio discovery
+`lmstudio_mcp_json_path()` resolves the home directory as
+`std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME"))` — Windows
+first, POSIX as the fallback — and returns
+`{home}/.lmstudio/mcp.json` **only if it exists** (`then_some`), so a missing
+file is `None` and the preview command can return an empty list instead of an
+error.
+
+`parse_mcp_json` accepts exactly this schema:
+```json
+{ "mcpServers": { "<name>": { "command": "…", "args": ["…"], "env": {…} }
+                | { "url": "…", "headers": {…} } } }
+```
+- The `url` key also accepts `serverUrl`.
+- `str_map` keeps only entries whose value is a **string**, so a nested object
+  cannot smuggle structure into `env`/`headers`.
+- **Transport inference:** `url.is_some() && command.is_none()` → `http`,
+  otherwise `stdio`. A server declaring *both* is treated as `stdio`, which then
+  fails `validate()` if the command is unusable — a test asserts a config with
+  only `{"foo": 1}` is present but invalid.
+- Every parsed candidate is returned with `enabled: false`, `source:
+  "lmstudio"`, `id: ""` and `created_at: ""`. `commands/mcp.rs` (§4.5) applies
+  the remaining rules: skip names not in the selection, skip names that already
+  exist case-insensitively, keep only candidates that validate, and return the
+  count actually saved.
+- **`env_keys`-only preview rule:** `ImportCandidate` carries `env_keys:
+  Vec<String>` and **no env values at all**. `mcp_import_preview` fills it with
+  the key names, so the preview dialog can show *which* secrets an imported
+  server would need without ever putting a secret on the wire or on screen. This
+  is asserted in §4.5 and enforced by the type itself.
+
+### Business Logic — permission persistence
+`tool_permissions(server_id)` reads `(tool_name, permission)` pairs and
+deserialises the permission through `serde_json::from_value::<Permission>(Value::String(perm))`
+— i.e. the lowercase enum text is stored directly in a `TEXT` column. An
+unrecognised value is silently skipped rather than failing the whole map.
+`set_tool_permission` upserts on `(server_id, tool_name)`;
+`clear_tool_permissions` deletes every row for the server, which is exactly what
+"reset to defaults" means. A test asserts deleting a server also empties its
+permission map (the foreign key cascades).
+
+### Dependencies
+`rusqlite::{params, OptionalExtension}`, `serde`, `serde_json`, `url::Url`,
+`std::collections::BTreeMap`, `std::path::PathBuf`,
+`crate::{database::{conversations::{new_id, now}, Db}, errors, services::chat::tools::Permission}`.
+
+---
+
+#### File: `/src-tauri/src/services/search/mod.rs`
+
+### Purpose
+The built-in `web_search` tool: SearXNG primary with DuckDuckGo fallback, no API
+key and no extra runtime.
+
+### Summary
+671 lines. The whole file is one module — there is no `search/` submodule
+directory. 8 unit tests plus 4 live network tests in
+`src-tauri/tests/web_search_live.rs` (§4.7).
+
+### Technical Details
+```rust
+pub const SERVER_ID: &str = "builtin-web-search";
+pub const SERVER_NAME: &str = "Web Search";
+pub const TOOL_NAME: &str = "web_search";
+const ENDPOINTS: [&str; 2] = ["https://lite.duckduckgo.com/lite/", "https://html.duckduckgo.com/html/"];
+const CACHE_TTL: Duration = Duration::from_secs(600);        // 10 minutes
+const INSTANCES_TTL: Duration = Duration::from_secs(3 * 3600);// 3 hours
+const AUTO_INSTANCES: usize = 3;
+const INSTANCES_URL: &str = "https://searx.space/data/instances.json";
+const MAX_SNIPPET: usize = 320;
+const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) … Chrome/124.0 Safari/537.36";
+```
+`WebSearch` holds an `http: reqwest::Client` (UA set, **20 s** timeout) and
+three `Mutex` caches: `cache: HashMap<String, (Instant, Vec<SearchResult>)>`,
+`instances: Option<(Instant, Vec<PublicInstance>)>`, and
+`endpoints: HashMap<String, url::Url>`.
+
+### Business Logic — the two DuckDuckGo endpoints
+`ENDPOINTS[0]` is the no-JavaScript **lite** page; `ENDPOINTS[1]` is the classic
+**html** page. `search_duckduckgo` tries them in order and **sleeps 1200 ms
+between attempts** (`if attempt > 0 { sleep(1200ms) }`), because the source
+comment states both endpoints "answer with a bot challenge when they see too
+many requests at once", and a challenge on one does not mean the next will
+refuse. Only the **last** error is returned.
+
+**Browser-shaped headers are mandatory.** `fetch` sends eight headers:
+`accept` (a full browser Accept list), `accept-language: en-US,en;q=0.9`,
+`referer: https://lite.duckduckgo.com/`, `upgrade-insecure-requests: 1`, and
+the `sec-fetch-dest/mode/site/user` quartet. The comment is explicit: "the
+endpoint answers bare HTTP clients with a captcha page instead of results."
+
+**Captcha detection.** After the body is read, it is searched for
+`"anomaly-modal"` **or** `"challenge-form"`; a hit is
+`AppError::Other("the search engine asked for a captcha, so this search could not
+run")`. The query is sent as `?q=…&kl=wt-wt` (worldwide, all languages).
+
+**Result parsing.** `parse_results` uses one regex for anchors whose class
+contains `result-link` **or** `result__a` (lite and classic in one pattern) and
+one for `result-snippet`/`result__snippet`; snippets are matched to links by
+index. `real_url` unwraps DuckDuckGo's redirect wrapper: a `//`-relative href
+becomes `https:…`, a `uddg` query parameter wins, and **any non-http(s) scheme
+yields an empty string** — a test asserts `real_url("javascript:alert(1)") == ""`.
+`clean_text` strips tags, decodes seven entities, collapses whitespace and
+truncates to `MAX_SNIPPET` characters with `…`.
+
+### Business Logic — `engine_order` and the fallback labelling
+```rust
+let mut order = Vec::new();
+if search.searxng_enabled { order.push(Engine::Searxng); }
+if search.enabled { order.push(Engine::DuckDuckGo); }
+if search.primary == "duckduckgo" { order.reverse(); }
+```
+- The two engines are **independent switches**, not one choice — a test asserts
+  SearXNG still works with DuckDuckGo off.
+- `Engine::name()` returns the display strings
+  `"SearXNG"` and `"Built-in search (DuckDuckGo)"`. A live test asserts that with
+  `primary = "duckduckgo"` the answering engine is **exactly** the latter, and
+  another asserts that a working SearXNG yields a string **starting with**
+  `"SearXNG"` — i.e. it did not silently fall back.
+- **Fallback labelling:** `search_uncached` accumulates errors; if an engine
+  succeeds *after* a previous one failed, the label becomes
+  `"{engine}, used as fallback because {errors joined by '; '}"`. The comment
+  explains why: "Say when this was the fallback, so a test in settings does not
+  look like the 'try first' choice was ignored." The `SearchTestResult.engine`
+  the settings page shows is exactly this string.
+- No engine on → `AppError::Invalid("no search engine is switched on")`; all
+  failing → `AppError::Other("web search failed ({…})")`.
+
+### Business Logic — SearXNG candidate resolution
+`searxng_candidates` produces the ordered list of addresses to try:
+- `searxng_source == "public"` **and** a non-empty `searxng_public_url` → that
+  one URL;
+- `public` with an empty URL → **automatic**: `public_instances(false)` and the
+  first **`AUTO_INSTANCES = 3`** entries, "so one instance that is down or rate
+  limiting does not end the search";
+- `local` → the trimmed `searxng_url`, or an empty list.
+
+`parse_instances` filters the searx.space list on three conditions, then sorts:
+1. `network_type == "normal"` (so `.onion`/Tor instances are excluded);
+2. `/http/status_code == 200`;
+3. `/timing/search/success_percentage >= 50.0`.
+Survivors are sorted by **success percentage descending, then
+`/timing/search/all/value` ascending** — i.e. the most reliable instances first,
+fastest among equals. A test with five synthetic instances (fast, slow, broken,
+tor, 502) asserts exactly `["https://fast.example/", "https://slow.example/"]`
+and that the version string is read. An empty list is
+`AppError::Other("the searx.space list has no working instances right now")`.
+
+`public_instances(refresh)` caches for `INSTANCES_TTL` (**3 hours**), because
+"searx.space re-checks instances every few hours, so the list keeps a while".
+
+### Business Logic — endpoint discovery and the form-action retry
+`search_searxng(instance, query)`:
+1. `instance_base(instance)` normalises the address (below) and looks the
+   endpoint up in the `endpoints` cache; the default is `base.join("search")`.
+2. The loop runs **twice** at most. Each iteration fetches `{endpoint}?q=…&safesearch=0`
+   with the same browser header set (SearXNG's bot detection "turns away clients
+   without browser headers"), and:
+   - HTTP **429** → `AppError::Other("the instance is rate limiting requests
+     (HTTP 429), try another one")` — returned immediately, not retried;
+   - any other non-success status → `"the instance answered HTTP {n}"`;
+   - the body is JSON (`{`) → `parse_searxng`, else → `parse_searxng_html`;
+   - non-empty results **or** `is_result_page(body)` → cache the endpoint and
+     return (an empty result page is a valid "nothing found", not a wrong
+     address);
+   - otherwise, `form_action(body)` gives the real search-form action (e.g.
+     `"/searxng/search"`), resolved against the **final** URL after redirects.
+     If it differs from the current endpoint, retry with it; otherwise break.
+   Exhausting the loop yields `"this address did not return a SearXNG result
+   page, check the URL"`.
+- The retry exists because of sub-path instances: "an instance under a sub path
+   (searxng.site serves from /searxng/) bounces /search to a home page whose
+   search form names the real endpoint." A live test drives exactly that host.
+- The successful endpoint is remembered per base URL, "so the discovery round
+  trip happens once".
+- The JSON API is used when available but is not required: "The JSON API is off
+  on almost every instance (public ones and a fresh local install alike), while
+  the HTML page always answers."
+
+### Business Logic — `instance_base` normalisation
+- No scheme → **`http`** for a local host (`localhost`, `127.*`, `192.168.*`,
+  `10.*`, `*.local`) and **`https`** otherwise.
+- Must parse and must be `http`/`https`, else
+  `AppError::Invalid("the SearXNG address must start with http:// or https://")`.
+- Query and fragment are cleared.
+- A trailing `/search` is stripped, then a trailing `/` is added, so
+  `https://searxng.site/searxng/search?q=x` normalises to
+  `https://searxng.site/searxng/` — "…/search pasted from the address bar still
+  means the instance itself."
+
+### Business Logic — the two caches
+- `cached(query)` **prunes expired entries on every read**
+  (`cache.retain(|_, (at, _)| at.elapsed() < CACHE_TTL)`) and then looks up the
+  exact query. `CACHE_TTL` is **600 s (10 minutes)**, justified by the comment
+  "models like to retry the same query".
+- `search()` is the cached path used by the tool; `search_uncached()` is the
+  bypass used by `search_test` so the settings page always tests the real
+  configuration.
+
+### Business Logic — `web_search` bypasses the MCP policy entirely
+The `ToolSpec` built by `WebSearch::spec()` is hard-coded:
+```rust
+category: ToolCategory::Search,
+permission: Permission::Allow,
+```
+Consequences that matter:
+- It never passes through `McpManager::classify`, so the word lists in
+  `permissions.rs` cannot downgrade it.
+- It is never stored in `mcp_tool_permissions`, so `clamp_permission` is never
+  applied and **safe mode cannot cap it**.
+- `ToolCategory::Search` is the one category `is_sensitive()` returns false for,
+  so the two facts agree.
+- It is only offered when `engine_order(&settings.search)` is non-empty — turn
+  both engines off and the tool disappears from the model's tool list entirely
+  (a test asserts the empty order).
+
+`call_tool` guards `spec.server_id != SERVER_ID` with
+`AppError::Mcp("tool {name} unavailable")`, reads `query` (missing/empty →
+`AppError::Invalid("query is required")`), and computes
+`max = args.maxResults ?? settings.search.max_results`, **clamped to 1..=10**.
+Every result becomes both a numbered block in the tool text (`{n}. {title}\n
+{url}\n   {snippet}`) and a `Source`, which is why web search citations need no
+MCP source extraction.
+
+### Dependencies
+`reqwest`, `url::Url`, `regex` (constructed per call — these are not
+`LazyLock` statics, unlike `mcp/sources.rs`), `async_trait`, `serde_json`,
+`serde::Serialize`, `settings::{SearchSettings, SettingsStore}`,
+`services::chat::tools`, `errors`.
+
+---
+
+#### File: `/src-tauri/src/database/mod.rs`
+
+### Purpose
+Owns the SQLite connection and the key/value settings table.
+
+### Summary
+73 lines. The `Db` struct, `open`, `open_in_memory`, `init`, `conn`, `get_kv`,
+`set_kv`. 2 tests.
+
+### Technical Details
+```rust
+pub struct Db { conn: Mutex<Connection> }
+```
+- The **3 PRAGMAs**, applied in one `execute_batch` before migrations:
+  `journal_mode = WAL` (concurrent read while writing),
+  `foreign_keys = ON` (without this, the message cascade and the MCP permission
+  cascade would never fire), `synchronous = NORMAL` (safe with WAL, much
+  faster).
+- `open(path)` creates the parent directory first, then opens the file;
+  `open_in_memory()` skips straight to `init`.
+- `conn()` returns a `MutexGuard` with
+  `.unwrap_or_else(|p| p.into_inner())` and a comment explaining why a poisoned
+  lock is recoverable: "another thread panicked mid-query; the connection itself
+  is still usable." This is the crate-wide poisoning policy (§4.5).
+- `get_kv` / `set_kv` are the only generic key/value accessors; `set_kv` is an
+  upsert. `SettingsStore` uses them for its one key, `app_settings`
+  (see below).
+
+### Business Logic
+`migrations_are_idempotent` opens and drops the same file twice and asserts no
+error, which is the regression guard for the `user_version` mechanism below.
+
+### Dependencies
+`rusqlite::{Connection, OptionalExtension}`, `crate::errors::AppResult`,
+`std::{path::Path, sync::Mutex}`.
+
+---
+
+#### File: `/src-tauri/src/database/migrations.rs`
+
+### Purpose
+The append-only schema history.
+
+### Summary
+102 lines. `MIGRATIONS: &[&str]` with **4 entries** and the `run` function.
+
+### Technical Details — the complete DDL, verbatim
+**Migration 1 — initial schema**
+```sql
+CREATE TABLE conversations (
+    id          TEXT PRIMARY KEY,
+    title       TEXT NOT NULL,
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL,
+    model       TEXT,
+    language    TEXT
+);
+CREATE INDEX idx_conversations_updated ON conversations(updated_at DESC);
+
+CREATE TABLE messages (
+    id                 TEXT PRIMARY KEY,
+    conversation_id    TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    role               TEXT NOT NULL,
+    content            TEXT NOT NULL,
+    language           TEXT,
+    reasoning          TEXT,
+    sources_json       TEXT,
+    tool_activity_json TEXT,
+    tool_calls_json    TEXT,
+    tool_call_id       TEXT,
+    created_at         TEXT NOT NULL
+);
+CREATE INDEX idx_messages_conversation ON messages(conversation_id, created_at);
+
+CREATE VIRTUAL TABLE messages_fts USING fts5(
+    content, conversation_id UNINDEXED, message_id UNINDEXED,
+    tokenize = 'unicode61 remove_diacritics 2'
+);
+CREATE TRIGGER messages_ai AFTER INSERT ON messages
+  WHEN new.role IN ('user', 'assistant') BEGIN
+    INSERT INTO messages_fts(content, conversation_id, message_id)
+    VALUES (new.content, new.conversation_id, new.id);
+END;
+CREATE TRIGGER messages_au AFTER UPDATE OF content ON messages BEGIN
+    DELETE FROM messages_fts WHERE message_id = old.id;
+    INSERT INTO messages_fts(content, conversation_id, message_id)
+    SELECT new.content, new.conversation_id, new.id WHERE new.role IN ('user', 'assistant');
+END;
+CREATE TRIGGER messages_ad AFTER DELETE ON messages BEGIN
+    DELETE FROM messages_fts WHERE message_id = old.id;
+END;
+
+CREATE TABLE settings (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+
+CREATE TABLE mcp_servers (
+    id           TEXT PRIMARY KEY,
+    name         TEXT NOT NULL,
+    description  TEXT,
+    transport    TEXT NOT NULL,
+    command      TEXT,
+    args_json    TEXT,
+    env_json     TEXT,
+    url          TEXT,
+    headers_json TEXT,
+    enabled      INTEGER NOT NULL DEFAULT 0,
+    source       TEXT NOT NULL DEFAULT 'user',
+    created_at   TEXT NOT NULL
+);
+
+CREATE TABLE mcp_tool_permissions (
+    server_id  TEXT NOT NULL REFERENCES mcp_servers(id) ON DELETE CASCADE,
+    tool_name  TEXT NOT NULL,
+    permission TEXT NOT NULL,
+    PRIMARY KEY (server_id, tool_name)
+);
+```
+**Migration 2** — `ALTER TABLE messages ADD COLUMN attachments_json TEXT;`
+**Migration 3** — `ALTER TABLE messages ADD COLUMN stats_json TEXT;`
+**Migration 4 — past dictations**
+```sql
+CREATE TABLE dictation_history (
+    id         TEXT PRIMARY KEY,
+    created_at TEXT NOT NULL,
+    raw        TEXT NOT NULL,
+    text       TEXT NOT NULL,
+    corrected  INTEGER NOT NULL DEFAULT 0,
+    inserted   INTEGER NOT NULL DEFAULT 1
+);
+CREATE INDEX idx_dictation_history_created ON dictation_history(created_at DESC);
+```
+
+### Business Logic
+- **Three indexes in total:** `idx_conversations_updated (updated_at DESC)`,
+  `idx_messages_conversation (conversation_id, created_at)` and
+  `idx_dictation_history_created (created_at DESC)`. All three exist for the same
+  reason — every list in the UI is ordered by a timestamp.
+- **`tokenize = 'unicode61 remove_diacritics 2'`** is the setting that makes
+  search work across scripts: `remove_diacritics 2` folds Latin accents, and
+  `unicode61` tokenises Arabic by its own rules. A test searches `حالك` inside
+  `كيف حالك اليوم؟` and finds the conversation.
+- **The 3 triggers keep FTS in sync automatically.** `messages_ai` is guarded by
+  `WHEN new.role IN ('user', 'assistant')`; `messages_au` re-inserts with a
+  `SELECT … WHERE new.role IN ('user','assistant')` (a guarded update replaces
+  the delete+insert pair with one statement); `messages_ad` deletes by
+  `message_id`. **Tool messages are therefore never indexed** — a test inserts a
+  `tool` row containing `secretword` and asserts the search finds nothing. This
+  is both a size optimisation and a leak prevention: a tool result (which may
+  contain file contents) cannot be surfaced by history search.
+- **The migration mechanism is 1-based and append-only:**
+  ```rust
+  let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+  for (i, sql) in MIGRATIONS.iter().enumerate() {
+      let target = (i + 1) as i64;
+      if version < target {
+          conn.execute_batch(&format!("BEGIN; {sql}; PRAGMA user_version = {target}; COMMIT;"))?;
+      }
+  }
+  ```
+  Each migration runs inside its **own explicit transaction** together with its
+  own `user_version` bump, so a failure cannot leave the counter ahead of the
+  schema. Entries are never edited or removed — the file is a history, and
+  `user_version` is the only "current" pointer. A database at version 2 applies
+  entries 3 and 4 and skips 1 and 2.
+
+### Dependencies
+`rusqlite::Connection` only.
+
+---
+
+#### File: `/src-tauri/src/database/conversations.rs`
+
+### Purpose
+Conversation and message CRUD, the shared id/timestamp helpers, and the
+hybrid full-text search.
+
+### Summary
+322 lines. `Conversation`, `Message`, `SearchHit`, `now()`, `new_id()`, 12 `Db`
+methods, and 5 tests.
+
+### Technical Details
+- `now()` is `chrono::Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true)`
+  — UTC, millisecond precision, explicit `Z`. Every timestamp in the database
+  uses this one format, which is what makes lexicographic `ORDER BY` correct.
+- `new_id()` is `uuid::Uuid::new_v4().to_string()`.
+- `Message.role` is documented as `"user" | "assistant" | "tool"`, but four
+  values actually occur: the orchestrator also persists `assistant_tool_calls`
+  (§4.8) and `import_conversations` accepts it. Every JSON column
+  (`sources`, `tool_activity`, `tool_calls`, `attachments`, `stats`) is
+  `Option<serde_json::Value>` parsed with `json_col`, which returns `None` for
+  both SQL NULL and malformed JSON.
+- Column lists are two `const &str` (`CONV_COLS`, `MSG_COLS`) used by every
+  query, so the positional `Row::get` indices in `conv_from_row` / `msg_from_row`
+  cannot drift.
+- `rename_conversation` rejects a blank title and bumps `updated_at`; zero rows
+  affected → `AppError::NotFound`.
+- `touch_conversation` uses `COALESCE(?2, model)` and `COALESCE(?3, language)`,
+  so the orchestrator can update the timestamp without erasing the last known
+  model or language.
+- `list_messages` orders by `created_at, rowid` — `rowid` is the tiebreaker for
+  several messages written in the same millisecond, which happens for every tool
+  round.
+- `delete_messages_after` deletes by `rowid >= (SELECT rowid …)`, which is why
+  `retryLast` can roll a turn back by id.
+- `attachment_ids()` collects every id in every non-NULL `attachments_json` and
+  is the input to the startup attachment GC.
+
+### Business Logic — `search_conversations`
+```sql
+SELECT <CONV_COLS>, snippet FROM (
+  SELECT c.*, snippet(messages_fts, 0, '[', ']', '…', 12) AS snippet, 0 AS pri
+    FROM messages_fts f JOIN conversations c ON c.id = f.conversation_id
+   WHERE messages_fts MATCH ?1
+  UNION ALL
+  SELECT c.*, '' AS snippet, 1 AS pri
+    FROM conversations c WHERE c.title LIKE ?2 ESCAPE '\'
+) GROUP BY id ORDER BY MIN(pri), updated_at DESC LIMIT ?3
+```
+- **Empty query short-circuits** to `list_conversations(limit, 0)` with empty
+  snippets, so "no filter" and "match everything" are the same code path. A
+  `db_smoke` test (§4.7) asserts both return the same count.
+- **Two passes, ranked by `pri`.** A message hit is `pri = 0` and a title-only
+  hit is `pri = 1`; `GROUP BY id` with `ORDER BY MIN(pri)` means a conversation
+  that matched **both** is ranked as a message hit and keeps the richer
+  snippet.
+- **`snippet(..., 12)`** wraps matches in `[` and `]`, joins elisions with `…`
+  and shows at most **12** tokens around them. The UI then strips the brackets
+  (`snippet.replace(/\[|\]/g, "")`, see `HistoryPanel` in §4.10).
+- **Injection hardening, twice.** FTS5 syntax is user-supplied, so every term
+  is wrapped in double quotes with internal quotes doubled
+  (`format!("\"{}\"", t.replace('"', "\"\""))`) and joined by spaces. The `LIKE`
+  pattern escapes `\`, `%` and `_` and the statement declares
+  `ESCAPE '\'`. A test feeds `"AND OR*( ` and asserts the call succeeds.
+- Ranked strictly by `pri`, then `updated_at DESC`.
+
+### Dependencies
+`rusqlite::{params, OptionalExtension, Row}`, `serde`, `serde_json`, `uuid`,
+`chrono`, `super::Db`, `crate::errors`.
+
+---
+
+#### File: `/src-tauri/src/database/dictation.rs`
+
+### Purpose
+The last 100 dictations, kept so a lost or rejected insert can be recovered.
+
+### Summary
+70 lines. `HISTORY_LIMIT = 100`, `DictationEntry`, and 4 `Db` methods. 1 test.
+
+### Technical Details
+`DictationEntry { id, created_at, raw, text, corrected, inserted }`, where
+`inserted` is documented as "False when typing or pasting into the target
+application failed" — the row is written whether or not the insert worked, so
+the user can copy the text manually.
+
+### Business Logic
+- `dictation_add` inserts and then **trims in the same call**:
+  `DELETE FROM dictation_history WHERE id NOT IN (SELECT id FROM dictation_history ORDER BY created_at DESC, rowid DESC LIMIT 100)`.
+  There is no separate vacuum and no growth path; the table is bounded at
+  construction.
+- `dictation_list` orders newest first with the same `created_at DESC, rowid
+  DESC` pair, and the test asserts that after 105 inserts the oldest is gone and
+  the newest is first.
+- `dictation_clear` is a single `DELETE`, no vacuum.
+
+### Dependencies
+`super::Db`, `rusqlite::params`, `crate::errors::AppResult`.
+
+---
+
+#### File: `/src-tauri/src/database/export.rs`
+
+### Purpose
+Conversation export in three formats and JSON import.
+
+### Summary
+208 lines. `ExportFormat`, `ExportedConversation`, `ExportBundle`,
+`visible`, `attachment_names`, and 2 `Db` methods. 3 tests.
+
+### Technical Details — the 3 formats and the bundle
+```rust
+pub enum ExportFormat { Json, Markdown, Txt }   // serde: lowercase
+pub struct ExportBundle { format: String, version: u32, exported_at: String,
+                          conversations: Vec<ExportedConversation> }
+const BUNDLE_FORMAT: &str = "local-assistant-conversations";
+```
+- **JSON** is the only round-trippable format:
+  `serde_json::to_string_pretty(&ExportBundle { format, version: 1, exported_at: now(), conversations })`.
+- **Markdown** per conversation: `# {title}\n\n`, then for each visible message
+  `**{You|Assistant}** — {created_at}\n\n{content}\n\n`, then
+  `Attachments: {names}\n\n` when there are any, then a
+  `Sources:\n- [{title}]({url})\n` block when `sources` is a non-empty array
+  (the title falls back to the URL). Conversations are joined with
+  `"\n---\n\n"`.
+- **TXT** per conversation: `{title}\n{"=" × max(title chars, 3)}\n\n`, then
+  `[{created_at}] {You|Assistant}:\n{content}\n\n`, then the same
+  `Attachments:` line. Conversations are joined with `"\n\n"`.
+- A test asserts the Markdown output does **not** contain a tool message's
+  content.
+
+### Business Logic — `visible()`
+```rust
+.filter(|m| (m.role == "user" || m.role == "assistant")
+    && (!m.content.trim().is_empty() || m.attachments.is_some()))
+```
+Two filters with two purposes: **only user and assistant messages are
+exported** (tool calls, tool results and `assistant_tool_calls` are internal
+state), and a message is kept even when its text is empty **if** it has
+attachments — an image-only turn is a real turn. This is the same visibility
+rule as `conv_get` (§4.5).
+
+### Business Logic — `attachment_names`
+Returns `"file.pdf, shot.png"` from the `attachments` JSON, or `None`. The
+**files themselves are never exported** — the comment is explicit: "The files
+themselves stay on this computer and are not part of an export." So an export
+is text only; the attachment list is a reminder of what was attached.
+
+### Business Logic — `import_conversations`
+1. Parse into `ExportBundle`; a parse failure is
+   `AppError::Invalid("not a valid conversation export: {e}")`.
+2. `bundle.format != BUNDLE_FORMAT` → `AppError::Invalid("unsupported export
+   format")`. This is a **closed** contract: only this app's own exports import.
+3. Open **one transaction** for the whole bundle.
+4. **Every conversation and every message receives a fresh `new_id()`.** The
+   imported ids are discarded. The doc comment states the reason: "Imported
+   conversations always receive fresh IDs so an import can never overwrite
+   existing data." A test asserts `ids[0] != id` and that both conversations now
+   exist.
+5. Titles, timestamps, `model` and `language` are copied verbatim.
+6. **The role allow-list** is `user | assistant | assistant_tool_calls | tool`;
+   any other role is `continue`d (skipped) rather than imported. This is what
+   makes a hand-edited bundle safe.
+7. **`attachments_json` is deliberately not imported.** The comment: "the files
+   it points at live outside the bundle, so the references would dangle." The
+   INSERT therefore lists 11 columns and never touches `attachments_json`. The
+   consequence is a **direct consequence for the startup GC**: an imported
+   conversation contributes no attachment ids, so any file with a colliding id
+   could in principle be collected — but ids are UUIDv4, so a collision is not
+   a practical concern.
+8. `stats_json` is likewise not imported (the column is not in the INSERT list).
+9. `tx.commit()` and the new conversation ids are returned; the UI turns the
+   count into a message.
+
+### Dependencies
+`super::{conversations::{new_id, Conversation, Message}, Db}`,
+`serde`, `serde_json`, `crate::errors`.
+
+---
+
+#### File: `/src-tauri/src/settings/mod.rs`
+
+### Purpose
+The typed settings document: 8 top-level keys, defaults, validation, migration
+and persistence.
+
+### Summary
+755 lines. `PROVIDERS`, `WindowGeometry`, `GeneralSettings`, `ProviderProfile`,
+`AiSettings`, `LanguageEntry`, `LanguageSettings`, `SttSettings`, `TtsSettings`,
+`SearchSettings`, `DictationSettings`, `Settings`, `Settings::sanitize` and
+`SettingsStore`. 6 tests.
+
+### Technical Details
+```rust
+const KEY: &str = "app_settings";
+pub const DEFAULT_LMSTUDIO_URL: &str = "http://localhost:1234/v1";
+const CURRENT_VERSION: u32 = 4;
+```
+`Settings` has **8 top-level keys**: `general`, `ai`, `language`, `stt`, `tts`,
+`dictation`, `search`, plus `last_conversation_id: Option<String>` and
+`version: u32`. Every struct is `#[serde(rename_all = "camelCase", default)]`, so
+a partial or older JSON blob always loads and missing fields take their
+`Default`.
+
+### Technical Details — the complete field registry
+`general` — 21 leaf keys
+| Field | Type | Default | `sanitize()` |
+| --- | --- | --- | --- |
+| `theme` | String | `"system"` | enum → `system` |
+| `accent` | String | `"teal"` | enum → `teal` |
+| `assistant_name` | String | `"Local Assistant"` | trim, cap 40, empty → default |
+| `high_contrast` | bool | `false` | — |
+| `font_scale` | f32 | `1.0` | **clamp 0.8 … 1.6** |
+| `start_with_os` | bool | `false` | — |
+| `start_minimized` | bool | `false` | — |
+| `preload_models` | bool | `true` | — |
+| `autoload_models` | `BTreeMap<String,bool>` | empty | — (missing key = on) |
+| `always_on_top` | bool | `false` | — |
+| `window_position` | String | `"bottom-right"` | enum → `bottom-right` |
+| `window` | `WindowGeometry` | `0,0,480×640` | width **320…4000**, height **260…4000** |
+| `compact` | bool | `false` | — |
+| `global_shortcut` | String | `"CommandOrControl+Space"` | single-modifier/empty → default |
+| `push_to_talk_shortcut` | String | `"CommandOrControl+Shift+Space"` | single-modifier → default |
+| `developer_mode` | bool | `false` | — |
+| `first_run_complete` | bool | `false` | — |
+| `log_conversation_content` | bool | `false` | — |
+| `bubble_x` / `bubble_y` | `Option<i32>` | `None` | — |
+| `suggested_prompts` | `Vec<String>` | `[]` | — |
+
+`GeneralSettings::autoloads(key)` returns the stored flag or **`true`** when the
+key is absent — a missing entry means "yes, preload it", which is what makes
+new slots preloaded by default.
+
+`ai` — 22 leaf keys
+| Field | Type | Default | `sanitize()` |
+| --- | --- | --- | --- |
+| `provider` | String | `"lmstudio"` | not in `PROVIDERS` → `lmstudio` |
+| `server_url` | String | `DEFAULT_LMSTUDIO_URL` | trim, strip trailing `/`, empty → provider default |
+| `api_key` | `Option<String>` | `None` | trim; empty → `None` |
+| `provider_profiles` | `BTreeMap<String, ProviderProfile>` | empty | `retain` known provider ids only |
+| `model_mode` | String | `"auto"` | enum → `auto`; **forced to `"manual"` when provider ≠ `lmstudio`** |
+| `model` | `Option<String>` | `None` | — |
+| `temperature` | f32 | `0.7` | **clamp 0.0 … 2.0** |
+| `context_length` | `Option<u32>` | `None` | — |
+| `max_tokens` | `Option<u32>` | `None` | — |
+| `system_prompt` | String | `""` | — |
+| `user_gender` | String | `"unspecified"` | enum → `unspecified` |
+| `streaming` | bool | `true` | — |
+| `request_timeout_secs` | u64 | `300` | **clamp 10 … 3600** |
+| `show_reasoning` | bool | `false` | — |
+| `show_stats` | bool | `true` | — |
+| `model_aliases` | `BTreeMap<String,String>` | empty | value trim + cap 40; drop empty key/value pairs |
+| `hidden_models` | `Vec<String>` | `[]` | drop blanks, **sort, dedup** |
+| `free_models_only` | bool | `false` | — |
+| `paste_as_file_chars` | u32 | `2000` | **0 means off**; otherwise **clamp 200 … 200 000** |
+| `explain_mode` | String | `"chat"` | enum → `chat` |
+
+`ProviderProfile { server_url, api_key, model, model_mode }` is the per-provider
+memory behind `provider_profiles`.
+
+`language` — 4 keys: `response_language` (`"auto"`), `entries`
+(`LanguageEntry::builtins()`), `arabic_tashkeel_enabled` (`false`),
+`arabic_tashkeel_instruction` (`""`, trim + cap **500**).
+`LanguageEntry { code, display_name, direction, stt_language, tts_voice,
+built_in }` — the doc comment is the clearest statement of the en/ar/de split in
+the codebase.
+
+`stt` — 14 keys: `model` `"auto"`, `language` `"auto"`, `microphone` `None`,
+`hardware` `"auto"` (enum → `auto`), `auto_submit` `false`, `hands_free` `false`,
+`push_to_talk` `true`, `vad_threshold` `0.6` (**clamp 0.1 … 0.95**),
+`silence_ms` `800` (**clamp 200 … 5000**), `extra_model_dirs` `[]` (trim, drop
+blanks, dedup), `call_view` `true`, `auto_stop_silence_secs` `8` (0 = never;
+otherwise **clamp 2 … 120**), `hands_free_timeout_secs` `300` (0 = never;
+otherwise **clamp 15 … 3600**).
+
+`tts` — 11 keys: `speak_responses` `false`; `voiceEn` / `voiceAr` / `voiceDe`
+(`legacy_voice_en/ar/de`, each `"auto"`) **retained only for deserialising
+pre-v4 blobs and never read at runtime — "Do not delete without a migration"**;
+`speed` `1.0` (**clamp 0.5 … 2.0**); `volume` `1.0` (**clamp 0.0 … 1.0**);
+`output_device` `None`; `preferred_gender` `"any"` (enum → `any`);
+`voice_hardware: BTreeMap<String,String>` (drop entries whose value is not
+`"auto"`/`"cpu"`); `speak_after_reply` `false`; `expressive_sounds` `true`;
+`expressive_instruction` `""`.
+
+`dictation` — 14 keys: `enabled` `true`, `shortcut`
+`"CommandOrControl+Alt+Space"` (single-modifier → default), `mode` `"hold"`
+(enum), `correction_enabled` `false`, `correction_model` `None`,
+`insert_method` `"type"` (enum), `add_trailing_space` `true`, `language` `""`
+(cleared if it names a language that no longer exists), `review_before_insert`
+`false`, `history_enabled` `true`, `overlay_x` / `overlay_y` `None`.
+
+`search` — 7 keys: `enabled` `true` (a `default_true` serde fn so an existing
+blob without the key keeps search on), `max_results` `5`, `searxng_url` `""`,
+`searxng_enabled` `true`, `searxng_source` `"local"` (enum), `searxng_public_url`
+`""`, `primary` `"searxng"` (enum).
+
+### Business Logic — `sanitize()`, the full contract
+Applied on **every** load and **every** save. Order matters in two places.
+
+1. **Shortcut safety first.** A `is_single_modifier` check (one `+`-separated
+   token, and that token is one of the recognised modifier spellings) rewrites
+   `general.global_shortcut` to `CommandOrControl+Space`,
+   `push_to_talk_shortcut` to `CommandOrControl+Shift+Space` and
+   `dictation.shortcut` to `CommandOrControl+Alt+Space`; a blank
+   `global_shortcut` also becomes the default. The recognised set is the same
+   14 spellings re-implemented in `desktop/shortcuts.rs` and in the
+   `GetAsyncKeyState` map. The comment: "Single Alt/Ctrl/Shift/Super alone fires
+   on every normal press (Alt+Tab, etc)."
+2. **Language entries are normalised before anything validates a reference to
+   them.** For each entry: `code` trimmed + lowercased, dropped when empty or
+   already seen; `display_name` trimmed + cap 40, empty → the code;
+   `direction` forced to `ltr` unless it is `rtl`; `stt_language` trimmed +
+   lowercased, empty → the code; `tts_voice` trimmed, and empty **or starting
+   with `silma:`** → `"auto"` (the removed SILMA Arabic voice).
+3. **The list is capped at 12 entries** and, if it ends up empty, is replaced by
+   the three built-ins. The cap is what bounds the STT and TTS entry lists.
+4. **Reference validation.** `lang_ok(s)` accepts `"auto"` or a code present in
+   the entries. `language.response_language` and `stt.language` are reset to
+   `"auto"` when they fail; `dictation.language` is reset to `""` (its "inherit
+   the speech language" sentinel) rather than to `"auto"`.
+5. **Enumerations** (theme, accent, user_gender, window_position, model_mode,
+   explain_mode, stt.hardware, tts.preferred_gender, dictation.mode,
+   dictation.insert_method, search.searxng_source, search.primary) each reset
+   to their default.
+6. **Numeric clamps** exactly as tabulated above.
+7. **Provider rules.** An unknown provider becomes `lmstudio`; `server_url` is
+   trimmed and, when blank, is replaced by `provider_default_url(provider)`;
+   `provider_profiles` drops entries for providers that no longer exist; and
+   **`model_mode` is forced to `"manual"` for every provider except
+   `lmstudio`** — "Hosted providers list hundreds of models, so there is nothing
+   sensible to auto-pick from: the user always chooses one." `api_key` is
+   trimmed and an empty key becomes `None`.
+8. **Collection normalisation.** Aliases are trimmed and capped at 40 characters
+   with empty pairs dropped; hidden models are trimmed of blanks, sorted and
+   deduplicated; `extra_model_dirs` and `voice_hardware` are filtered as above.
+
+### Business Logic — migrations
+`SettingsStore::load` calls `sanitize()` **before** `migrate()`, so a migration
+always operates on a clean document.
+- **`version < 2`** — `dictation.enabled = true` ("dictation became a default
+  feature"). It runs once: a later explicit opt-out is respected, and a test
+  asserts exactly that round trip.
+- **`version < 3`** — deliberately a no-op. The comment: "v3 turned on
+  system-audio isolation, a setting that has since been removed (the stored key
+  is ignored), so there is nothing to do."
+- **`version < 4`** — the three fixed `voiceEn`/`voiceAr`/`voiceDe` fields
+  become entries in the editable language list. `entries` already defaults to the
+  built-ins (serde's container-level `default`), so the migration only copies
+  each legacy voice choice into its matching entry **when it is not `"auto"`**.
+  A test feeds `{"version":3, "tts":{"voiceEn":"kokoro-en-v0_19:1", "voiceAr":"piper-ar_JO-kareem-medium:0"}}` and asserts en and ar carry the voices while de stays `auto`.
+- `CURRENT_VERSION = 4` and `s.version = CURRENT_VERSION` is assigned at the
+  end of the same `update` call, so the migration and the version bump commit
+  together.
+
+### Business Logic — `SettingsStore`
+```rust
+pub struct SettingsStore { db: Arc<Db>, current: RwLock<Settings> }
+```
+- **`get()` returns a clone**, so every reader works on an owned `Settings` and
+  no lock is ever held across an `await` or an IPC boundary. This is what makes
+  `run_turn` able to snapshot settings once and use them for the whole turn.
+- **`set(s)` sanitises then writes**: `s.sanitize()` → `db.set_kv("app_settings",
+  &serde_json::to_string(&s)?)` → replace the in-memory value → return the
+  stored (sanitised) document. The returned value is authoritative, which is
+  exactly what `settingsStore.update` adopts on the frontend (§4.2).
+- **`update(f)` is a non-atomic read-modify-write**: `get()` (clone) → `f(&mut
+  s)` → `set(s)`. Two concurrent `update` calls can therefore lose one another's
+  change. In practice every caller is a `#[tauri::command]` that runs on the
+  command thread and the write is one SQLite statement, so the window is
+  vanishingly small — but it is a real property of the type, not a guarantee.
+- `load` is warn-only about corruption: an unparseable blob logs
+  `"settings unreadable, using defaults"` and falls back to `Settings::default()`
+  rather than refusing to start.
+- `RwLock` is poison-tolerant (`unwrap_or_else(|p| p.into_inner())`).
+
+### Dependencies
+`database::Db`, `errors::AppResult`, `serde`, `std::collections::BTreeMap`,
+`std::sync::{Arc, RwLock}`, the `backup` submodule.
+
+---
+
+#### File: `/src-tauri/src/settings/backup.rs`
+
+### Purpose
+Encrypted settings export/import.
+
+### Summary
+130 lines. `MAGIC`, `KEY_SEED`, `cipher`, `strip_keys`, `encrypt`, `decrypt`,
+`merge_import`. 4 tests.
+
+### Technical Details — the file layout
+| Offset | Length | Content |
+| --- | --- | --- |
+| 0 | **8** | `b"LAIA-BK1"` — file signature plus format version |
+| 8 | **12** | the ChaCha20-Poly1305 nonce, from `OsRng` |
+| 20 | rest | the sealed ciphertext, including the 16-byte Poly1305 tag |
+```rust
+const MAGIC: &[u8] = b"LAIA-BK1";
+const NONCE_LEN: usize = 12;
+const KEY_SEED: &[u8] = b"local-ai-assistant/settings-backup/v1/7c1e9a42f0d84b6b";
+fn cipher() -> ChaCha20Poly1305 {
+    let key: [u8; 32] = Sha256::digest(KEY_SEED).into();
+    ChaCha20Poly1305::new(Key::from_slice(&key))
+}
+```
+- `encrypt` serialises the settings to JSON, generates a **fresh 12-byte nonce
+  from `OsRng`** for every export, seals, and concatenates the three parts.
+- `decrypt` strips the magic, rejects a remainder of 12 bytes or fewer,
+  decrypts and deserialises.
+- **The key is SHA-256 of a hard-coded seed.** The module doc is candid about
+  what that means: "The key is built into the app, so this protects a backup
+  that is copied around or opened by accident; **someone who pulls the key out
+  of the app binary could still decrypt it.**" This is obfuscation of the
+  *file format*, not secrecy against a determined attacker. Its real value is
+  that a `.labackup` file is unreadable to a text editor, a backup script or a
+  cloud preview, and that `AGENTS.md` §3's "secrets stay in the OS keyring" rule
+  is respected at the app level by *not* including keys by default.
+- Changing `KEY_SEED` would make every previously written backup unreadable,
+  which is why it carries a `/v1/` segment.
+
+### Business Logic — one error, no detail
+`decrypt` funnels **every** failure — wrong magic, truncated file, tampered
+ciphertext (Poly1305 failure), unparseable JSON — into a single
+`AppError::Invalid`:
+> "this is not an Open Local Assistant settings backup, or it was damaged"
+
+A test flips one bit in the last byte and asserts the same error. This is a
+deliberate refusal to leak *which* check failed, so a backup file reveals
+nothing about the app's internals.
+
+### Business Logic — `strip_keys`
+```rust
+pub fn strip_keys(s: &mut Settings) {
+    s.ai.api_key = None;
+    for p in s.ai.provider_profiles.values_mut() { p.api_key = None; }
+}
+```
+**Every** key location is cleared: the active provider's key *and* the
+remembered profile of every non-active provider. `commands::app::settings_export`
+calls it unless `include_keys` is true (§4.5), and a test asserts both paths are
+emptied.
+
+### Business Logic — `merge_import(current, imported)`
+The merge is "take the imported preferences, keep this machine's state". The
+table of what comes from where:
+
+| Field | Source | Reason |
+| --- | --- | --- |
+| everything not listed below | **`imported`** | the point of a restore |
+| `version` | `current` | the local migration state wins |
+| `last_conversation_id` | `current` | a conversation id from another machine does not exist here |
+| `general.first_run_complete` | `current` | a restored app must not re-run the wizard |
+| `general.window` | `current` (x, y, width, height) | the other machine's monitor geometry is wrong here |
+| `general.bubble_x` / `general.bubble_y` | `current` | same |
+| `dictation.overlay_x` / `dictation.overlay_y` | `current` | same |
+| `ai.api_key` | `imported`, else `current`'s key **for the imported provider** | a backup without keys must not wipe the keys you have |
+| `provider_profiles[p].api_key` | `imported`, else `current`'s key for `p` | same, per provider |
+
+- The key lookup is deliberately symmetric: a key for provider `P` lives in
+  `ai.api_key` when `P` is selected and in `provider_profiles[P]` otherwise, so
+  `key_of(s, provider)` checks both. A test drives exactly the "backup has no
+  keys, current has an OpenRouter key, imported selects OpenRouter" case and
+  asserts the key survives.
+- **`merge_import` does not persist.** It returns a `Settings`; the UI must
+  round-trip it through `save_settings` so every side effect (shortcuts,
+  provider, window, autostart) actually applies (§4.5).
+- `imported.sanitize()` runs at the end, so a hostile or corrupt backup cannot
+  inject an out-of-range value.
+
+### Dependencies
+`super::Settings`, `errors`, `chacha20poly1305` (`aead::{Aead, AeadCore, KeyInit, OsRng}`,
+`ChaCha20Poly1305`, `Key`, `Nonce`), `sha2::{Digest, Sha256}`.
+
+---
+
 ## 5. Business Rules
 
 ---
