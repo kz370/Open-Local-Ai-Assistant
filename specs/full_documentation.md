@@ -4507,8 +4507,7 @@ Two passes.
 `explain` shares the `active` token map, resolves the model, builds the request
 from `explain::request`, streams through a `ThinkFilter` and emits
 `ExplainEvent`s. Servers that ignore streaming or return in one piece are handled
-by re-filtering the whole `completion.content` (with fallback to reasoning if content
-is empty) when nothing was streamed. It **never touches the
+by re-filtering the whole `completion.content` when nothing was streamed. Internal reasoning / thinking tokens are excluded so the popup shows only the final explanation text. It **never touches the
 database** — a test asserts `list_conversations` is still empty afterwards.
 
 ### Concurrency

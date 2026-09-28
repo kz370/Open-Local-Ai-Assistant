@@ -596,11 +596,17 @@ impl AiService for LmStudioService {
                         on_chunk(StreamChunk::Reasoning(r.to_string()));
                     }
                 }
-                let content = delta["content"]
-                    .as_str()
-                    .or(delta["text"].as_str())
-                    .or(choice["text"].as_str())
-                    .or_else(|| choice["message"]["content"].as_str());
+                let content = if reasoning.is_some() {
+                    delta["content"].as_str()
+                } else {
+                    delta["content"].as_str().or_else(|| {
+                        if choice.get("delta").is_none() {
+                            choice["text"].as_str()
+                        } else {
+                            None
+                        }
+                    })
+                };
                 if let Some(c) = content {
                     if !c.is_empty() {
                         first_token.get_or_insert_with(Instant::now);
@@ -926,9 +932,8 @@ mod tests {
     async fn streaming_alternative_chunk_formats() {
         let body = sse(&[
             json!({"choices":[{"delta":{"thought":"deep thought"}}]}),
-            json!({"choices":[{"delta":{"text":"Hello"}}]}),
+            json!({"choices":[{"delta":{"content":"Hello"}}]}),
             json!({"choices":[{"text":" world"}]}),
-            json!({"choices":[{"message":{"content":"!"}}]}),
         ]);
         let mock = Mock {
             stream_body: Arc::new(body),
@@ -942,12 +947,11 @@ mod tests {
             .chat(req("m", true), CancellationToken::new(), &mut cb)
             .await
             .unwrap();
-        assert_eq!(out.content, "Hello world!");
+        assert_eq!(out.content, "Hello world");
         assert_eq!(out.reasoning, "deep thought");
         assert_eq!(chunks[0], StreamChunk::Reasoning("deep thought".into()));
         assert_eq!(chunks[1], StreamChunk::Content("Hello".into()));
         assert_eq!(chunks[2], StreamChunk::Content(" world".into()));
-        assert_eq!(chunks[3], StreamChunk::Content("!".into()));
     }
 
     #[tokio::test]

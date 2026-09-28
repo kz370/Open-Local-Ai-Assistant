@@ -12,7 +12,7 @@ const MAX_PASSAGE_CHARS: usize = 12_000;
 const EXPLAIN_PROMPT: &str = "You explain a piece of text the user selected in an assistant's reply. \
 Say what it means in plain words, briefly: a short paragraph, or a few bullet points when it lists several things. \
 Use the surrounding reply only as context. Answer in the language of the selected text. \
-Do not repeat the selected text and do not start with a preamble.";
+Do not repeat the selected text and do not start with a preamble. Keep thinking brief.";
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(
@@ -56,7 +56,7 @@ pub fn request(
         ],
         tools: vec![],
         temperature,
-        max_tokens: Some(max_tokens.unwrap_or(2048).max(1024)),
+        max_tokens,
         stream,
     }
 }
@@ -80,7 +80,7 @@ mod tests {
         assert!(user.contains("<reply>\nPflanzen nutzen Photosynthese.\n</reply>"));
         assert!(req.tools.is_empty());
         assert!(req.stream);
-        assert_eq!(req.max_tokens, Some(2048));
+        assert_eq!(req.max_tokens, None);
 
         // The passage is left out when it is the selection itself.
         let same = request("m", "hello", "hello", 0.7, false, Some(4096));

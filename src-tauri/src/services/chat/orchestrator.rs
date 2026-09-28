@@ -292,17 +292,13 @@ impl ChatEngine {
             );
             let mut filter = ThinkFilter::default();
             let mut streamed = false;
-            let mut buffered_reasoning = String::new();
-            let mut on_chunk = |c: StreamChunk| match c {
-                StreamChunk::Content(c) => {
+            let mut on_chunk = |c: StreamChunk| {
+                if let StreamChunk::Content(c) = c {
                     let text = filter.push(&c).0;
                     if !text.is_empty() {
                         streamed = true;
                         emit(ExplainEvent::Delta { text });
                     }
-                }
-                StreamChunk::Reasoning(r) => {
-                    buffered_reasoning.push_str(&r);
                 }
             };
             let done = self.ai.chat(req, token.clone(), &mut on_chunk).await?;
@@ -311,28 +307,17 @@ impl ChatEngine {
                 // Servers that ignore streaming answer in one piece.
                 let mut f = ThinkFilter::default();
                 rest = f.push(&done.content).0 + &f.finish().0;
-                if rest.is_empty() {
-                    let r = if !done.reasoning.is_empty() {
-                        &done.reasoning
-                    } else {
-                        &buffered_reasoning
-                    };
-                    if !r.is_empty() {
-                        let mut f = ThinkFilter::default();
-                        rest = f.push(r).0 + &f.finish().0;
-                        if rest.is_empty() {
-                            rest = r.clone();
-                        }
-                    }
-                }
             }
             // Emit final delta; if no content was produced at all, use a
             // minimal placeholder so the UI can display something rather than
             // staying completely empty.
             if rest.is_empty() && !streamed {
-                emit(ExplainEvent::Delta {
-                    text: " (no content generated)".into(),
-                });
+                let msg = if done.finish_reason.as_deref() == Some("length") {
+                    " (token limit reached before completion)"
+                } else {
+                    " (no content generated)"
+                };
+                emit(ExplainEvent::Delta { text: msg.into() });
             } else if !rest.is_empty() {
                 emit(ExplainEvent::Delta { text: rest });
             }
@@ -1421,11 +1406,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn explain_handles_reasoning_only_answer() {
+    async fn explain_ignores_reasoning_and_streams_only_content() {
         let (e, _ai, _db, _files, _dir) = engine(
             vec![ChatCompletion {
-                content: "".into(),
-                reasoning: "The model explained it in reasoning.".into(),
+                content: "This is the explanation.".into(),
+                reasoning: "Internal thinking process that must not be shown.".into(),
                 ..Default::default()
             }],
             Permission::Allow,
@@ -1446,7 +1431,8 @@ mod tests {
                 }
             })
             .collect();
-        assert_eq!(text, "The model explained it in reasoning.");
+        assert_eq!(text, "This is the explanation.");
+        assert!(!text.contains("Internal thinking"));
         assert!(matches!(events.last(), Some(ExplainEvent::Done)));
     }
 
