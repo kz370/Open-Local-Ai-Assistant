@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/icon.png" width="96" alt="Open Local Assistant icon">
+  <img src="docs/icon.webp" width="96" alt="Open Local Assistant icon">
 </p>
 
 <h1 align="center">Open Local Assistant</h1>
@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/chat-web-search.png" width="420" alt="Chat window answering a question with web sources">
+  <img src="docs/screenshots/chat-web-search.webp" width="420" alt="Chat window answering a question with web sources">
 </p>
 
 **Free and open source** under the [GPL-3.0 license](LICENSE). Download the Windows installer or the portable version from the [Releases](../../releases) page, or [build it yourself](#building-from-source).
@@ -79,9 +79,9 @@ Local models are private but less capable than the big cloud assistants such as 
 5. Press `Ctrl+Space` and ask something.
 
 <p align="center">
-  <img src="docs/screenshots/chat.png" width="380" alt="Empty chat window with starter prompts">
+  <img src="docs/screenshots/chat.webp" width="380" alt="Empty chat window with starter prompts">
   &nbsp;
-  <img src="docs/screenshots/model-picker.png" width="380" alt="Model picker listing LM Studio models">
+  <img src="docs/screenshots/model-picker.webp" width="380" alt="Model picker listing LM Studio models">
 </p>
 
 If you leave the model on **Auto**, the app uses the model that is already loaded in LM Studio. If none is loaded, it picks one that fits your GPU memory. You can also pick a model yourself at any time.
@@ -89,7 +89,7 @@ If you leave the model on **Auto**, the app uses the model that is already loade
 ## Voice
 
 <p align="center">
-  <img src="docs/screenshots/hands-free-call.png" width="380" alt="Hands-free call screen">
+  <img src="docs/screenshots/hands-free-call.webp" width="380" alt="Hands-free call screen">
 </p>
 
 - **Push-to-talk:** hold `Ctrl+Shift+Space` while you speak.
@@ -97,7 +97,7 @@ If you leave the model on **Auto**, the app uses the model that is already loade
 - **Dictation:** press `Ctrl+Alt+Space` in any app. A small overlay shows your words live, and pressing the hotkey again inserts the text.
 
 <p align="center">
-  <img src="docs/screenshots/dictation-overlay.png" width="480" alt="Dictation overlay while listening">
+  <img src="docs/screenshots/dictation-overlay.webp" width="480" alt="Dictation overlay while listening">
 </p>
 
 ## Right-click a reply
@@ -113,9 +113,9 @@ Select any part of the assistant's answer and right-click it.
 - **Ask in chat** (in the pop-up) sends the selection as your next message, so the assistant explains it in more detail in the same conversation.
 
 <p align="center">
-  <img src="docs/screenshots/explain-popup.png" width="380" alt="Explanation pop-up for the selected text">
+  <img src="docs/screenshots/explain-popup.webp" width="380" alt="Explanation pop-up for the selected text">
   &nbsp;
-  <img src="docs/screenshots/explain-in-chat.png" width="380" alt="Selected text explained as the next message in the same chat">
+  <img src="docs/screenshots/explain-in-chat.webp" width="380" alt="Selected text explained as the next message in the same chat">
 </p>
 
 ## Keyboard shortcuts
@@ -133,12 +133,12 @@ You can change all of them in **Settings → Keyboard Shortcuts**.
 
 | | |
 | --- | --- |
-| ![AI provider settings](docs/screenshots/settings-ai-provider.png) | ![Loaded models](docs/screenshots/settings-loaded-models.png) |
+| ![AI provider settings](docs/screenshots/settings-ai-provider.webp) | ![Loaded models](docs/screenshots/settings-loaded-models.webp) |
 | **AI provider:** LM Studio or a hosted provider, API key, connection test, and a short display name for each model. | **Loaded models:** see what is in memory, load or unload it, and choose what loads at startup. |
-| ![Assistant voice settings](docs/screenshots/settings-assistant-voice.png) | ![Dictation settings](docs/screenshots/settings-dictation.png) |
+| ![Assistant voice settings](docs/screenshots/settings-assistant-voice.webp) | ![Dictation settings](docs/screenshots/settings-dictation.webp) |
 | **Assistant voice:** one multilingual voice model for all languages, a voice for each language, speed, volume and the GPU pack. | **Dictation:** hotkey behaviour, typing or pasting, review before inserting, and grammar cleanup. |
 
-![MCP & Tools settings](docs/screenshots/settings-mcp-tools.png)
+![MCP & Tools settings](docs/screenshots/settings-mcp-tools.webp)
 
 **MCP & Tools:** add MCP servers or import them from LM Studio. Safe mode is on by default, so risky tools always ask before they run.
 
