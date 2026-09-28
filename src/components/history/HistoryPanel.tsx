@@ -16,6 +16,14 @@ function isToday(iso: string) {
   return d.getFullYear() === n.getFullYear() && d.getMonth() === n.getMonth() && d.getDate() === n.getDate();
 }
 
+/** Day/month/year by design, time in the locale's own 12/24-hour form. */
+function stamp(iso: string) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()} · ${d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}`;
+}
+
 export function HistoryPanel({ onClose }: { onClose: () => void }) {
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<SearchHit[]>([]);
@@ -114,35 +122,41 @@ export function HistoryPanel({ onClose }: { onClose: () => void }) {
         {groups.map((g) => (
           <div key={g.label || "results"}>
             {g.label && <div className="history-group">{g.label}</div>}
-            {g.items.map(({ conversation: c, snippet }) => (
-              <div key={c.id} className={`history-item${c.id === activeId ? " active" : ""}`}>
-                <button
-                  className="history-open"
-                  onClick={() => {
-                    void load(c.id);
-                    onClose();
-                  }}
-                >
-                  <span className="title" dir="auto">
-                    {c.title}
-                  </span>
-                  {snippet && (
-                    <span className="snippet" dir="auto">
-                      {snippet.replace(/\[|\]/g, "")}
+            {g.items.map(({ conversation: c, snippet }) => {
+              const when = stamp(c.updatedAt);
+              return (
+                <div key={c.id} className={`history-item${c.id === activeId ? " active" : ""}`}>
+                  <button
+                    className="history-open"
+                    onClick={() => {
+                      void load(c.id);
+                      onClose();
+                    }}
+                  >
+                    <span className="title" dir="auto">
+                      {c.title}
                     </span>
-                  )}
-                </button>
-                <button className="icon-btn" aria-label={`${t("app.rename")}: ${c.title}`} title={t("app.rename")} onClick={() => setRenaming(c)}>
-                  <Pencil size={13} />
-                </button>
-                <button className="icon-btn" aria-label={`${t("app.export")}: ${c.title}`} title={t("app.export")} onClick={() => setExporting([c.id])}>
-                  <Download size={13} />
-                </button>
-                <button className="icon-btn danger" aria-label={`${t("app.delete")}: ${c.title}`} title={t("app.delete")} onClick={() => setDeleting(c)}>
-                  <Trash2 size={13} />
-                </button>
-              </div>
-            ))}
+                    {when && <span className="history-when">{when}</span>}
+                    {snippet && (
+                      <span className="snippet" dir="auto">
+                        {snippet.replace(/\[|\]/g, "")}
+                      </span>
+                    )}
+                  </button>
+                  <div className="history-actions">
+                    <button className="icon-btn" aria-label={`${t("app.rename")}: ${c.title}`} title={t("app.rename")} onClick={() => setRenaming(c)}>
+                      <Pencil size={13} />
+                    </button>
+                    <button className="icon-btn" aria-label={`${t("app.export")}: ${c.title}`} title={t("app.export")} onClick={() => setExporting([c.id])}>
+                      <Download size={13} />
+                    </button>
+                    <button className="icon-btn danger" aria-label={`${t("app.delete")}: ${c.title}`} title={t("app.delete")} onClick={() => setDeleting(c)}>
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         ))}
       </div>

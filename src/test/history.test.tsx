@@ -23,6 +23,23 @@ describe("history panel", () => {
     expect(screen.queryByText("No conversations yet.")).toBeNull();
   });
 
+  it("renders each row with its last-message stamp under the title", async () => {
+    render(<HistoryPanel onClose={() => {}} />);
+    await waitFor(() => expect(screen.getByText("PHP versions")).toBeInTheDocument());
+    const rows = document.querySelectorAll(".history-item");
+    expect(rows).toHaveLength(2);
+    const row = rows[0]!;
+    const open = row.querySelector(".history-open")!;
+    const when = row.querySelector(".history-when")!;
+    // Day/month/year, then the locale's own clock form.
+    expect(when.textContent).toMatch(/^\d{2}\/\d{2}\/\d{4} · /);
+    // Directly underneath the title, inside the same button.
+    expect(open.contains(when)).toBe(true);
+    expect((open.firstElementChild as HTMLElement).className).toBe("title");
+    // Actions live in the trailing track, after the text.
+    expect(row.lastElementChild!.className).toBe("history-actions");
+  });
+
   it("shows the empty state only when there is nothing", async () => {
     vi.mocked(invoke).mockImplementation(async () => []);
     render(<HistoryPanel onClose={() => {}} />);
