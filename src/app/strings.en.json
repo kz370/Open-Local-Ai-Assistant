@@ -121,7 +121,8 @@
     "mcpMenuHint": "Toggle MCP servers for this session",
     "mcpActive": "{{on}} of {{total}} on",
     "mcpOffByDefault": "Servers are off for this chat until you switch them on.",
-    "mcpUseInChat": "Use {{name}} in this chat"
+    "mcpUseInChat": "Use {{name}} in this chat",
+    "mcpManage": "Manage MCP servers"
   },
   "attach": {
     "listLabel": "Attachments",

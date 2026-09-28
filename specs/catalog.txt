@@ -579,12 +579,13 @@ src/app/types.ts :: PublicSearxInstance / SearchTestResult — SearXNG payloads.
 src/app/types.ts :: GpuInfo / HardwareInfo / CapabilityReport / AppInfo / PrivacyStatus — Machine and privacy payloads.
 src/app/types.ts :: DictationEntry / DictationStateEvent — Dictation payloads; `DictationStateEvent` has the only 3 optional properties besides `Message`/`Source`.
 
-src/app/chatStore.ts :: useChat — Zustand store: 12 state fields, 16 actions, the send queue, the confirmation dialog and error banners.
+src/app/chatStore.ts :: useChat — Zustand store: 12 state fields, 17 actions, the send queue, the confirmation dialog and error banners.
 src/app/chatStore.ts :: ToolStatus / UiToolActivity / UiMessage / QueuedMessage — View-model types.
 src/app/chatStore.ts :: activityToUi / messageToUi — Pure wire-to-view converters.
-src/app/chatStore.ts :: useChat.send — Sends, or queues when a turn is live and the message is not voice (barge-in rule).
+src/app/chatStore.ts :: useChat.send — Sends, or queues when a turn is live and the message is not voice (barge-in rule). Always sends `mcpEnabled` (the per-server map, possibly empty): the backend only applies the overrides when the field is present, so a `null` there would hand the model every enabled MCP server.
 src/app/chatStore.ts :: useChat.retryLast — Re-sends text only; the original turn's attachments were already consumed.
-src/app/chatStore.ts :: useChat.newConversation — Starts fresh and clears the draft; uses a DYNAMIC import of `voiceStore` to break the cycle.
+src/app/chatStore.ts :: useChat.newConversation — Starts fresh and clears the draft; **keeps** `sessionWebSearch`/`sessionMcpEnabled` (the tool switches are a per-chat choice, and clearing them used to re-enable every MCP server on the next turn); uses a DYNAMIC import of `voiceStore` to break the cycle.
+src/app/chatStore.ts :: useChat.syncSessionMcp — Merges a refreshed server list into `sessionMcpEnabled`: new servers default to off, deleted ids are dropped, existing choices win.
 src/app/chatStore.ts :: useChat.restoreQueue (private) — Folds queued messages back into the composer after Stop.
 src/app/chatStore.ts :: PENDING_ID / STREAM_FLUSH_MS (private) — `pending-assistant` sentinel; 50 ms batched-streaming window.
 
@@ -628,7 +629,7 @@ src/components/chat/Attachments.tsx :: AttachmentList — The staged attachment 
 src/components/chat/Attachments.tsx :: attachmentSize — Exported size formatter used by the chips.
 src/components/chat/Composer.tsx :: Composer — Text input, attachment staging, drag-and-drop, paste handling, send/stop, mic and the model chip.
 src/components/chat/Composer.tsx :: MCP_STATE_KEY — `Record<ServerStatus["state"], string>` mapping each connection state to its `status.*` string key (a disabled server shows as "Not connected").
-src/components/chat/Composer.tsx :: MCP dropdown (inside Composer) — Chip plus popover listing only the servers **enabled in Settings**; the chip is not rendered when none are. Each row is a per-chat switch, **off by default**, held in `chatStore.sessionMcpEnabled` and sent as `mcpEnabled` on every turn. The list refreshes on the `mcp://changed` event; the first load seeds the store, later loads merge through `syncSessionMcp` so a refresh never re-enables a server the user switched off. No server configuration is written from here.
+src/components/chat/Composer.tsx :: MCP dropdown (inside Composer) — Chip plus popover listing only the servers **enabled in Settings**; the chip is not rendered when none are. Each row is a per-chat switch, **off by default**, held in `chatStore.sessionMcpEnabled` and sent as `mcpEnabled` on every turn. The list refreshes on the `mcp://changed` event, so enabling a server in Settings takes effect on the next message of the running conversation; the first load seeds the store, later loads merge through `syncSessionMcp` so a refresh never re-enables a server the user switched off. A gear in the popover header calls `open_settings_window { section: "mcp" }`; no server state is written from the chat window. The popover is anchored to the chip's **end** edge (`.picker-menu.mcp-menu`), because a start-anchored menu ran past the window's right edge.
 src/components/chat/Composer.tsx :: ComposerHandle — Imperative handle: focus, insert text, clear.
 src/components/chat/Markdown.tsx :: Markdown — Memoised react-markdown + remark-gfm renderer with sanitised HTML (no raw HTML is ever rendered).
 src/components/chat/MessageBubble.tsx :: MessageBubble — Memoised user/assistant bubble: markdown, reasoning block, tool activity, sources, stats, retry/resend, read-aloud.

@@ -822,6 +822,9 @@ src/pages/Setup/SetupWizard | uses | src/pages/Settings/sections/System (CheckIt
 
 --- test files ---
 src/test/setup | subscribes_to | (mocks @tauri-apps/api/core, api/event, plugin-opener, plugin-dialog)
+src/test/mcpDropdown.test.tsx | uses | src/app/chatStore, settingsStore, types
+src/test/mcpDropdown.test.tsx | uses | components/chat/Composer
+src/test/mcpDropdown.test.tsx | drives | the Composer's own `mcp://changed` listener through the mocked `listen` (Tauri events are not DOM events)
 src/test/ui.test.tsx | uses | src/app/chatStore, settingsStore, types, voiceStore
 src/test/ui.test.tsx | uses | components/chat/Composer, chat/MessageBubble, common/controls, settings/ShortcutInput, voice/CallView, voice/SpokenText
 src/test/ui.test.tsx | reads | src-tauri/capabilities/default.json (asserts global-shortcut:default)

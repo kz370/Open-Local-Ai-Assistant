@@ -184,7 +184,7 @@ The repository contains 22 logical modules.
 | # | Module | Path | Layer | Summary |
 | --- | --- | --- | --- | --- |
 | 1 | Frontend App | `src/app/` | Application state | Typed IPC client, three zustand stores, domain types, i18n, language and provider registries. |
-| 2 | Chat Components | `src/components/chat/` | Presentation | Composer, message rendering, markdown, model picker, selection menu, sources, tool activity, tool confirmation. |
+| 2 | Chat Components | `src/components/chat/` | Presentation | Composer (with the per-chat MCP tool dropdown), message rendering, markdown, model picker, selection menu, sources, tool activity, tool confirmation. |
 | 3 | Voice Components | `src/components/voice/` | Presentation | Hands-free call view, level meter, per-word spoken-text highlighting, waveform bars. |
 | 4 | Settings Components | `src/components/settings/` | Presentation | GPU card, language picker, model manager, shortcut recorder, settings layout primitives. |
 | 5 | History Component | `src/components/history/` | Presentation | Recency-grouped conversation list with search and delete. |
@@ -604,18 +604,19 @@ tool activity, the confirmation dialog, attachment staging, the send queue and
 error banners.
 
 ### Summary
-363 lines. 12 state fields, 16 actions, plus two closure-scoped mutable variables
+378 lines. 12 state fields, 17 actions, plus two closure-scoped mutable variables
 that implement batched streaming outside React.
 
 ### Technical Details
 **State:** `conversationId`, `messages: UiMessage[]`, `turnId`, `draft`,
 `attachments`, `attachmentErrors`, `queue: QueuedMessage[]`, `confirmation`,
-`connectionError`, `voiceNotice`.
+`connectionError`, `voiceNotice`, `sessionWebSearch`, `sessionMcpEnabled`.
 
 **Actions:** `setDraft`, `addAttachments`, `removeAttachment`, `clearAttachments`,
 `dismissAttachmentErrors`, `send`, `removeQueued`, `retryLast`, `stop`,
 `newConversation`, `loadConversation`, `confirmTool`, `setVoiceNotice`,
-`handleEvent`.
+`handleEvent`, `setSessionWebSearch`, `setSessionMcpEnabled`,
+`resetSessionTools`, `syncSessionMcp`.
 
 **Exports:** `ToolStatus`, `UiToolActivity`, `UiMessage`, `QueuedMessage`,
 `activityToUi`, `messageToUi`, `useChat`.
@@ -657,7 +658,20 @@ live assistant bubble) and `STREAM_FLUSH_MS = 50`; plus closure variables
   stored user message) and resends **text only** — "the attachments of that turn
   were already consumed by the backend."
 - **`newConversation`** uses a **dynamic** `import("./voiceStore")` to avoid a
-  circular dependency (`voiceStore` imports `chatStore` statically).
+  circular dependency (`voiceStore` imports `chatStore` statically). It keeps
+  `sessionWebSearch` and `sessionMcpEnabled`: the tool switches are a per-chat
+  choice the user made, and clearing them re-enabled every MCP server on the
+  next turn.
+- **Per-chat tool switches.** `startTurn` sends `mcpEnabled` on **every** turn,
+  including an empty map. The orchestrator applies the overrides only
+  `if let Some(ref mcp_enabled) = input.mcp_enabled`, so a `null` there means
+  "no filter" and would hand the model every enabled server. `webSearchEnabled`
+  travels separately and the orchestrator keys the built-in search tool off it.
+- **`syncSessionMcp`** merges a refreshed server list: new ids arrive `false`
+  (off), deleted ids are dropped, and existing choices always win — so the
+  `mcp://changed` event that follows every connect/enable/save/delete never
+  re-enables a server the user switched off. `resetSessionTools` is the
+  one-shot seed used on the first load only.
 - `newId()` prefixes: `local-${turnId}` for the optimistic user bubble,
   `failed-${turnId}` for a failed reply.
 
@@ -1011,6 +1025,7 @@ a **command router**, and asserts on accessible names and IPC argument tuples.
 | --- | --- | --- |
 | `src/test/setup.ts` | — | Global mocks |
 | `src/test/ui.test.tsx` | 18 | Text direction, `SpokenText`, `MessageBubble`, chat store streaming, `Composer`, `CallView`, shortcuts |
+| `src/test/mcpDropdown.test.tsx` | 6 | The composer MCP dropdown: only Settings-enabled servers listed, chip hidden when none are enabled, switches off by default and per-chat, `mcp://changed` handled live (including a server enabled mid-conversation), the gear opening the MCP settings section |
 | `src/test/settings.test.tsx` | 17 + 13 | Every settings section mounts; model manager; model picker; bubble; web search round-trip |
 | `src/test/selection.test.tsx` | 5 | Right-click selection menu and the explain pop-up |
 | `src/test/history.test.tsx` | 4 | Recency grouping, empty state, delete resets the last-conversation pointer, DB failure is not shown as empty |

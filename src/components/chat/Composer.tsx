@@ -1,5 +1,5 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
-import { ArrowUp, AudioLines, ChevronDown, Clock, Globe, Mic, Paperclip, Plus, Square, Volume2, VolumeX, X } from "lucide-react";
+import { ArrowUp, AudioLines, ChevronDown, Clock, Globe, Mic, Paperclip, Plus, Settings, Square, Volume2, VolumeX, X } from "lucide-react";
 import { attachFromPaste, pickFiles } from "../../app/attach";
 import { useChat } from "../../app/chatStore";
 import { ipc, on } from "../../app/ipc";
@@ -308,7 +308,21 @@ export const Composer = forwardRef<ComposerHandle, { onVoiceSetup: () => void; a
                   <div className="picker-menu narrow mcp-menu" role="dialog" aria-label={t("chat.mcpToolsPanel")}>
                     <div className="picker-head">
                       <span>{t("chat.mcpTools")}</span>
-                      <span>{t("chat.mcpActive", { on: mcpOn, total: mcpTotal })}</span>
+                      <span className="picker-head-actions">
+                        <span>{t("chat.mcpActive", { on: mcpOn, total: mcpTotal })}</span>
+                        <button
+                          type="button"
+                          className="picker-head-btn"
+                          aria-label={t("chat.mcpManage")}
+                          title={t("chat.mcpManage")}
+                          onClick={() => {
+                            setMcpOpen(false);
+                            void ipc.openSettings("mcp").catch((err) => console.error("open settings failed", err));
+                          }}
+                        >
+                          <Settings size={13} />
+                        </button>
+                      </span>
                     </div>
                     <p className="picker-hint">{t("chat.mcpOffByDefault")}</p>
                     {mcpServers.map((s) => {
