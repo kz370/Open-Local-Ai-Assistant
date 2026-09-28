@@ -1138,15 +1138,39 @@ html[data-route="chat"] .history-item {
   grid-template-columns: minmax(0, 1fr) 78px;
   align-items: center;
   gap: 12px;
-  padding: 5px 10px 5px 20px;
-  border-bottom: 1px solid var(--hairline);
+  position: relative;
+  margin-bottom: 3px;
+  padding: 4px 10px 4px 20px;
+  border-radius: 0;
+  transition: background var(--dur-fast), border-radius var(--dur-fast);
+}
+/* Short centred rule between rows: a full-width line ran under the rounded
+   hover card and read as part of it. */
+html[data-route="chat"] .history-item::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -2px;
+  width: 36px;
+  height: 1px;
+  transform: translateX(-50%);
+  background: var(--hairline);
+  transition: opacity var(--dur-fast);
+}
+html[data-route="chat"] .history-item:last-child::before {
+  display: none;
 }
 html[data-route="chat"] .history-item:last-child {
-  border-bottom: 0;
+  margin-bottom: 0;
+}
+html[data-route="chat"] .history-item:hover::before,
+html[data-route="chat"] .history-item:focus-within::before {
+  opacity: 0;
 }
 html[data-route="chat"] .history-item:hover,
 html[data-route="chat"] .history-item:focus-within {
   background: var(--card-hover);
+  border-radius: 6px;
 }
 html[data-route="chat"] .history-item.active {
   background: var(--accent-soft);
