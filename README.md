@@ -28,8 +28,8 @@
 - **Dictation in any app.** Press a hotkey, speak, and the text is typed into Notepad, your browser, or whatever app has focus.
 - **One voice model for every language.** A single small multilingual voice model (Supertonic 3, 123 MB, 31 languages) speaks English, Arabic, German and more. Arabic text is shown right-to-left.
 - **Right-click any reply.** Select text in an answer, then right-click to hear it read aloud, get a short explanation in a pop-up, or ask about it as the next message in the same chat.
-- **Web search with sources.** For "latest / today" questions the assistant searches the web and lists the pages it used.
-- **MCP tools.** You can connect Model Context Protocol servers. Anything that writes data or runs commands asks you first.
+- **Web search with sources.** For "latest / today" questions the assistant searches the web and lists the pages it used. Press the globe button in the chat composer to enable/disable.
+- **MCP tools.** You can connect Model Context Protocol servers. Anything that writes data or runs commands asks you first. Press the + button with down arrow in the chat composer to enable/disable MCP tools for the current chat.
 - **Optional NVIDIA GPU pack** to speed up speech recognition and the voices.
 
 ## Download
