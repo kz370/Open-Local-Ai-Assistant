@@ -17,11 +17,13 @@ pub fn init(log_dir: &Path) -> Option<WorkerGuard> {
         .build(log_dir)
         .ok()?;
     let (writer, guard) = tracing_appender::non_blocking(appender);
-    let filter = EnvFilter::try_new(
-        std::env::var("LOCAL_ASSISTANT_LOG").unwrap_or_else(|_| "info".into()),
-    )
-    .unwrap_or_else(|_| EnvFilter::new("info"));
-    let file_layer = fmt::layer().with_writer(writer).with_ansi(false).with_target(true);
+    let filter =
+        EnvFilter::try_new(std::env::var("LOCAL_ASSISTANT_LOG").unwrap_or_else(|_| "info".into()))
+            .unwrap_or_else(|_| EnvFilter::new("info"));
+    let file_layer = fmt::layer()
+        .with_writer(writer)
+        .with_ansi(false)
+        .with_target(true);
     let registry = tracing_subscriber::registry().with(filter).with(file_layer);
     #[cfg(debug_assertions)]
     let registry = registry.with(fmt::layer().with_target(true));

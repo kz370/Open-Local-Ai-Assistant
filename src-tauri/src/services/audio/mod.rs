@@ -33,7 +33,11 @@ impl HighPassFilter {
     pub fn new(cutoff_hz: f32, sample_rate: u32) -> Self {
         let rc = 1.0 / (std::f32::consts::TAU * cutoff_hz);
         let dt = 1.0 / sample_rate as f32;
-        Self { alpha: rc / (rc + dt), prev_in: 0.0, prev_out: 0.0 }
+        Self {
+            alpha: rc / (rc + dt),
+            prev_in: 0.0,
+            prev_out: 0.0,
+        }
     }
 
     pub fn process(&mut self, samples: &mut [f32]) {
@@ -52,15 +56,21 @@ pub const SPECTRUM_BANDS: usize = 24;
 /// Analysis window length of [`spectrum`].
 const N: usize = 512;
 
-static HANN: std::sync::LazyLock<Vec<f32>> =
-    std::sync::LazyLock::new(|| (0..N).map(|i| 0.5 - 0.5 * (std::f32::consts::TAU * i as f32 / N as f32).cos()).collect());
+static HANN: std::sync::LazyLock<Vec<f32>> = std::sync::LazyLock::new(|| {
+    (0..N)
+        .map(|i| 0.5 - 0.5 * (std::f32::consts::TAU * i as f32 / N as f32).cos())
+        .collect()
+});
 
 /// Cosine and sine of every (bin, sample) pair, built once: the meter runs in
 /// the microphone callback, where trigonometry per sample would be wasteful.
 fn twiddles(top_bin: usize) -> &'static (Vec<f32>, Vec<f32>) {
     static TABLES: std::sync::OnceLock<(Vec<f32>, Vec<f32>)> = std::sync::OnceLock::new();
     TABLES.get_or_init(|| {
-        let (mut cos, mut sin) = (Vec::with_capacity((top_bin + 1) * N), Vec::with_capacity((top_bin + 1) * N));
+        let (mut cos, mut sin) = (
+            Vec::with_capacity((top_bin + 1) * N),
+            Vec::with_capacity((top_bin + 1) * N),
+        );
         for k in 0..=top_bin {
             for i in 0..N {
                 let a = std::f32::consts::TAU * k as f32 * i as f32 / N as f32;
@@ -126,18 +136,32 @@ mod tests {
     fn high_pass_cuts_hum_keeps_speech() {
         // Skip the filter's startup transient (a few cycles at the lowest
         // frequency involved) so RMS reflects steady-state response only.
-        let tone = |hz: f32| -> Vec<f32> { (0..1600).map(|i| 0.3 * (std::f32::consts::TAU * hz * i as f32 / STT_SAMPLE_RATE as f32).sin()).collect() };
-        let rms = |s: &[f32]| (s[400..].iter().map(|v| v * v).sum::<f32>() / (s.len() - 400) as f32).sqrt();
+        let tone = |hz: f32| -> Vec<f32> {
+            (0..1600)
+                .map(|i| {
+                    0.3 * (std::f32::consts::TAU * hz * i as f32 / STT_SAMPLE_RATE as f32).sin()
+                })
+                .collect()
+        };
+        let rms = |s: &[f32]| {
+            (s[400..].iter().map(|v| v * v).sum::<f32>() / (s.len() - 400) as f32).sqrt()
+        };
 
         let mut hum = tone(50.0);
         let hum_in = rms(&hum);
         HighPassFilter::new(100.0, STT_SAMPLE_RATE).process(&mut hum);
-        assert!(rms(&hum) < hum_in * 0.5, "50 Hz hum should be heavily attenuated");
+        assert!(
+            rms(&hum) < hum_in * 0.5,
+            "50 Hz hum should be heavily attenuated"
+        );
 
         let mut voice = tone(300.0);
         let voice_in = rms(&voice);
         HighPassFilter::new(100.0, STT_SAMPLE_RATE).process(&mut voice);
-        assert!(rms(&voice) > voice_in * 0.9, "300 Hz speech content should pass through mostly intact");
+        assert!(
+            rms(&voice) > voice_in * 0.9,
+            "300 Hz speech content should pass through mostly intact"
+        );
     }
 
     /// `cargo test spectrum_cost -- --ignored --nocapture`
@@ -151,15 +175,30 @@ mod tests {
             spectrum(&audio);
         }
         // 200 calls = 10 seconds of microphone input at 20 updates per second.
-        println!("{:.2} ms per update", started.elapsed().as_secs_f32() * 1000.0 / 200.0);
+        println!(
+            "{:.2} ms per update",
+            started.elapsed().as_secs_f32() * 1000.0 / 200.0
+        );
     }
 
     #[test]
     fn spectrum_follows_pitch() {
         assert_eq!(spectrum(&[]), vec![0.0; SPECTRUM_BANDS]);
         assert!(spectrum(&[0.0; 800]).iter().all(|&v| v == 0.0));
-        let tone = |hz: f32| (0..800).map(|i| 0.3 * (std::f32::consts::TAU * hz * i as f32 / STT_SAMPLE_RATE as f32).sin()).collect::<Vec<_>>();
-        let peak = |s: Vec<f32>| s.iter().enumerate().max_by(|a, b| a.1.total_cmp(b.1)).unwrap().0;
+        let tone = |hz: f32| {
+            (0..800)
+                .map(|i| {
+                    0.3 * (std::f32::consts::TAU * hz * i as f32 / STT_SAMPLE_RATE as f32).sin()
+                })
+                .collect::<Vec<_>>()
+        };
+        let peak = |s: Vec<f32>| {
+            s.iter()
+                .enumerate()
+                .max_by(|a, b| a.1.total_cmp(b.1))
+                .unwrap()
+                .0
+        };
         let low = peak(spectrum(&tone(150.0)));
         let high = peak(spectrum(&tone(2500.0)));
         assert!(low < 6, "150 Hz peaked at band {low}");

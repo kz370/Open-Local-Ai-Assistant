@@ -38,7 +38,10 @@ impl LmStudioService {
             .no_proxy()
             .build()
             .expect("http client");
-        let remote_client = reqwest::Client::builder().connect_timeout(Duration::from_secs(10)).build().expect("http client");
+        let remote_client = reqwest::Client::builder()
+            .connect_timeout(Duration::from_secs(10))
+            .build()
+            .expect("http client");
         Self {
             client,
             remote_client,
@@ -71,11 +74,15 @@ impl LmStudioService {
     }
 
     pub fn set_api_key(&self, key: Option<String>) {
-        *self.api_key.write().unwrap_or_else(|p| p.into_inner()) = key.filter(|k| !k.trim().is_empty());
+        *self.api_key.write().unwrap_or_else(|p| p.into_inner()) =
+            key.filter(|k| !k.trim().is_empty());
     }
 
     pub fn api_key(&self) -> Option<String> {
-        self.api_key.read().unwrap_or_else(|p| p.into_inner()).clone()
+        self.api_key
+            .read()
+            .unwrap_or_else(|p| p.into_inner())
+            .clone()
     }
 
     pub fn set_timeout(&self, secs: u64) {
@@ -83,7 +90,10 @@ impl LmStudioService {
     }
 
     pub fn base_url(&self) -> String {
-        self.base_url.read().unwrap_or_else(|p| p.into_inner()).clone()
+        self.base_url
+            .read()
+            .unwrap_or_else(|p| p.into_inner())
+            .clone()
     }
 
     fn timeout(&self) -> Duration {
@@ -112,14 +122,21 @@ impl LmStudioService {
             .await
             .map_err(from_lmstudio_http)?;
         if !resp.status().is_success() {
-            return Err(AppError::LmStudio(format!("{url} returned {}", resp.status())));
+            return Err(AppError::LmStudio(format!(
+                "{url} returned {}",
+                resp.status()
+            )));
         }
-        resp.json().await.map_err(|e| AppError::LmStudio(e.to_string()))
+        resp.json()
+            .await
+            .map_err(|e| AppError::LmStudio(e.to_string()))
     }
 
     async fn discover(&self) -> AppResult<(Vec<ModelInfo>, &'static str)> {
         if !self.is_native() {
-            let v = self.get_json(&format!("{}/models", self.base_url())).await?;
+            let v = self
+                .get_json(&format!("{}/models", self.base_url()))
+                .await?;
             return Ok((parse_hosted_models(&v), "openai"));
         }
         let root = self.root();
@@ -129,7 +146,10 @@ impl LmStudioService {
             Err(e) => e,
         };
         // A refused connection means the server is down: don't try other paths.
-        if matches!(v1_err, AppError::LmStudioUnavailable(_) | AppError::Timeout(_)) {
+        if matches!(
+            v1_err,
+            AppError::LmStudioUnavailable(_) | AppError::Timeout(_)
+        ) {
             return Err(v1_err);
         }
         if let Ok(v) = self.get_json(&format!("{root}/api/v0/models")).await {
@@ -137,7 +157,9 @@ impl LmStudioService {
                 return Ok((parse_native_v0(&v), "native-v0"));
             }
         }
-        let v = self.get_json(&format!("{}/models", self.base_url())).await?;
+        let v = self
+            .get_json(&format!("{}/models", self.base_url()))
+            .await?;
         Ok((parse_openai_models(&v), "openai"))
     }
 }
@@ -148,18 +170,28 @@ impl LmStudioService {
         if !self.is_native() {
             return Ok(());
         }
-        let v =self.get_json(&format!("{}/api/v1/models", self.root())).await?;
+        let v = self
+            .get_json(&format!("{}/api/v1/models", self.root()))
+            .await?;
         let instances: Vec<String> = v["models"]
             .as_array()
             .into_iter()
             .flatten()
             .filter(|m| m["key"].as_str() == Some(model_id))
-            .flat_map(|m| m["loaded_instances"].as_array().cloned().unwrap_or_default())
+            .flat_map(|m| {
+                m["loaded_instances"]
+                    .as_array()
+                    .cloned()
+                    .unwrap_or_default()
+            })
             .filter_map(|i| i["id"].as_str().map(str::to_string))
             .collect();
         for id in instances {
             let resp = self
-                .authed(self.http().post(format!("{}/api/v1/models/unload", self.root())))
+                .authed(
+                    self.http()
+                        .post(format!("{}/api/v1/models/unload", self.root())),
+                )
                 .json(&json!({ "instance_id": id }))
                 .timeout(Duration::from_secs(60))
                 .send()
@@ -168,7 +200,10 @@ impl LmStudioService {
             if !resp.status().is_success() {
                 let status = resp.status();
                 let text = resp.text().await.unwrap_or_default();
-                return Err(AppError::LmStudio(format!("unload failed ({status}): {}", truncate(&text, 300))));
+                return Err(AppError::LmStudio(format!(
+                    "unload failed ({status}): {}",
+                    truncate(&text, 300)
+                )));
             }
         }
         Ok(())
@@ -187,7 +222,8 @@ fn normalize_base(url: &str) -> String {
 }
 
 fn as_u32(v: Option<&Value>) -> Option<u32> {
-    v.and_then(Value::as_u64).map(|n| n.min(u32::MAX as u64) as u32)
+    v.and_then(Value::as_u64)
+        .map(|n| n.min(u32::MAX as u64) as u32)
 }
 
 pub fn parse_native_v1(v: &Value) -> Vec<ModelInfo> {
@@ -197,7 +233,10 @@ pub fn parse_native_v1(v: &Value) -> Vec<ModelInfo> {
             arr.iter()
                 .filter_map(|m| {
                     let id = m.get("key")?.as_str()?.to_string();
-                    let loaded = m["loaded_instances"].as_array().map(|a| !a.is_empty()).unwrap_or(false);
+                    let loaded = m["loaded_instances"]
+                        .as_array()
+                        .map(|a| !a.is_empty())
+                        .unwrap_or(false);
                     let caps = &m["capabilities"];
                     Some(ModelInfo {
                         display_name: m["display_name"].as_str().unwrap_or(&id).to_string(),
@@ -205,11 +244,17 @@ pub fn parse_native_v1(v: &Value) -> Vec<ModelInfo> {
                         size_bytes: m["size_bytes"].as_u64(),
                         params: m["params_string"].as_str().map(str::to_string),
                         quantization: m["quantization"]["name"].as_str().map(str::to_string),
-                        bits_per_weight: m["quantization"]["bits_per_weight"].as_f64().map(|b| b as f32),
+                        bits_per_weight: m["quantization"]["bits_per_weight"]
+                            .as_f64()
+                            .map(|b| b as f32),
                         max_context_length: as_u32(m.get("max_context_length")),
                         free: false,
                         loaded,
-                        loaded_context_length: as_u32(m["loaded_instances"].get(0).and_then(|i| i["config"].get("context_length"))),
+                        loaded_context_length: as_u32(
+                            m["loaded_instances"]
+                                .get(0)
+                                .and_then(|i| i["config"].get("context_length")),
+                        ),
                         tool_use: caps["trained_for_tool_use"].as_bool().unwrap_or(false),
                         vision: caps["vision"].as_bool().unwrap_or(false),
                         reasoning: caps.get("reasoning").map(|r| !r.is_null()).unwrap_or(false),
@@ -228,7 +273,10 @@ pub fn parse_native_v0(v: &Value) -> Vec<ModelInfo> {
             arr.iter()
                 .filter_map(|m| {
                     let id = m.get("id")?.as_str()?.to_string();
-                    let caps: Vec<&str> = m["capabilities"].as_array().map(|a| a.iter().filter_map(Value::as_str).collect()).unwrap_or_default();
+                    let caps: Vec<&str> = m["capabilities"]
+                        .as_array()
+                        .map(|a| a.iter().filter_map(Value::as_str).collect())
+                        .unwrap_or_default();
                     Some(ModelInfo {
                         free: false,
                         display_name: id.clone(),
@@ -260,7 +308,11 @@ pub fn parse_openai_models(v: &Value) -> Vec<ModelInfo> {
                 .map(|id| ModelInfo {
                     id: id.to_string(),
                     display_name: id.to_string(),
-                    kind: if id.contains("embed") { "embedding".into() } else { "unknown".into() },
+                    kind: if id.contains("embed") {
+                        "embedding".into()
+                    } else {
+                        "unknown".into()
+                    },
                     ..Default::default()
                 })
                 .collect()
@@ -275,12 +327,21 @@ pub fn parse_openai_models(v: &Value) -> Vec<ModelInfo> {
 /// True when a hosted model charges nothing for input and output. Prices come
 /// as decimal strings ("0.000000075"), and a model without prices is not free.
 fn is_free(pricing: &Value) -> bool {
-    let zero = |key: &str| pricing[key].as_str().and_then(|p| p.parse::<f64>().ok()).is_some_and(|p| p == 0.0);
+    let zero = |key: &str| {
+        pricing[key]
+            .as_str()
+            .and_then(|p| p.parse::<f64>().ok())
+            .is_some_and(|p| p == 0.0)
+    };
     zero("prompt") && zero("completion")
 }
 
 pub fn parse_hosted_models(v: &Value) -> Vec<ModelInfo> {
-    let has = |m: &Value, key: &str, want: &str| m[key].as_array().is_some_and(|a| a.iter().any(|x| x.as_str() == Some(want)));
+    let has = |m: &Value, key: &str, want: &str| {
+        m[key]
+            .as_array()
+            .is_some_and(|a| a.iter().any(|x| x.as_str() == Some(want)))
+    };
     v["data"]
         .as_array()
         .map(|arr| {
@@ -289,12 +350,26 @@ pub fn parse_hosted_models(v: &Value) -> Vec<ModelInfo> {
                     let id = m.get("id")?.as_str()?;
                     let id = id.strip_prefix("models/").unwrap_or(id).to_string();
                     let lower = id.to_lowercase();
-                    let output_text_only = m["architecture"]["output_modalities"].as_array().is_none_or(|a| a.iter().any(|x| x.as_str() == Some("text")));
-                    let embedding = lower.contains("embed") || lower.contains("whisper") || lower.contains("tts") || lower.contains("guard") || !output_text_only;
+                    let output_text_only = m["architecture"]["output_modalities"]
+                        .as_array()
+                        .is_none_or(|a| a.iter().any(|x| x.as_str() == Some("text")));
+                    let embedding = lower.contains("embed")
+                        || lower.contains("whisper")
+                        || lower.contains("tts")
+                        || lower.contains("guard")
+                        || !output_text_only;
                     Some(ModelInfo {
                         display_name: m["name"].as_str().unwrap_or(&id).to_string(),
-                        kind: if embedding { "embedding".into() } else { "llm".into() },
-                        max_context_length: as_u32(m.get("context_length").or(m.get("context_window")).or(m.get("inputTokenLimit"))),
+                        kind: if embedding {
+                            "embedding".into()
+                        } else {
+                            "llm".into()
+                        },
+                        max_context_length: as_u32(
+                            m.get("context_length")
+                                .or(m.get("context_window"))
+                                .or(m.get("inputTokenLimit")),
+                        ),
                         loaded: true,
                         tool_use: has(m, "supported_parameters", "tools"),
                         vision: has(&m["architecture"], "input_modalities", "image"),
@@ -336,7 +411,10 @@ impl AiService for LmStudioService {
             body["context_length"] = json!(ctx);
         }
         let resp = self
-            .authed(self.http().post(format!("{}/api/v1/models/load", self.root())))
+            .authed(
+                self.http()
+                    .post(format!("{}/api/v1/models/load", self.root())),
+            )
             .json(&body)
             .timeout(Duration::from_secs(600))
             .send()
@@ -345,7 +423,10 @@ impl AiService for LmStudioService {
         if !resp.status().is_success() {
             let status = resp.status();
             let text = resp.text().await.unwrap_or_default();
-            return Err(AppError::LmStudio(format!("load failed ({status}): {}", truncate(&text, 300))));
+            return Err(AppError::LmStudio(format!(
+                "load failed ({status}): {}",
+                truncate(&text, 300)
+            )));
         }
         Ok(())
     }
@@ -376,7 +457,10 @@ impl AiService for LmStudioService {
 
         let sent_at = Instant::now();
         let send = self
-            .authed(self.http().post(format!("{}/chat/completions", self.base_url())))
+            .authed(
+                self.http()
+                    .post(format!("{}/chat/completions", self.base_url())),
+            )
             .json(&body)
             .timeout(self.timeout())
             .send();
@@ -389,7 +473,12 @@ impl AiService for LmStudioService {
             let text = resp.text().await.unwrap_or_default();
             let detail = serde_json::from_str::<Value>(&text)
                 .ok()
-                .and_then(|v| v["error"]["message"].as_str().or(v["error"].as_str()).map(str::to_string))
+                .and_then(|v| {
+                    v["error"]["message"]
+                        .as_str()
+                        .or(v["error"].as_str())
+                        .map(str::to_string)
+                })
                 .unwrap_or_else(|| truncate(&text, 300));
             return Err(AppError::LmStudio(format!("{status}: {detail}")));
         }
@@ -403,7 +492,11 @@ impl AiService for LmStudioService {
             };
             let msg = &v["choices"][0]["message"];
             out.content = msg["content"].as_str().unwrap_or("").to_string();
-            out.reasoning = msg["reasoning_content"].as_str().or(msg["reasoning"].as_str()).unwrap_or("").to_string();
+            out.reasoning = msg["reasoning_content"]
+                .as_str()
+                .or(msg["reasoning"].as_str())
+                .unwrap_or("")
+                .to_string();
             if !out.reasoning.is_empty() {
                 on_chunk(StreamChunk::Reasoning(out.reasoning.clone()));
             }
@@ -413,7 +506,9 @@ impl AiService for LmStudioService {
             if let Some(calls) = msg.get("tool_calls") {
                 out.tool_calls = serde_json::from_value(calls.clone()).unwrap_or_default();
             }
-            out.finish_reason = v["choices"][0]["finish_reason"].as_str().map(str::to_string);
+            out.finish_reason = v["choices"][0]["finish_reason"]
+                .as_str()
+                .map(str::to_string);
             read_usage(&v, &mut out);
             out.generation_ms = Some(sent_at.elapsed().as_millis() as u64);
             return Ok(out);
@@ -443,15 +538,25 @@ impl AiService for LmStudioService {
                     done = true;
                     break;
                 }
-                let Ok(v) = serde_json::from_str::<Value>(&data) else { continue };
+                let Ok(v) = serde_json::from_str::<Value>(&data) else {
+                    continue;
+                };
                 if let Some(err) = v.get("error") {
-                    let msg = err["message"].as_str().or(err.as_str()).unwrap_or("stream error");
+                    let msg = err["message"]
+                        .as_str()
+                        .or(err.as_str())
+                        .unwrap_or("stream error");
                     return Err(AppError::LmStudio(msg.to_string()));
                 }
                 read_usage(&v, &mut out);
-                let Some(choice) = v["choices"].get(0) else { continue };
+                let Some(choice) = v["choices"].get(0) else {
+                    continue;
+                };
                 let delta = &choice["delta"];
-                if let Some(r) = delta["reasoning_content"].as_str().or(delta["reasoning"].as_str()) {
+                if let Some(r) = delta["reasoning_content"]
+                    .as_str()
+                    .or(delta["reasoning"].as_str())
+                {
                     if !r.is_empty() {
                         first_token.get_or_insert_with(Instant::now);
                         out.chunks += 1;
@@ -526,7 +631,10 @@ mod tests {
             {"id": "vendor/half-free", "pricing": {"prompt": "0", "completion": "0.000002"}},
             {"id": "vendor/unpriced"},
         ]});
-        let free: Vec<(String, bool)> = parse_hosted_models(&v).into_iter().map(|m| (m.id, m.free)).collect();
+        let free: Vec<(String, bool)> = parse_hosted_models(&v)
+            .into_iter()
+            .map(|m| (m.id, m.free))
+            .collect();
         assert_eq!(
             free,
             vec![
@@ -573,7 +681,11 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(m.delay_ms)).await;
         }
         if body["model"] == "missing" {
-            return (StatusCode::NOT_FOUND, Json(json!({"error":{"message":"model not found"}}))).into_response();
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({"error":{"message":"model not found"}})),
+            )
+                .into_response();
         }
         if body["stream"] == json!(false) {
             return Json(json!({"choices":[{"message":{"role":"assistant","content":"plain answer"},"finish_reason":"stop"}]})).into_response();
@@ -615,7 +727,11 @@ mod tests {
 
     #[tokio::test]
     async fn discovery_native_v1() {
-        let url = serve(Mock { native_v1: true, ..Default::default() }).await;
+        let url = serve(Mock {
+            native_v1: true,
+            ..Default::default()
+        })
+        .await;
         let svc = LmStudioService::new(&url, 30);
         let models = svc.list_models().await.unwrap();
         assert_eq!(models.len(), 3);
@@ -663,7 +779,10 @@ mod tests {
             json!({"choices":[{"delta":{},"finish_reason":"tool_calls"}]}),
             json!({"choices":[],"usage":{"prompt_tokens":12,"completion_tokens":7,"total_tokens":19}}),
         ]);
-        let mock = Mock { stream_body: Arc::new(body), ..Default::default() };
+        let mock = Mock {
+            stream_body: Arc::new(body),
+            ..Default::default()
+        };
         let url = serve(mock.clone()).await;
         let svc = LmStudioService::new(&url, 30);
         let mut chunks = Vec::new();
@@ -671,9 +790,16 @@ mod tests {
         let mut r = req("m", true);
         r.tools = vec![ToolDefinition {
             kind: "function".into(),
-            function: FunctionDefinition { name: "web_search".into(), description: "d".into(), parameters: json!({"type":"object"}) },
+            function: FunctionDefinition {
+                name: "web_search".into(),
+                description: "d".into(),
+                parameters: json!({"type":"object"}),
+            },
         }];
-        let out = svc.chat(r, CancellationToken::new(), &mut cb).await.unwrap();
+        let out = svc
+            .chat(r, CancellationToken::new(), &mut cb)
+            .await
+            .unwrap();
         assert_eq!(out.content, "Hello world.");
         assert_eq!(out.reasoning, "think");
         assert_eq!(out.finish_reason.as_deref(), Some("tool_calls"));
@@ -685,7 +811,10 @@ mod tests {
         assert_eq!(sent["tools"][0]["function"]["name"], "web_search");
         assert_eq!(sent["max_tokens"], 100);
         assert_eq!(sent["stream_options"]["include_usage"], true);
-        assert_eq!((out.prompt_tokens, out.completion_tokens), (Some(12), Some(7)));
+        assert_eq!(
+            (out.prompt_tokens, out.completion_tokens),
+            (Some(12), Some(7))
+        );
         assert_eq!(out.chunks, 3);
         assert!(out.first_token_ms.is_some() && out.generation_ms.is_some());
     }
@@ -694,7 +823,10 @@ mod tests {
     async fn non_streaming() {
         let url = serve(Mock::default()).await;
         let svc = LmStudioService::new(&url, 30);
-        let out = svc.chat(req("m", false), CancellationToken::new(), &mut |_| {}).await.unwrap();
+        let out = svc
+            .chat(req("m", false), CancellationToken::new(), &mut |_| {})
+            .await
+            .unwrap();
         assert_eq!(out.content, "plain answer");
     }
 
@@ -702,21 +834,35 @@ mod tests {
     async fn http_error_is_reported() {
         let url = serve(Mock::default()).await;
         let svc = LmStudioService::new(&url, 30);
-        let err = svc.chat(req("missing", true), CancellationToken::new(), &mut |_| {}).await.unwrap_err();
+        let err = svc
+            .chat(req("missing", true), CancellationToken::new(), &mut |_| {})
+            .await
+            .unwrap_err();
         assert!(err.to_string().contains("model not found"));
     }
 
     #[tokio::test]
     async fn timeout() {
-        let url = serve(Mock { delay_ms: 3000, ..Default::default() }).await;
+        let url = serve(Mock {
+            delay_ms: 3000,
+            ..Default::default()
+        })
+        .await;
         let svc = LmStudioService::new(&url, 1);
-        let err = svc.chat(req("m", true), CancellationToken::new(), &mut |_| {}).await.unwrap_err();
+        let err = svc
+            .chat(req("m", true), CancellationToken::new(), &mut |_| {})
+            .await
+            .unwrap_err();
         assert_eq!(err.code(), "timeout");
     }
 
     #[tokio::test]
     async fn cancellation() {
-        let url = serve(Mock { delay_ms: 3000, ..Default::default() }).await;
+        let url = serve(Mock {
+            delay_ms: 3000,
+            ..Default::default()
+        })
+        .await;
         let svc = LmStudioService::new(&url, 30);
         let token = CancellationToken::new();
         let t2 = token.clone();
@@ -724,7 +870,10 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(100)).await;
             t2.cancel();
         });
-        let err = svc.chat(req("m", true), token, &mut |_| {}).await.unwrap_err();
+        let err = svc
+            .chat(req("m", true), token, &mut |_| {})
+            .await
+            .unwrap_err();
         assert_eq!(err.code(), "cancelled");
     }
 
@@ -746,7 +895,10 @@ mod tests {
 
     #[test]
     fn normalizes_urls() {
-        assert_eq!(normalize_base("localhost:1234/v1/"), "http://localhost:1234/v1");
+        assert_eq!(
+            normalize_base("localhost:1234/v1/"),
+            "http://localhost:1234/v1"
+        );
         assert_eq!(normalize_base(""), "http://localhost:1234/v1");
         let s = LmStudioService::new("http://127.0.0.1:9999/v1", 5);
         assert_eq!(s.root(), "http://127.0.0.1:9999");

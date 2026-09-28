@@ -48,7 +48,9 @@ impl Db {
     pub fn get_kv(&self, key: &str) -> AppResult<Option<String>> {
         Ok(self
             .conn()
-            .query_row("SELECT value FROM settings WHERE key = ?1", [key], |r| r.get(0))
+            .query_row("SELECT value FROM settings WHERE key = ?1", [key], |r| {
+                r.get(0)
+            })
             .optional()?)
     }
 

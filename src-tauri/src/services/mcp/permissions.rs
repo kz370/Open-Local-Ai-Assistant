@@ -8,11 +8,23 @@
 use crate::services::chat::tools::{Permission, ToolCategory};
 
 fn has_word(hay: &str, words: &[&str]) -> bool {
-    let tokens: Vec<&str> = hay.split(|c: char| !c.is_ascii_alphanumeric()).filter(|t| !t.is_empty()).collect();
-    words.iter().any(|w| tokens.iter().any(|t| t == w || (w.len() > 4 && t.starts_with(w))))
+    let tokens: Vec<&str> = hay
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|t| !t.is_empty())
+        .collect();
+    words.iter().any(|w| {
+        tokens
+            .iter()
+            .any(|t| t == w || (w.len() > 4 && t.starts_with(w)))
+    })
 }
 
-pub fn classify(name: &str, description: &str, read_only_hint: Option<bool>, destructive_hint: Option<bool>) -> ToolCategory {
+pub fn classify(
+    name: &str,
+    description: &str,
+    read_only_hint: Option<bool>,
+    destructive_hint: Option<bool>,
+) -> ToolCategory {
     // camelCase -> snake for tokenizing
     let mut n = String::new();
     for (i, c) in name.chars().enumerate() {
@@ -23,11 +35,49 @@ pub fn classify(name: &str, description: &str, read_only_hint: Option<bool>, des
     }
     let d = description.to_lowercase();
 
-    const EXEC: &[&str] = &["exec", "execute", "run", "shell", "command", "cmd", "terminal", "powershell", "bash", "script", "eval", "spawn", "kill", "process", "sudo", "install"];
-    const WRITE: &[&str] = &["write", "create", "delete", "remove", "update", "edit", "move", "rename", "upload", "send", "post", "push", "commit", "set", "modify", "insert", "drop", "patch", "append", "save", "merge", "close", "archive", "publish", "mkdir", "rm", "put"];
-    const SEARCH: &[&str] = &["search", "query", "lookup", "google", "bing", "duckduckgo", "searxng", "brave", "tavily", "websearch"];
-    const FETCH: &[&str] = &["fetch", "scrape", "crawl", "browse", "navigate", "url", "webpage", "page", "extract", "download"];
-    const READ: &[&str] = &["read", "get", "list", "find", "view", "show", "describe", "stat", "info", "status", "open", "load", "tree", "cat"];
+    const EXEC: &[&str] = &[
+        "exec",
+        "execute",
+        "run",
+        "shell",
+        "command",
+        "cmd",
+        "terminal",
+        "powershell",
+        "bash",
+        "script",
+        "eval",
+        "spawn",
+        "kill",
+        "process",
+        "sudo",
+        "install",
+    ];
+    const WRITE: &[&str] = &[
+        "write", "create", "delete", "remove", "update", "edit", "move", "rename", "upload",
+        "send", "post", "push", "commit", "set", "modify", "insert", "drop", "patch", "append",
+        "save", "merge", "close", "archive", "publish", "mkdir", "rm", "put",
+    ];
+    const SEARCH: &[&str] = &[
+        "search",
+        "query",
+        "lookup",
+        "google",
+        "bing",
+        "duckduckgo",
+        "searxng",
+        "brave",
+        "tavily",
+        "websearch",
+    ];
+    const FETCH: &[&str] = &[
+        "fetch", "scrape", "crawl", "browse", "navigate", "url", "webpage", "page", "extract",
+        "download",
+    ];
+    const READ: &[&str] = &[
+        "read", "get", "list", "find", "view", "show", "describe", "stat", "info", "status",
+        "open", "load", "tree", "cat",
+    ];
 
     if has_word(&n, EXEC) {
         return ToolCategory::Execute;
@@ -80,20 +130,50 @@ mod tests {
 
     #[test]
     fn classification() {
-        assert_eq!(classify("searxng_web_search", "", None, None), ToolCategory::Search);
-        assert_eq!(classify("web_url_read", "", None, None), ToolCategory::Fetch);
-        assert_eq!(classify("brave_web_search", "", None, None), ToolCategory::Search);
+        assert_eq!(
+            classify("searxng_web_search", "", None, None),
+            ToolCategory::Search
+        );
+        assert_eq!(
+            classify("web_url_read", "", None, None),
+            ToolCategory::Fetch
+        );
+        assert_eq!(
+            classify("brave_web_search", "", None, None),
+            ToolCategory::Search
+        );
         assert_eq!(classify("read_file", "", None, None), ToolCategory::Read);
-        assert_eq!(classify("list_directory", "", Some(true), None), ToolCategory::Read);
+        assert_eq!(
+            classify("list_directory", "", Some(true), None),
+            ToolCategory::Read
+        );
         assert_eq!(classify("write_file", "", None, None), ToolCategory::Write);
         assert_eq!(classify("createIssue", "", None, None), ToolCategory::Write);
         assert_eq!(classify("move_file", "", None, None), ToolCategory::Write);
-        assert_eq!(classify("run_command", "", None, None), ToolCategory::Execute);
-        assert_eq!(classify("execute_powershell", "", None, None), ToolCategory::Execute);
-        assert_eq!(classify("docker", "Execute a docker command", None, None), ToolCategory::Execute);
-        assert_eq!(classify("frobnicate", "does things", None, None), ToolCategory::Other);
-        assert_eq!(classify("frobnicate", "", Some(true), Some(true)), ToolCategory::Write);
-        assert_eq!(classify("brave", "Search the web with Brave", None, None), ToolCategory::Search);
+        assert_eq!(
+            classify("run_command", "", None, None),
+            ToolCategory::Execute
+        );
+        assert_eq!(
+            classify("execute_powershell", "", None, None),
+            ToolCategory::Execute
+        );
+        assert_eq!(
+            classify("docker", "Execute a docker command", None, None),
+            ToolCategory::Execute
+        );
+        assert_eq!(
+            classify("frobnicate", "does things", None, None),
+            ToolCategory::Other
+        );
+        assert_eq!(
+            classify("frobnicate", "", Some(true), Some(true)),
+            ToolCategory::Write
+        );
+        assert_eq!(
+            classify("brave", "Search the web with Brave", None, None),
+            ToolCategory::Search
+        );
     }
 
     #[test]
@@ -101,9 +181,21 @@ mod tests {
         assert_eq!(default_permission(ToolCategory::Search), Permission::Allow);
         assert_eq!(default_permission(ToolCategory::Write), Permission::Ask);
         assert_eq!(default_permission(ToolCategory::Execute), Permission::Deny);
-        assert_eq!(clamp_permission(ToolCategory::Write, Permission::Allow), Permission::Ask);
-        assert_eq!(clamp_permission(ToolCategory::Execute, Permission::Allow), Permission::Ask);
-        assert_eq!(clamp_permission(ToolCategory::Read, Permission::Allow), Permission::Allow);
-        assert_eq!(clamp_permission(ToolCategory::Read, Permission::Deny), Permission::Deny);
+        assert_eq!(
+            clamp_permission(ToolCategory::Write, Permission::Allow),
+            Permission::Ask
+        );
+        assert_eq!(
+            clamp_permission(ToolCategory::Execute, Permission::Allow),
+            Permission::Ask
+        );
+        assert_eq!(
+            clamp_permission(ToolCategory::Read, Permission::Allow),
+            Permission::Allow
+        );
+        assert_eq!(
+            clamp_permission(ToolCategory::Read, Permission::Deny),
+            Permission::Deny
+        );
     }
 }

@@ -91,23 +91,27 @@ pub fn strip_noise(text: &str) -> String {
 }
 
 const EN_WORDS: &[&str] = &[
-    "the", "and", "is", "are", "you", "what", "how", "can", "do", "does", "this", "that", "with", "for",
-    "please", "hello", "hi", "thanks", "thank", "my", "your", "it", "of", "to", "in", "a", "an", "why",
-    "where", "when", "which", "who", "i", "me", "we", "be", "have", "has", "not", "about", "tell",
-    "explain", "latest", "today", "should", "would", "could", "will", "there", "yes", "no", "or",
+    "the", "and", "is", "are", "you", "what", "how", "can", "do", "does", "this", "that", "with",
+    "for", "please", "hello", "hi", "thanks", "thank", "my", "your", "it", "of", "to", "in", "a",
+    "an", "why", "where", "when", "which", "who", "i", "me", "we", "be", "have", "has", "not",
+    "about", "tell", "explain", "latest", "today", "should", "would", "could", "will", "there",
+    "yes", "no", "or",
 ];
 
 const DE_WORDS: &[&str] = &[
-    "der", "die", "das", "und", "ist", "sind", "du", "ich", "wie", "was", "kannst", "können", "kann",
-    "nicht", "mit", "für", "bitte", "danke", "hallo", "ein", "eine", "einen", "mein", "meine", "dein",
-    "deine", "es", "geht", "dir", "mir", "heute", "wer", "wo", "warum", "welche", "welcher", "auf",
-    "zu", "von", "den", "dem", "des", "ja", "nein", "oder", "aber", "auch", "noch", "sie", "wir",
-    "ihr", "erkläre", "erklär", "neueste", "aktuelle", "gibt", "habe", "hast", "bin", "bist", "tun",
-    "machen", "guten", "morgen", "tag", "abend", "wann", "wieso", "über", "ob",
+    "der", "die", "das", "und", "ist", "sind", "du", "ich", "wie", "was", "kannst", "können",
+    "kann", "nicht", "mit", "für", "bitte", "danke", "hallo", "ein", "eine", "einen", "mein",
+    "meine", "dein", "deine", "es", "geht", "dir", "mir", "heute", "wer", "wo", "warum", "welche",
+    "welcher", "auf", "zu", "von", "den", "dem", "des", "ja", "nein", "oder", "aber", "auch",
+    "noch", "sie", "wir", "ihr", "erkläre", "erklär", "neueste", "aktuelle", "gibt", "habe",
+    "hast", "bin", "bist", "tun", "machen", "guten", "morgen", "tag", "abend", "wann", "wieso",
+    "über", "ob",
 ];
 
 /// Words that exist in both languages and must not count for either.
-const SHARED: &[&str] = &["was", "so", "in", "hand", "bank", "name", "man", "also", "rose", "art"];
+const SHARED: &[&str] = &[
+    "was", "so", "in", "hand", "bank", "name", "man", "also", "rose", "art",
+];
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 pub struct Detection {
@@ -119,7 +123,10 @@ pub struct Detection {
 pub fn detect(text: &str) -> Option<Detection> {
     let clean = strip_noise(text);
     let arabic = clean.chars().filter(|c| is_arabic_char(*c)).count();
-    let latin = clean.chars().filter(|c| c.is_ascii_alphabetic() || "äöüßÄÖÜ".contains(*c)).count();
+    let latin = clean
+        .chars()
+        .filter(|c| c.is_ascii_alphabetic() || "äöüßÄÖÜ".contains(*c))
+        .count();
     if arabic + latin == 0 {
         return None;
     }
@@ -137,7 +144,10 @@ pub fn detect(text: &str) -> Option<Detection> {
         }
         let ratio = ar_words as f32 / (ar_words + other_words).max(1) as f32;
         if ratio >= 0.34 {
-            return Some(Detection { lang: Lang::Ar, confidence: ratio.max(0.6) });
+            return Some(Detection {
+                lang: Lang::Ar,
+                confidence: ratio.max(0.6),
+            });
         }
     }
     if latin < 2 {
@@ -168,20 +178,34 @@ pub fn detect(text: &str) -> Option<Detection> {
     if total >= 1.0 && (en - de).abs() >= 1.0 {
         let lang = if de > en { Lang::De } else { Lang::En };
         let conf = (en.max(de) / total).clamp(0.5, 1.0);
-        return Some(Detection { lang, confidence: conf });
+        return Some(Detection {
+            lang,
+            confidence: conf,
+        });
     }
 
     // Longer texts without clear stop-word signals: statistical detector
     // restricted to our languages.
     if words.len() >= 3 {
-        let detector = whatlang::Detector::with_allowlist(vec![whatlang::Lang::Eng, whatlang::Lang::Deu]);
+        let detector =
+            whatlang::Detector::with_allowlist(vec![whatlang::Lang::Eng, whatlang::Lang::Deu]);
         if let Some(info) = detector.detect(&clean) {
-            let lang = if info.lang() == whatlang::Lang::Deu { Lang::De } else { Lang::En };
-            return Some(Detection { lang, confidence: info.confidence() as f32 * 0.8 });
+            let lang = if info.lang() == whatlang::Lang::Deu {
+                Lang::De
+            } else {
+                Lang::En
+            };
+            return Some(Detection {
+                lang,
+                confidence: info.confidence() as f32 * 0.8,
+            });
         }
     }
     if total > 0.0 {
-        return Some(Detection { lang: if de > en { Lang::De } else { Lang::En }, confidence: 0.4 });
+        return Some(Detection {
+            lang: if de > en { Lang::De } else { Lang::En },
+            confidence: 0.4,
+        });
     }
     None
 }
@@ -208,7 +232,10 @@ mod tests {
         assert_eq!(lang("How are you today?"), Some(Lang::En));
         assert_eq!(lang("كيف حالك اليوم؟"), Some(Lang::Ar));
         assert_eq!(lang("Wie geht es dir heute?"), Some(Lang::De));
-        assert_eq!(lang("Wie kann ich meine Dateien organisieren?"), Some(Lang::De));
+        assert_eq!(
+            lang("Wie kann ich meine Dateien organisieren?"),
+            Some(Lang::De)
+        );
         assert_eq!(lang("What's the latest version of PHP?"), Some(Lang::En));
         assert_eq!(lang("Explain dependency injection in PHP."), Some(Lang::En));
     }
@@ -216,7 +243,10 @@ mod tests {
     #[test]
     fn mixed_arabic_english() {
         assert_eq!(lang("ما هو آخر إصدار من PHP؟"), Some(Lang::Ar));
-        assert_eq!(lang("اشرح لي dependency injection في Laravel"), Some(Lang::Ar));
+        assert_eq!(
+            lang("اشرح لي dependency injection في Laravel"),
+            Some(Lang::Ar)
+        );
     }
 
     #[test]

@@ -76,7 +76,10 @@ impl AttachmentStore {
         if let Err(e) = std::fs::create_dir_all(&dir) {
             tracing::warn!(error = %e, dir = %dir.display(), "cannot create attachments directory");
         }
-        Self { dir, staged: Mutex::new(HashMap::new()) }
+        Self {
+            dir,
+            staged: Mutex::new(HashMap::new()),
+        }
     }
 
     fn staged(&self) -> std::sync::MutexGuard<'_, HashMap<String, Attachment>> {
@@ -108,7 +111,8 @@ impl AttachmentStore {
 
     /// Reads a file from disk and stores it as an attachment.
     pub fn ingest_path(&self, path: &Path) -> AppResult<Attachment> {
-        let meta = std::fs::metadata(path).map_err(|e| AppError::Io(format!("{}: {e}", path.display())))?;
+        let meta = std::fs::metadata(path)
+            .map_err(|e| AppError::Io(format!("{}: {e}", path.display())))?;
         if meta.is_dir() {
             return Err(AppError::Invalid(format!("{} is a folder", name_of(path))));
         }
@@ -120,12 +124,18 @@ impl AttachmentStore {
                 MAX_FILE_BYTES / (1024 * 1024)
             )));
         }
-        let bytes = std::fs::read(path).map_err(|e| AppError::Io(format!("{}: {e}", path.display())))?;
+        let bytes =
+            std::fs::read(path).map_err(|e| AppError::Io(format!("{}: {e}", path.display())))?;
         self.ingest_bytes(&name_of(path), None, bytes)
     }
 
     /// Stores bytes that arrived from the clipboard or a drop.
-    pub fn ingest_bytes(&self, name: &str, mime_hint: Option<&str>, bytes: Vec<u8>) -> AppResult<Attachment> {
+    pub fn ingest_bytes(
+        &self,
+        name: &str,
+        mime_hint: Option<&str>,
+        bytes: Vec<u8>,
+    ) -> AppResult<Attachment> {
         let name = sanitize_name(name);
         if bytes.len() as u64 > MAX_FILE_BYTES {
             return Err(AppError::Invalid(format!(
@@ -166,7 +176,10 @@ impl AttachmentStore {
                 text = Some(extracted);
             }
         } else if ext == "pdf" {
-            note = Some("PDF text extraction is not available; only the file name and size are known".into());
+            note = Some(
+                "PDF text extraction is not available; only the file name and size are known"
+                    .into(),
+            );
         } else if let Some(decoded) = decode_text(&bytes) {
             kind = AttachmentKind::Text;
             text = Some(decoded);
@@ -198,13 +211,18 @@ impl AttachmentStore {
             note,
             created_at: now(),
         };
-        self.staged().insert(attachment.id.clone(), attachment.clone());
+        self.staged()
+            .insert(attachment.id.clone(), attachment.clone());
         Ok(attachment)
     }
 
     /// Stores a long block of pasted or typed text as a text attachment.
     pub fn ingest_text(&self, name: &str, text: &str) -> AppResult<Attachment> {
-        let name = if name.trim().is_empty() { "pasted-text.txt".to_string() } else { name.to_string() };
+        let name = if name.trim().is_empty() {
+            "pasted-text.txt".to_string()
+        } else {
+            name.to_string()
+        };
         // No mime hint: the name's extension still decides how it is labelled.
         self.ingest_bytes(&name, None, text.as_bytes().to_vec())
     }
@@ -220,7 +238,11 @@ impl AttachmentStore {
 
     /// `data:` URL for an image attachment, as vision models expect it.
     pub fn data_url(&self, a: &Attachment) -> AppResult<String> {
-        Ok(format!("data:{};base64,{}", a.mime, base64_encode(&self.bytes(&a.id)?)))
+        Ok(format!(
+            "data:{};base64,{}",
+            a.mime,
+            base64_encode(&self.bytes(&a.id)?)
+        ))
     }
 
     pub fn remove(&self, id: &str) {
@@ -231,7 +253,9 @@ impl AttachmentStore {
     /// Deletes stored files that no message references any more. Staged
     /// attachments that were never sent are removed on the next start.
     pub fn gc(&self, keep: &HashSet<String>) {
-        let Ok(entries) = std::fs::read_dir(&self.dir) else { return };
+        let Ok(entries) = std::fs::read_dir(&self.dir) else {
+            return;
+        };
         let mut removed = 0usize;
         for entry in entries.flatten() {
             let file = entry.file_name();
@@ -249,7 +273,9 @@ impl AttachmentStore {
 }
 
 fn name_of(path: &Path) -> String {
-    path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| "file".into())
+    path.file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| "file".into())
 }
 
 /// Keeps a display name only: no directories, no control characters.
@@ -265,7 +291,9 @@ fn sanitize_name(name: &str) -> String {
 }
 
 pub fn extension(name: &str) -> String {
-    name.rsplit_once('.').map(|(_, e)| e.to_ascii_lowercase()).unwrap_or_default()
+    name.rsplit_once('.')
+        .map(|(_, e)| e.to_ascii_lowercase())
+        .unwrap_or_default()
 }
 
 /// Human-readable size used in the prompt blocks and the UI.
@@ -345,7 +373,9 @@ mod tests {
     #[test]
     fn text_file_is_extracted() {
         let (s, _d) = store();
-        let a = s.ingest_bytes("notes.md", None, b"# Title\nhello".to_vec()).unwrap();
+        let a = s
+            .ingest_bytes("notes.md", None, b"# Title\nhello".to_vec())
+            .unwrap();
         assert_eq!(a.kind, AttachmentKind::Text);
         assert_eq!(a.mime, "text/markdown");
         assert_eq!(s.text(&a.id).unwrap(), "# Title\nhello");
@@ -359,13 +389,18 @@ mod tests {
         let png = [0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A, 1, 2, 3];
         let a = s.ingest_bytes("shot.png", None, png.to_vec()).unwrap();
         assert_eq!(a.kind, AttachmentKind::Image);
-        assert!(s.data_url(&a).unwrap().starts_with("data:image/png;base64,"));
+        assert!(s
+            .data_url(&a)
+            .unwrap()
+            .starts_with("data:image/png;base64,"));
     }
 
     #[test]
     fn binary_keeps_metadata_only() {
         let (s, _d) = store();
-        let a = s.ingest_bytes("blob.dat", None, vec![0, 1, 2, 3, 0, 9]).unwrap();
+        let a = s
+            .ingest_bytes("blob.dat", None, vec![0, 1, 2, 3, 0, 9])
+            .unwrap();
         assert_eq!(a.kind, AttachmentKind::Binary);
         assert_eq!(a.text_chars, 0);
         assert!(a.note.is_some());
@@ -375,7 +410,9 @@ mod tests {
     #[test]
     fn long_text_is_truncated() {
         let (s, _d) = store();
-        let a = s.ingest_text("big.txt", &"x".repeat(MAX_TEXT_CHARS + 500)).unwrap();
+        let a = s
+            .ingest_text("big.txt", &"x".repeat(MAX_TEXT_CHARS + 500))
+            .unwrap();
         assert!(a.truncated);
         assert_eq!(a.text_chars as usize, MAX_TEXT_CHARS);
     }
@@ -383,7 +420,9 @@ mod tests {
     #[test]
     fn names_are_sanitized_and_gc_keeps_referenced_files() {
         let (s, _d) = store();
-        let a = s.ingest_bytes("../../etc/passwd", Some("text/plain"), b"root".to_vec()).unwrap();
+        let a = s
+            .ingest_bytes("../../etc/passwd", Some("text/plain"), b"root".to_vec())
+            .unwrap();
         assert_eq!(a.name, "passwd");
         let b = s.ingest_text("second.txt", "keep me").unwrap();
         s.gc(&HashSet::from([b.id.clone()]));
@@ -394,7 +433,9 @@ mod tests {
     #[test]
     fn oversized_files_are_rejected() {
         let (s, _d) = store();
-        let err = s.ingest_bytes("huge.bin", None, vec![7; MAX_FILE_BYTES as usize + 1]).unwrap_err();
+        let err = s
+            .ingest_bytes("huge.bin", None, vec![7; MAX_FILE_BYTES as usize + 1])
+            .unwrap_err();
         assert!(err.to_string().contains("limit"));
     }
 }

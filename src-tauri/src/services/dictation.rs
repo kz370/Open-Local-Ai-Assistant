@@ -71,13 +71,17 @@ pub async fn correct_text(ai: &dyn AiService, model: &str, text: &str) -> AppRes
     visible.push_str(&filter.finish().0);
     let cleaned = sanitize_correction(&visible);
     if cleaned.is_empty() {
-        return Err(AppError::LmStudio("correction model returned no text".into()));
+        return Err(AppError::LmStudio(
+            "correction model returned no text".into(),
+        ));
     }
     // Guard against a model that "answers" instead of correcting. An emoji
     // stands in for a spoken phrase ("heart emoji"), so it counts as one.
     let (a, b) = (text.chars().count() as f32, spoken_len(&cleaned) as f32);
     if b > a * 2.0 + 40.0 || b < a * 0.3 {
-        return Err(AppError::LmStudio("correction output did not resemble the dictated text".into()));
+        return Err(AppError::LmStudio(
+            "correction output did not resemble the dictated text".into(),
+        ));
     }
     Ok(cleaned)
 }
@@ -85,7 +89,9 @@ pub async fn correct_text(ai: &dyn AiService, model: &str, text: &str) -> AppRes
 /// Character count with each emoji weighted as the phrase it replaced.
 fn spoken_len(s: &str) -> usize {
     const EMOJI_PHRASE_CHARS: usize = 10;
-    s.chars().map(|c| if is_emoji(c) { EMOJI_PHRASE_CHARS } else { 1 }).sum()
+    s.chars()
+        .map(|c| if is_emoji(c) { EMOJI_PHRASE_CHARS } else { 1 })
+        .sum()
 }
 
 fn is_emoji(c: char) -> bool {
@@ -104,9 +110,15 @@ fn sanitize_correction(s: &str) -> String {
 
 #[cfg(windows)]
 fn modifiers_down() -> bool {
-    use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_CONTROL, VK_LWIN, VK_MENU, VK_RWIN, VK_SHIFT};
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        GetAsyncKeyState, VK_CONTROL, VK_LWIN, VK_MENU, VK_RWIN, VK_SHIFT,
+    };
     // SAFETY: GetAsyncKeyState has no preconditions.
-    unsafe { [VK_CONTROL, VK_MENU, VK_SHIFT, VK_LWIN, VK_RWIN].iter().any(|k| (GetAsyncKeyState(k.0 as i32) as u16 & 0x8000) != 0) }
+    unsafe {
+        [VK_CONTROL, VK_MENU, VK_SHIFT, VK_LWIN, VK_RWIN]
+            .iter()
+            .any(|k| (GetAsyncKeyState(k.0 as i32) as u16 & 0x8000) != 0)
+    }
 }
 
 #[cfg(not(windows))]
@@ -126,13 +138,16 @@ fn keyboard_settled() -> AppResult<enigo::Enigo> {
         std::thread::sleep(Duration::from_millis(30));
     }
     std::thread::sleep(Duration::from_millis(60));
-    Enigo::new(&Settings::default()).map_err(|e| AppError::Other(format!("keyboard input unavailable: {e}")))
+    Enigo::new(&Settings::default())
+        .map_err(|e| AppError::Other(format!("keyboard input unavailable: {e}")))
 }
 
 fn backspace(enigo: &mut enigo::Enigo, n: usize) -> AppResult<()> {
     use enigo::{Direction, Key, Keyboard};
     for _ in 0..n {
-        enigo.key(Key::Backspace, Direction::Click).map_err(|e| AppError::Other(format!("backspace failed: {e}")))?;
+        enigo
+            .key(Key::Backspace, Direction::Click)
+            .map_err(|e| AppError::Other(format!("backspace failed: {e}")))?;
     }
     Ok(())
 }
@@ -150,7 +165,9 @@ fn reconcile(mut enigo: enigo::Enigo, prev: &str, next: &str) -> AppResult<()> {
     backspace(&mut enigo, p.len() - common)?;
     let suffix: String = n[common..].iter().collect();
     if !suffix.is_empty() {
-        enigo.text(&suffix).map_err(|e| AppError::Other(format!("typing failed: {e}")))?;
+        enigo
+            .text(&suffix)
+            .map_err(|e| AppError::Other(format!("typing failed: {e}")))?;
     }
     Ok(())
 }
@@ -162,7 +179,8 @@ fn apply_delta_raw(prev: &str, next: &str) -> AppResult<()> {
     if prev == next {
         return Ok(());
     }
-    let enigo = enigo::Enigo::new(&enigo::Settings::default()).map_err(|e| AppError::Other(format!("keyboard input unavailable: {e}")))?;
+    let enigo = enigo::Enigo::new(&enigo::Settings::default())
+        .map_err(|e| AppError::Other(format!("keyboard input unavailable: {e}")))?;
     reconcile(enigo, prev, next)
 }
 
@@ -190,7 +208,10 @@ impl LiveTyper {
     /// Text currently on screen, best-effort (may lag briefly behind an
     /// in-flight typing operation).
     pub fn snapshot(&self) -> String {
-        self.current.lock().unwrap_or_else(|p| p.into_inner()).clone()
+        self.current
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .clone()
     }
 
     /// Clears tracked state without touching the target application. Call at
@@ -215,7 +236,11 @@ impl LiveTyper {
         std::thread::spawn(move || {
             let typer = &app.state::<AppState>().dictation_live_typer;
             loop {
-                let next = typer.target.lock().unwrap_or_else(|p| p.into_inner()).take();
+                let next = typer
+                    .target
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner())
+                    .take();
                 let Some(next) = next else { break };
                 let prev = typer.snapshot();
                 if prev != next {
@@ -249,7 +274,11 @@ impl LiveTyper {
             std::thread::sleep(Duration::from_millis(5));
         }
         let prev = self.snapshot();
-        let res = if prev.is_empty() { Ok(()) } else { backspace(&mut keyboard_settled()?, prev.chars().count()) };
+        let res = if prev.is_empty() {
+            Ok(())
+        } else {
+            backspace(&mut keyboard_settled()?, prev.chars().count())
+        };
         self.reset();
         res
     }
@@ -263,9 +292,12 @@ pub fn insert_text(text: &str, settings: &DictationSettings) -> AppResult<()> {
     }
     let mut enigo = keyboard_settled()?;
     if settings.insert_method == "paste" {
-        let mut clipboard = arboard::Clipboard::new().map_err(|e| AppError::Other(format!("clipboard unavailable: {e}")))?;
+        let mut clipboard = arboard::Clipboard::new()
+            .map_err(|e| AppError::Other(format!("clipboard unavailable: {e}")))?;
         let previous = clipboard.get_text().ok();
-        clipboard.set_text(text.to_string()).map_err(|e| AppError::Other(e.to_string()))?;
+        clipboard
+            .set_text(text.to_string())
+            .map_err(|e| AppError::Other(e.to_string()))?;
         std::thread::sleep(Duration::from_millis(40));
         #[cfg(target_os = "macos")]
         let modifier = Key::Meta;
@@ -281,7 +313,9 @@ pub fn insert_text(text: &str, settings: &DictationSettings) -> AppResult<()> {
         }
         res.map_err(|e| AppError::Other(format!("paste failed: {e}")))
     } else {
-        enigo.text(text).map_err(|e| AppError::Other(format!("typing failed: {e}")))
+        enigo
+            .text(text)
+            .map_err(|e| AppError::Other(format!("typing failed: {e}")))
     }
 }
 
@@ -315,7 +349,12 @@ mod tests {
         async fn load_model(&self, _: &str, _: Option<u32>) -> AppResult<()> {
             Ok(())
         }
-        async fn chat(&self, req: ChatRequest, _: CancellationToken, cb: &mut (dyn FnMut(StreamChunk) + Send)) -> AppResult<ChatCompletion> {
+        async fn chat(
+            &self,
+            req: ChatRequest,
+            _: CancellationToken,
+            cb: &mut (dyn FnMut(StreamChunk) + Send),
+        ) -> AppResult<ChatCompletion> {
             assert_eq!(req.temperature, 0.1);
             assert!(req.messages[0].content_text().contains("Do not translate"));
             cb(StreamChunk::Content(self.0.into()));
@@ -325,13 +364,30 @@ mod tests {
 
     #[tokio::test]
     async fn correction_applies_and_guards() {
-        let out = correct_text(&Echo("<think>hmm</think>Hello, how are you?"), "small", "hello how are you").await.unwrap();
+        let out = correct_text(
+            &Echo("<think>hmm</think>Hello, how are you?"),
+            "small",
+            "hello how are you",
+        )
+        .await
+        .unwrap();
         assert_eq!(out, "Hello, how are you?");
         let long_answer: &'static str = "Sure! Here is a very long essay about many things that the user never asked for in the first place, with lots of detail.";
-        assert!(correct_text(&Echo(long_answer), "small", "hi there").await.is_err());
+        assert!(correct_text(&Echo(long_answer), "small", "hi there")
+            .await
+            .is_err());
         // A spoken emoji name may shrink to a single character.
-        assert_eq!(correct_text(&Echo("❤️"), "small", "heart emoji").await.unwrap(), "❤️");
-        assert!(correct_text(&Echo("ok"), "small", "please write the whole report for me").await.is_err());
+        assert_eq!(
+            correct_text(&Echo("❤️"), "small", "heart emoji")
+                .await
+                .unwrap(),
+            "❤️"
+        );
+        assert!(
+            correct_text(&Echo("ok"), "small", "please write the whole report for me")
+                .await
+                .is_err()
+        );
     }
 
     #[test]

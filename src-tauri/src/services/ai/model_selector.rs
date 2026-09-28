@@ -68,7 +68,14 @@ pub fn score_model(m: &ModelInfo, hw: &HardwareInfo) -> (i32, Vec<String>) {
             reasons.push("fits_gpu".into());
         } else if fits_ram && !m.loaded {
             score += if has_gpu { 5 } else { 12 };
-            reasons.push(if has_gpu { "partial_offload" } else { "fits_ram" }.into());
+            reasons.push(
+                if has_gpu {
+                    "partial_offload"
+                } else {
+                    "fits_ram"
+                }
+                .into(),
+            );
         } else if !m.loaded {
             score -= 100;
             reasons.push("too_large".into());
@@ -108,7 +115,10 @@ pub fn score_model(m: &ModelInfo, hw: &HardwareInfo) -> (i32, Vec<String>) {
         reasons.push("tool_use".into());
     }
 
-    let ctx = m.loaded_context_length.or(m.max_context_length).unwrap_or(0);
+    let ctx = m
+        .loaded_context_length
+        .or(m.max_context_length)
+        .unwrap_or(0);
     if ctx >= 16_000 {
         score += 5;
     } else if ctx > 0 && ctx < 8_000 {
@@ -161,13 +171,21 @@ mod tests {
         HardwareInfo {
             total_ram_bytes: 96 * GB as u64,
             physical_cores: 6,
-            gpus: vec![GpuInfo { name: "RTX".into(), vendor: "nvidia".into(), vram_bytes: vram_gb * GB as u64 }],
+            gpus: vec![GpuInfo {
+                name: "RTX".into(),
+                vendor: "nvidia".into(),
+                vram_bytes: vram_gb * GB as u64,
+            }],
             ..Default::default()
         }
     }
 
     fn cpu_machine(ram_gb: u64) -> HardwareInfo {
-        HardwareInfo { total_ram_bytes: ram_gb * GB as u64, physical_cores: 4, ..Default::default() }
+        HardwareInfo {
+            total_ram_bytes: ram_gb * GB as u64,
+            physical_cores: 4,
+            ..Default::default()
+        }
     }
 
     fn model(id: &str, params: &str, size_gb: f64, tool: bool, loaded: bool) -> ModelInfo {
@@ -220,7 +238,10 @@ mod tests {
 
     #[test]
     fn cpu_only_prefers_small_models() {
-        let models = vec![model("mid-14b", "14B", 9.0, true, false), model("small-7b", "7B", 4.5, true, false)];
+        let models = vec![
+            model("mid-14b", "14B", 9.0, true, false),
+            model("small-7b", "7B", 4.5, true, false),
+        ];
         let s = select_model(&models, &cpu_machine(16)).unwrap();
         assert_eq!(s.model_id, "small-7b");
     }
@@ -235,19 +256,35 @@ mod tests {
 
     #[test]
     fn tool_use_breaks_near_ties() {
-        let models = vec![model("a-8b", "8B", 5.0, false, false), model("b-8b", "8B", 5.0, true, false)];
-        assert_eq!(select_model(&models, &gpu_machine(12)).unwrap().model_id, "b-8b");
+        let models = vec![
+            model("a-8b", "8B", 5.0, false, false),
+            model("b-8b", "8B", 5.0, true, false),
+        ];
+        assert_eq!(
+            select_model(&models, &gpu_machine(12)).unwrap().model_id,
+            "b-8b"
+        );
     }
 
     #[test]
     fn unknown_metadata_still_selects_something() {
-        let models = vec![ModelInfo { id: "some-model".into(), kind: "unknown".into(), ..Default::default() }];
-        assert_eq!(select_model(&models, &cpu_machine(8)).unwrap().model_id, "some-model");
+        let models = vec![ModelInfo {
+            id: "some-model".into(),
+            kind: "unknown".into(),
+            ..Default::default()
+        }];
+        assert_eq!(
+            select_model(&models, &cpu_machine(8)).unwrap().model_id,
+            "some-model"
+        );
     }
 
     #[test]
     fn params_from_id_fallback() {
-        let m = ModelInfo { id: "google/gemma-3-12b".into(), ..Default::default() };
+        let m = ModelInfo {
+            id: "google/gemma-3-12b".into(),
+            ..Default::default()
+        };
         assert_eq!(params_of(&m), Some(12.0));
     }
 }

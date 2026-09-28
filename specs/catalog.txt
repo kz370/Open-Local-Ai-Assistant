@@ -234,7 +234,7 @@ services/chat/orchestrator.rs :: ChatEngine::send — `pub async fn send(&self, 
 services/chat/orchestrator.rs :: ChatEngine::explain — `pub async fn explain(id, selection, passage, emit)`; out-of-conversation explanation.
 services/chat/orchestrator.rs :: ChatEngine::stop / stop_all / is_busy — Turn cancellation and busy state over the `active` token map.
 services/chat/orchestrator.rs :: ChatEngine::confirm_tool — Resolves a pending `oneshot::Sender<bool>` confirmation.
-services/chat/orchestrator.rs :: SendInput — `{ turnId, conversationId, text, spokenLanguage, voice, attachmentIds }`.
+services/chat/orchestrator.rs :: SendInput — `{ turnId, conversationId, text, spokenLanguage, voice, attachmentIds, webSearchEnabled?: boolean, mcpEnabled?: Record<string, boolean> }`.
 services/chat/orchestrator.rs :: ChatEvent — `#[serde(tag="type", rename_all="camelCase")]`; 8 variants `started|delta|reasoning|toolStarted|toolAwaitingConfirmation|toolFinished|done|error`.
 services/chat/orchestrator.rs :: Emit — `pub type Emit = Arc<dyn Fn(ChatEvent) + Send + Sync>`.
 services/chat/orchestrator.rs :: ActivityRecord — Persisted per-tool record stored in `tool_activity_json`.

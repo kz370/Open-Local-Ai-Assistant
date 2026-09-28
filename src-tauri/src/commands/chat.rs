@@ -10,7 +10,11 @@ use tauri::ipc::Channel;
 use tauri::State;
 
 #[tauri::command]
-pub async fn chat_send(state: State<'_, AppState>, input: SendInput, on_event: Channel<ChatEvent>) -> CmdResult<()> {
+pub async fn chat_send(
+    state: State<'_, AppState>,
+    input: SendInput,
+    on_event: Channel<ChatEvent>,
+) -> CmdResult<()> {
     let chat = state.chat.clone();
     let emit = Arc::new(move |ev: ChatEvent| {
         let _ = on_event.send(ev);
@@ -22,7 +26,13 @@ pub async fn chat_send(state: State<'_, AppState>, input: SendInput, on_event: C
 
 /// Explains selected reply text in a popup; `chat_stop(id)` cancels it.
 #[tauri::command]
-pub async fn chat_explain(state: State<'_, AppState>, id: String, selection: String, passage: String, on_event: Channel<ExplainEvent>) -> CmdResult<()> {
+pub async fn chat_explain(
+    state: State<'_, AppState>,
+    id: String,
+    selection: String,
+    passage: String,
+    on_event: Channel<ExplainEvent>,
+) -> CmdResult<()> {
     let chat = state.chat.clone();
     chat.explain(&id, &selection, &passage, &move |ev| {
         let _ = on_event.send(ev);
@@ -42,8 +52,14 @@ pub fn chat_confirm_tool(state: State<'_, AppState>, call_id: String, approved: 
 }
 
 #[tauri::command]
-pub fn conv_list(state: State<'_, AppState>, limit: Option<u32>, offset: Option<u32>) -> CmdResult<Vec<Conversation>> {
-    state.db.list_conversations(limit.unwrap_or(100).min(1000), offset.unwrap_or(0))
+pub fn conv_list(
+    state: State<'_, AppState>,
+    limit: Option<u32>,
+    offset: Option<u32>,
+) -> CmdResult<Vec<Conversation>> {
+    state
+        .db
+        .list_conversations(limit.unwrap_or(100).min(1000), offset.unwrap_or(0))
 }
 
 #[tauri::command]
@@ -54,7 +70,12 @@ pub fn conv_search(state: State<'_, AppState>, query: String) -> CmdResult<Vec<S
 #[tauri::command]
 pub fn conv_get(state: State<'_, AppState>, id: String) -> CmdResult<(Conversation, Vec<Message>)> {
     let c = state.db.get_conversation(&id)?;
-    let msgs = state.db.list_messages(&id)?.into_iter().filter(|m| m.role == "user" || m.role == "assistant").collect();
+    let msgs = state
+        .db
+        .list_messages(&id)?
+        .into_iter()
+        .filter(|m| m.role == "user" || m.role == "assistant")
+        .collect();
     Ok((c, msgs))
 }
 
@@ -90,7 +111,12 @@ pub fn conv_set_last(state: State<'_, AppState>, id: Option<String>) -> CmdResul
 }
 
 #[tauri::command]
-pub fn conv_export(state: State<'_, AppState>, ids: Vec<String>, format: ExportFormat, path: String) -> CmdResult<()> {
+pub fn conv_export(
+    state: State<'_, AppState>,
+    ids: Vec<String>,
+    format: ExportFormat,
+    path: String,
+) -> CmdResult<()> {
     if ids.is_empty() {
         return Err(AppError::Invalid("nothing to export".into()));
     }

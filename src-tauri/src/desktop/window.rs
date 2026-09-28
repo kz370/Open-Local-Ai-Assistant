@@ -5,12 +5,15 @@
 //! opens the chat window and hides the bubble; minimizing the chat returns to
 //! the bubble.
 
-use crate::settings::WindowGeometry;
 use crate::services::stt::session::ListenMode;
+use crate::settings::WindowGeometry;
 use crate::state::AppState;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
-use tauri::{AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
+use tauri::{
+    AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, PhysicalSize, WebviewUrl,
+    WebviewWindow, WebviewWindowBuilder,
+};
 
 pub const MAIN: &str = "main";
 pub const BUBBLE: &str = "bubble";
@@ -46,7 +49,10 @@ fn apply_size_bounds(win: &WebviewWindow, compact: bool) {
 static SUPPRESS_UNTIL: AtomicU64 = AtomicU64::new(0);
 
 fn now_ms() -> u64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
 }
 
 fn suppress_persistence() {
@@ -87,7 +93,12 @@ fn animate_rect(win: &WebviewWindow, start: (i32, i32, u32, u32), end: (i32, i32
 }
 
 /// Computes the top-left position for a preset inside the monitor work area.
-pub fn preset_position(preset: &str, work_pos: (i32, i32), work_size: (u32, u32), win: (u32, u32)) -> (i32, i32) {
+pub fn preset_position(
+    preset: &str,
+    work_pos: (i32, i32),
+    work_size: (u32, u32),
+    win: (u32, u32),
+) -> (i32, i32) {
     let (wx, wy) = work_pos;
     let (ww, wh) = (work_size.0 as i32, work_size.1 as i32);
     let (w, h) = (win.0 as i32, win.1 as i32);
@@ -99,10 +110,18 @@ pub fn preset_position(preset: &str, work_pos: (i32, i32), work_size: (u32, u32)
 }
 
 /// Clamps a window rectangle into the work area so it is always fully visible.
-pub fn clamp_into(work_pos: (i32, i32), work_size: (u32, u32), pos: (i32, i32), win: (u32, u32)) -> (i32, i32) {
+pub fn clamp_into(
+    work_pos: (i32, i32),
+    work_size: (u32, u32),
+    pos: (i32, i32),
+    win: (u32, u32),
+) -> (i32, i32) {
     let max_x = work_pos.0 + work_size.0 as i32 - win.0 as i32;
     let max_y = work_pos.1 + work_size.1 as i32 - win.1 as i32;
-    (pos.0.clamp(work_pos.0, max_x.max(work_pos.0)), pos.1.clamp(work_pos.1, max_y.max(work_pos.1)))
+    (
+        pos.0.clamp(work_pos.0, max_x.max(work_pos.0)),
+        pos.1.clamp(work_pos.1, max_y.max(work_pos.1)),
+    )
 }
 
 fn on_any_monitor(window: &WebviewWindow, x: i32, y: i32) -> bool {
@@ -112,25 +131,44 @@ fn on_any_monitor(window: &WebviewWindow, x: i32, y: i32) -> bool {
             ms.iter().any(|m| {
                 let p = m.position();
                 let s = m.size();
-                x >= p.x - 50 && y >= p.y - 50 && x < p.x + s.width as i32 - 50 && y < p.y + s.height as i32 - 50
+                x >= p.x - 50
+                    && y >= p.y - 50
+                    && x < p.x + s.width as i32 - 50
+                    && y < p.y + s.height as i32 - 50
             })
         })
         .unwrap_or(false)
 }
 
 /// Top-left the window should sit at for `preset` (or the saved custom spot).
-fn position_for(window: &WebviewWindow, preset: &str, custom: &WindowGeometry, size: PhysicalSize<u32>) -> Option<(i32, i32)> {
+fn position_for(
+    window: &WebviewWindow,
+    preset: &str,
+    custom: &WindowGeometry,
+    size: PhysicalSize<u32>,
+) -> Option<(i32, i32)> {
     if preset == "custom" && on_any_monitor(window, custom.x, custom.y) {
         return Some((custom.x, custom.y));
     }
-    let monitor = window.current_monitor().ok().flatten().or_else(|| window.primary_monitor().ok().flatten())?;
+    let monitor = window
+        .current_monitor()
+        .ok()
+        .flatten()
+        .or_else(|| window.primary_monitor().ok().flatten())?;
     let area = monitor.work_area();
-    Some(preset_position(preset, (area.position.x, area.position.y), (area.size.width, area.size.height), (size.width, size.height)))
+    Some(preset_position(
+        preset,
+        (area.position.x, area.position.y),
+        (area.size.width, area.size.height),
+        (size.width, size.height),
+    ))
 }
 
 pub fn apply_position(window: &WebviewWindow, preset: &str, custom: &WindowGeometry) {
     suppress_persistence();
-    let Ok(size) = window.outer_size() else { return };
+    let Ok(size) = window.outer_size() else {
+        return;
+    };
     if let Some((x, y)) = position_for(window, preset, custom, size) {
         let _ = window.set_position(PhysicalPosition::new(x, y));
     }
@@ -212,7 +250,12 @@ fn place_bubble(app: &AppHandle, w: &WebviewWindow) {
     }
     if let Some(m) = w.primary_monitor().ok().flatten() {
         let area = m.work_area();
-        let (x, y) = preset_position("bottom-right", (area.position.x, area.position.y), (area.size.width, area.size.height), (size.width, size.height));
+        let (x, y) = preset_position(
+            "bottom-right",
+            (area.position.x, area.position.y),
+            (area.size.width, area.size.height),
+            (size.width, size.height),
+        );
         let _ = w.set_position(PhysicalPosition::new(x, y));
     }
 }
@@ -226,7 +269,10 @@ pub fn show_bubble(app: &AppHandle) {
 /// Bubble center relative to main origin, in logical (CSS) px for veil.
 fn rel_logical(main_x: i32, main_y: i32, cx: i32, cy: i32, scale: f64) -> (f32, f32) {
     let s = if scale > 0.0 { scale } else { 1.0 };
-    (((cx - main_x) as f64 / s) as f32, ((cy - main_y) as f64 / s) as f32)
+    (
+        ((cx - main_x) as f64 / s) as f32,
+        ((cy - main_y) as f64 / s) as f32,
+    )
 }
 
 /// Target chat size in physical px. Heals collapsed window (shrink anim
@@ -242,14 +288,20 @@ fn chat_target_size(win: &WebviewWindow, s: &crate::settings::Settings) -> Physi
     }
     if s.general.compact {
         let scale = win.scale_factor().unwrap_or(1.0);
-        return PhysicalSize::new((COMPACT_SIZE.0 * scale).round() as u32, (COMPACT_SIZE.1 * scale).round() as u32);
+        return PhysicalSize::new(
+            (COMPACT_SIZE.0 * scale).round() as u32,
+            (COMPACT_SIZE.1 * scale).round() as u32,
+        );
     }
     let g = &s.general.window;
     if g.width >= 320 && g.height >= 260 {
         return PhysicalSize::new(g.width, g.height);
     }
     let scale = win.scale_factor().unwrap_or(1.0);
-    PhysicalSize::new((420.0 * scale).round() as u32, (640.0 * scale).round() as u32)
+    PhysicalSize::new(
+        (420.0 * scale).round() as u32,
+        (640.0 * scale).round() as u32,
+    )
 }
 
 pub fn hide_bubble(app: &AppHandle) {
@@ -288,7 +340,8 @@ pub fn show_main(app: &AppHandle, focus_input: bool) {
         if s.window_position == "bottom-left" {
             origin = "bottom-left".to_string();
         }
-        target = position_for(&win, &s.window_position, &s.window, size).map(|(x, y)| (x, y, size.width, size.height));
+        target = position_for(&win, &s.window_position, &s.window, size)
+            .map(|(x, y)| (x, y, size.width, size.height));
     }
     if win.is_minimized().unwrap_or(false) {
         let _ = win.unminimize();
@@ -304,7 +357,13 @@ pub fn show_main(app: &AppHandle, focus_input: bool) {
         .or_else(|| win.outer_position().map(|p| (p.x, p.y)).ok())
         .unwrap_or((0, 0));
     let (fx, fy) = match bubble_rect {
-        Some((bx, by, bw, bh)) => rel_logical(main_origin.0, main_origin.1, bx + bw as i32 / 2, by + bh as i32 / 2, scale),
+        Some((bx, by, bw, bh)) => rel_logical(
+            main_origin.0,
+            main_origin.1,
+            bx + bw as i32 / 2,
+            by + bh as i32 / 2,
+            scale,
+        ),
         _ => {
             // Fallback: origin corner of current window size.
             let sz = win.outer_size().unwrap_or(PhysicalSize::new(420, 640));
@@ -319,7 +378,11 @@ pub fn show_main(app: &AppHandle, focus_input: bool) {
     // Pre-arm BEFORE swapping: hidden webview still runs JS, so opening
     // state commits offscreen. First visible frame already mid-zoom at bubble
     // spot. Never a frame with both bubble + full chat, never stale veil.
-    let _ = app.emit_to(MAIN, "app://window-shown", serde_json::json!({ "origin": origin, "animated": animated, "fx": fx, "fy": fy }));
+    let _ = app.emit_to(
+        MAIN,
+        "app://window-shown",
+        serde_json::json!({ "origin": origin, "animated": animated, "fx": fx, "fy": fy }),
+    );
     std::thread::sleep(std::time::Duration::from_millis(50));
     suppress_persistence();
     // Snap to anchor. Resize loop sluggish on Windows; shell zoom in webview
@@ -366,17 +429,31 @@ pub fn minimize_to_bubble(app: &AppHandle) {
     }
     // Bubble center in main logical px for shrink target. Bubble hidden but
     // retains last position.
-    let (fx, fy) = match (w.outer_position(), w.outer_size(), app.get_webview_window(BUBBLE)) {
+    let (fx, fy) = match (
+        w.outer_position(),
+        w.outer_size(),
+        app.get_webview_window(BUBBLE),
+    ) {
         (Ok(mp), Ok(_), Some(b)) => match (b.outer_position(), b.outer_size()) {
             (Ok(bp), Ok(bs)) => {
                 let scale = w.scale_factor().unwrap_or(1.0);
-                rel_logical(mp.x, mp.y, bp.x + bs.width as i32 / 2, bp.y + bs.height as i32 / 2, scale)
+                rel_logical(
+                    mp.x,
+                    mp.y,
+                    bp.x + bs.width as i32 / 2,
+                    bp.y + bs.height as i32 / 2,
+                    scale,
+                )
             }
             _ => (0.0, 0.0),
         },
         _ => (0.0, 0.0),
     };
-    let _ = app.emit_to(MAIN, "app://window-closing", serde_json::json!({ "fx": fx, "fy": fy }));
+    let _ = app.emit_to(
+        MAIN,
+        "app://window-closing",
+        serde_json::json!({ "fx": fx, "fy": fy }),
+    );
     std::thread::sleep(std::time::Duration::from_millis(190));
     let _ = w.hide();
     show_bubble(app);
@@ -428,7 +505,10 @@ pub fn on_main_window_event(app: &AppHandle, event: &tauri::WindowEvent) {
             });
         }
         tauri::WindowEvent::Resized(size) => {
-            if now_ms() < SUPPRESS_UNTIL.load(Ordering::Relaxed) || size.width == 0 || size.height == 0 {
+            if now_ms() < SUPPRESS_UNTIL.load(Ordering::Relaxed)
+                || size.width == 0
+                || size.height == 0
+            {
                 return;
             }
             // The maximized size is temporary; restoring brings back the saved one.
@@ -454,7 +534,9 @@ pub fn on_main_window_event(app: &AppHandle, event: &tauri::WindowEvent) {
 /// restoring puts the window back at its preset or custom spot. Returns
 /// whether the window is maximized now.
 pub fn toggle_maximize(app: &AppHandle) -> bool {
-    let Some(win) = main_window(app) else { return false };
+    let Some(win) = main_window(app) else {
+        return false;
+    };
     let s = app.state::<AppState>().settings.get();
     suppress_persistence();
     if win.is_maximized().unwrap_or(false) {
@@ -481,7 +563,9 @@ pub fn set_compact(app: &AppHandle, compact: bool) {
     if compact && main_window(app).is_some_and(|w| w.is_maximized().unwrap_or(false)) {
         toggle_maximize(app);
     }
-    let Ok(s) = state.settings.update(|s| s.general.compact = compact) else { return };
+    let Ok(s) = state.settings.update(|s| s.general.compact = compact) else {
+        return;
+    };
     // Settings windows mirror this switch, so tell every window about it.
     let _ = app.emit("settings://changed", &s);
     let Some(win) = main_window(app) else { return };
@@ -514,17 +598,21 @@ pub fn ensure_settings(app: &AppHandle) -> tauri::Result<WebviewWindow> {
         .flatten()
         .map(|m| (m.size().height as f64 / m.scale_factor() - 120.0).max(520.0))
         .map_or(SETTINGS_H, |avail| avail.min(SETTINGS_H));
-    let w = match WebviewWindowBuilder::new(app, SETTINGS, WebviewUrl::App("index.html#/settings/general".into()))
-        .title("Open Local Assistant — Settings")
-        .inner_size(1000.0, height)
-        .min_inner_size(720.0, 520.0)
-        .max_inner_size(1400.0, 1000.0)
-        .center()
-        // Transparent like every working window (bubble/overlay/main):
-        // CSS paints opaque bg, so look identical when healthy.
-        .transparent(true)
-        .visible(false)
-        .build()
+    let w = match WebviewWindowBuilder::new(
+        app,
+        SETTINGS,
+        WebviewUrl::App("index.html#/settings/general".into()),
+    )
+    .title("Open Local Assistant — Settings")
+    .inner_size(1000.0, height)
+    .min_inner_size(720.0, 520.0)
+    .max_inner_size(1400.0, 1000.0)
+    .center()
+    // Transparent like every working window (bubble/overlay/main):
+    // CSS paints opaque bg, so look identical when healthy.
+    .transparent(true)
+    .visible(false)
+    .build()
     {
         Ok(w) => w,
         Err(e) => {
@@ -556,7 +644,11 @@ pub fn open_settings(app: &AppHandle, section: Option<&str>) -> tauri::Result<()
     let existed = app.get_webview_window(SETTINGS).is_some();
     let w = ensure_settings(app)?;
     tracing::info!(existed, "open_settings window ready");
-    let _ = app.emit_to(SETTINGS, "app://navigate", format!("/settings/{}", section.unwrap_or("general")));
+    let _ = app.emit_to(
+        SETTINGS,
+        "app://navigate",
+        format!("/settings/{}", section.unwrap_or("general")),
+    );
     let _ = w.unminimize();
     if let Err(e) = w.show() {
         tracing::error!(error = %e, "open_settings show failed");
@@ -607,7 +699,10 @@ fn foreground_window() -> isize {
 fn focus_hwnd(raw: isize) {
     use windows::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
     use windows::Win32::UI::Input::KeyboardAndMouse::SetFocus;
-    use windows::Win32::UI::WindowsAndMessaging::{BringWindowToTop, GetForegroundWindow, GetWindowThreadProcessId, IsWindow, SetForegroundWindow};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        BringWindowToTop, GetForegroundWindow, GetWindowThreadProcessId, IsWindow,
+        SetForegroundWindow,
+    };
     if raw == 0 {
         return;
     }
@@ -617,8 +712,12 @@ fn focus_hwnd(raw: isize) {
         if !IsWindow(Some(target)).as_bool() {
             return;
         }
-        let (this, other) = (GetCurrentThreadId(), GetWindowThreadProcessId(GetForegroundWindow(), None));
-        let attached = other != 0 && other != this && AttachThreadInput(this, other, true).as_bool();
+        let (this, other) = (
+            GetCurrentThreadId(),
+            GetWindowThreadProcessId(GetForegroundWindow(), None),
+        );
+        let attached =
+            other != 0 && other != this && AttachThreadInput(this, other, true).as_bool();
         let _ = BringWindowToTop(target);
         let _ = SetForegroundWindow(target);
         if attached {
@@ -632,7 +731,10 @@ fn focus_hwnd(raw: isize) {
 fn focus_hwnd(_raw: isize) {}
 
 fn overlay_hwnd(app: &AppHandle) -> isize {
-    app.get_webview_window(OVERLAY).and_then(|w| w.hwnd().ok()).map(|h| h.0 as isize).unwrap_or(0)
+    app.get_webview_window(OVERLAY)
+        .and_then(|w| w.hwnd().ok())
+        .map(|h| h.0 as isize)
+        .unwrap_or(0)
 }
 
 /// Remembers which window had focus when dictation started, so a reviewed
@@ -640,13 +742,19 @@ fn overlay_hwnd(app: &AppHandle) -> isize {
 pub fn remember_target(app: &AppHandle) {
     let fg = foreground_window();
     if fg != 0 && fg != overlay_hwnd(app) {
-        app.state::<AppState>().dictation_target.store(fg, Ordering::Relaxed);
+        app.state::<AppState>()
+            .dictation_target
+            .store(fg, Ordering::Relaxed);
     }
 }
 
 /// Gives keyboard focus back to the window dictation started in.
 pub fn restore_target(app: &AppHandle) {
-    focus_hwnd(app.state::<AppState>().dictation_target.load(Ordering::Relaxed));
+    focus_hwnd(
+        app.state::<AppState>()
+            .dictation_target
+            .load(Ordering::Relaxed),
+    );
 }
 
 /// Invisible room kept above and below the overlay card (logical px) so the
@@ -685,18 +793,28 @@ fn overlay_window_size(card_h: f64) -> LogicalSize<f64> {
 #[cfg(windows)]
 fn strip_frame_styles(raw: isize) {
     use windows::Win32::UI::WindowsAndMessaging::{
-        GetWindowLongPtrW, SetWindowLongPtrW, SetWindowPos, GWL_STYLE, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, WS_CAPTION,
-        WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
+        GetWindowLongPtrW, SetWindowLongPtrW, SetWindowPos, GWL_STYLE, SWP_FRAMECHANGED,
+        SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, WS_CAPTION, WS_MAXIMIZEBOX,
+        WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
     };
     let hwnd = hwnd_of(raw);
-    let frame = (WS_CAPTION | WS_THICKFRAME | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX).0 as isize;
+    let frame =
+        (WS_CAPTION | WS_THICKFRAME | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX).0 as isize;
     // SAFETY: plain Win32 calls on the overlay's own window handle.
     unsafe {
         let style = GetWindowLongPtrW(hwnd, GWL_STYLE);
         let stripped = (style & !frame) | WS_POPUP.0 as isize;
         if stripped != style {
             SetWindowLongPtrW(hwnd, GWL_STYLE, stripped);
-            let _ = SetWindowPos(hwnd, None, 0, 0, 0, 0, SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+            let _ = SetWindowPos(
+                hwnd,
+                None,
+                0,
+                0,
+                0,
+                0,
+                SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
+            );
         }
     }
 }
@@ -710,7 +828,9 @@ fn strip_frame_styles(raw: isize) {
 /// which is also what listening needs.
 #[cfg(windows)]
 fn set_overlay_activatable(app: &AppHandle, _w: &WebviewWindow, activatable: bool) {
-    use windows::Win32::UI::WindowsAndMessaging::{GetWindowLongPtrW, SetWindowLongPtrW, GWL_EXSTYLE, WS_EX_NOACTIVATE};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetWindowLongPtrW, SetWindowLongPtrW, GWL_EXSTYLE, WS_EX_NOACTIVATE,
+    };
     let raw = overlay_hwnd(app);
     if raw == 0 {
         return;
@@ -739,7 +859,9 @@ fn set_overlay_activatable(_app: &AppHandle, w: &WebviewWindow, activatable: boo
 /// would otherwise show as a dim box and block clicks to the app behind.
 #[cfg(windows)]
 fn set_overlay_region(app: &AppHandle, w: &WebviewWindow, clip: bool) {
-    use windows::Win32::Graphics::Gdi::{CombineRgn, CreateRoundRectRgn, DeleteObject, SetWindowRgn, HGDIOBJ, RGN_OR};
+    use windows::Win32::Graphics::Gdi::{
+        CombineRgn, CreateRoundRectRgn, DeleteObject, SetWindowRgn, HGDIOBJ, RGN_OR,
+    };
     let raw = overlay_hwnd(app);
     let Ok(size) = w.outer_size() else { return };
     if raw == 0 {
@@ -760,11 +882,25 @@ fn set_overlay_region(app: &AppHandle, w: &WebviewWindow, clip: bool) {
             // CreateRoundRectRgn takes the corner ellipse's size (2x radius) and
             // leaves out the right and bottom edges, hence +1.
             let d = px(CARD_RADIUS + CARD_MARGIN) * 2;
-            let card = CreateRoundRectRgn(0, room, size.width as i32 + 1, size.height as i32 - room + 1, d, d);
+            let card = CreateRoundRectRgn(
+                0,
+                room,
+                size.width as i32 + 1,
+                size.height as i32 - room + 1,
+                d,
+                d,
+            );
             if let Some([x, y, mw, mh]) = menu {
                 let s = MENU_SHADOW;
                 let d = px(MENU_RADIUS + s) * 2;
-                let rgn = CreateRoundRectRgn(px(x - s), px(y - s), px(x + mw + s) + 1, px(y + mh + s) + 1, d, d);
+                let rgn = CreateRoundRectRgn(
+                    px(x - s),
+                    px(y - s),
+                    px(x + mw + s) + 1,
+                    px(y + mh + s) + 1,
+                    d,
+                    d,
+                );
                 CombineRgn(Some(card), Some(card), Some(rgn), RGN_OR);
                 let _ = DeleteObject(HGDIOBJ(rgn.0));
             }
@@ -823,7 +959,12 @@ fn overlay_review_now(app: &AppHandle, w: &WebviewWindow, review: bool) {
 /// whether there was one.
 pub fn discard_review(app: &AppHandle) -> bool {
     let state = app.state::<AppState>();
-    let had = state.dictation_review.lock().unwrap_or_else(|p| p.into_inner()).take().is_some();
+    let had = state
+        .dictation_review
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .take()
+        .is_some();
     if had {
         set_overlay_review(app, false);
         restore_target(app);
@@ -877,11 +1018,15 @@ fn default_overlay_position(w: &WebviewWindow) -> Option<(i32, i32)> {
     let m = w.primary_monitor().ok().flatten()?;
     let area = m.work_area();
     let scale = m.scale_factor();
-    let (cw, ch) = ((OVERLAY_W * scale).round() as i32, (OVERLAY_H * scale).round() as i32);
+    let (cw, ch) = (
+        (OVERLAY_W * scale).round() as i32,
+        (OVERLAY_H * scale).round() as i32,
+    );
     let x = area.position.x + (area.size.width as i32 - cw) / 2;
     // The visible card sits CARD_MARGIN inside its box; leave only a small gap
     // between it and the taskbar.
-    let y = area.position.y + area.size.height as i32 - ch + ((CARD_MARGIN - OVERLAY_BOTTOM_GAP) * scale).round() as i32;
+    let y = area.position.y + area.size.height as i32 - ch
+        + ((CARD_MARGIN - OVERLAY_BOTTOM_GAP) * scale).round() as i32;
     Some((x, y))
 }
 
@@ -897,7 +1042,9 @@ pub fn show_overlay(app: &AppHandle) {
 /// Keeps a saved card spot fully inside its monitor's work area (the card may
 /// have been dragged there when it was smaller, or on another resolution).
 fn card_on_screen(w: &WebviewWindow, x: i32, y: i32) -> (i32, i32) {
-    let Ok(monitors) = w.available_monitors() else { return (x, y) };
+    let Ok(monitors) = w.available_monitors() else {
+        return (x, y);
+    };
     let Some(m) = monitors.iter().find(|m| {
         let (p, s) = (m.position(), m.size());
         x >= p.x && y >= p.y && x < p.x + s.width as i32 && y < p.y + s.height as i32
@@ -905,9 +1052,17 @@ fn card_on_screen(w: &WebviewWindow, x: i32, y: i32) -> (i32, i32) {
         return (x, y);
     };
     let scale = m.scale_factor();
-    let size = ((OVERLAY_W * scale).round() as u32, (OVERLAY_H * scale).round() as u32);
+    let size = (
+        (OVERLAY_W * scale).round() as u32,
+        (OVERLAY_H * scale).round() as u32,
+    );
     let area = m.work_area();
-    clamp_into((area.position.x, area.position.y), (area.size.width, area.size.height), (x, y), size)
+    clamp_into(
+        (area.position.x, area.position.y),
+        (area.size.width, area.size.height),
+        (x, y),
+        size,
+    )
 }
 
 fn show_overlay_now(app: &AppHandle, w: &WebviewWindow) {
@@ -979,19 +1134,37 @@ mod tests {
     fn presets() {
         let work = ((0, 0), (1920, 1040));
         let win = (400, 600);
-        assert_eq!(preset_position("bottom-right", work.0, work.1, win), (1504, 424));
-        assert_eq!(preset_position("bottom-left", work.0, work.1, win), (16, 424));
+        assert_eq!(
+            preset_position("bottom-right", work.0, work.1, win),
+            (1504, 424)
+        );
+        assert_eq!(
+            preset_position("bottom-left", work.0, work.1, win),
+            (16, 424)
+        );
         assert_eq!(preset_position("center", work.0, work.1, win), (760, 220));
         // Secondary monitor to the left with an offset origin
-        assert_eq!(preset_position("bottom-right", (-1280, 0), (1280, 984), win), (-416, 368));
+        assert_eq!(
+            preset_position("bottom-right", (-1280, 0), (1280, 984), win),
+            (-416, 368)
+        );
     }
 
     #[test]
     fn chat_anchored_to_bubble_stays_on_screen() {
         // Bubble dragged to the top-left corner: chat would go off-screen, so it is clamped.
-        assert_eq!(clamp_into((0, 0), (1920, 1040), (-300, -500), (400, 600)), (0, 0));
-        assert_eq!(clamp_into((0, 0), (1920, 1040), (1600, 500), (400, 600)), (1520, 440));
-        assert_eq!(clamp_into((0, 0), (1920, 1040), (100, 100), (400, 600)), (100, 100));
+        assert_eq!(
+            clamp_into((0, 0), (1920, 1040), (-300, -500), (400, 600)),
+            (0, 0)
+        );
+        assert_eq!(
+            clamp_into((0, 0), (1920, 1040), (1600, 500), (400, 600)),
+            (1520, 440)
+        );
+        assert_eq!(
+            clamp_into((0, 0), (1920, 1040), (100, 100), (400, 600)),
+            (100, 100)
+        );
     }
 
     #[test]

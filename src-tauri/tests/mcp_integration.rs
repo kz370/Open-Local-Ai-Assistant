@@ -38,7 +38,14 @@ async fn discovery_invocation_permissions() {
     let status = mgr.statuses().await.unwrap().remove(0);
     assert_eq!(status.state, "connected", "{:?}", status.error);
     assert_eq!(status.tools.len(), 4);
-    let perm = |n: &str| status.tools.iter().find(|t| t.name == n).unwrap().permission;
+    let perm = |n: &str| {
+        status
+            .tools
+            .iter()
+            .find(|t| t.name == n)
+            .unwrap()
+            .permission
+    };
     assert_eq!(perm("web_search"), Permission::Allow);
     assert_eq!(perm("write_file"), Permission::Ask);
     assert_eq!(perm("run_command"), Permission::Deny);
@@ -47,33 +54,89 @@ async fn discovery_invocation_permissions() {
     // Execution tools are hidden from the model.
     let tools = mgr.available_tools().await;
     assert!(tools.iter().all(|t| t.tool_name != "run_command"));
-    let search = tools.iter().find(|t| t.tool_name == "web_search").unwrap().clone();
+    let search = tools
+        .iter()
+        .find(|t| t.tool_name == "web_search")
+        .unwrap()
+        .clone();
     assert_eq!(search.category, ToolCategory::Search);
 
-    let out = mgr.call_tool(&search, serde_json::json!({"query": "latest php"})).await.unwrap();
+    let out = mgr
+        .call_tool(&search, serde_json::json!({"query": "latest php"}))
+        .await
+        .unwrap();
     assert!(out.text.contains("Result for latest php"));
     assert_eq!(out.sources[0].url, "https://www.php.net/releases/");
-    assert!(out.sources.iter().any(|s| s.url == "https://www.php.net/ChangeLog-8.php"));
+    assert!(out
+        .sources
+        .iter()
+        .any(|s| s.url == "https://www.php.net/ChangeLog-8.php"));
 
     let fail = tools.iter().find(|t| t.tool_name == "fail").unwrap();
-    assert!(mgr.call_tool(fail, serde_json::json!({})).await.unwrap().is_error);
+    assert!(
+        mgr.call_tool(fail, serde_json::json!({}))
+            .await
+            .unwrap()
+            .is_error
+    );
 
     // Safe mode (default) caps sensitive tools at "ask"; turning it off lets the stored "allow" through.
-    assert_eq!(mgr.set_permission(&cfg.id, "write_file", Permission::Allow).await.unwrap(), Permission::Ask);
-    assert_eq!(mgr.set_permission(&cfg.id, "run_command", Permission::Allow).await.unwrap(), Permission::Ask);
+    assert_eq!(
+        mgr.set_permission(&cfg.id, "write_file", Permission::Allow)
+            .await
+            .unwrap(),
+        Permission::Ask
+    );
+    assert_eq!(
+        mgr.set_permission(&cfg.id, "run_command", Permission::Allow)
+            .await
+            .unwrap(),
+        Permission::Ask
+    );
     mgr.set_safe_mode(false);
-    let status = mgr.statuses().await.unwrap().into_iter().find(|s| s.config.id == cfg.id).unwrap();
-    let perm = |n: &str| status.tools.iter().find(|t| t.name == n).unwrap().permission;
+    let status = mgr
+        .statuses()
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|s| s.config.id == cfg.id)
+        .unwrap();
+    let perm = |n: &str| {
+        status
+            .tools
+            .iter()
+            .find(|t| t.name == n)
+            .unwrap()
+            .permission
+    };
     assert_eq!(perm("write_file"), Permission::Allow);
     assert_eq!(perm("run_command"), Permission::Allow);
     // Bulk reset returns every tool to its default.
     mgr.set_all_permissions(&cfg.id, None).await.unwrap();
-    let status = mgr.statuses().await.unwrap().into_iter().find(|s| s.config.id == cfg.id).unwrap();
-    assert!(status.tools.iter().all(|t| t.permission == t.default_permission));
+    let status = mgr
+        .statuses()
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|s| s.config.id == cfg.id)
+        .unwrap();
+    assert!(status
+        .tools
+        .iter()
+        .all(|t| t.permission == t.default_permission));
     mgr.set_safe_mode(true);
-    mgr.set_permission(&cfg.id, "web_search", Permission::Deny).await.unwrap();
-    assert!(mgr.available_tools().await.iter().all(|t| t.tool_name != "web_search"));
-    assert!(mgr.call_tool(&search, serde_json::json!({"query": "x"})).await.is_err());
+    mgr.set_permission(&cfg.id, "web_search", Permission::Deny)
+        .await
+        .unwrap();
+    assert!(mgr
+        .available_tools()
+        .await
+        .iter()
+        .all(|t| t.tool_name != "web_search"));
+    assert!(mgr
+        .call_tool(&search, serde_json::json!({"query": "x"}))
+        .await
+        .is_err());
 
     mgr.set_enabled(&cfg.id, false).await.unwrap();
     assert!(mgr.available_tools().await.is_empty());

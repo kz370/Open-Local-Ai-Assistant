@@ -73,7 +73,9 @@ fn vendor_name(id: u32) -> &'static str {
 
 #[cfg(windows)]
 fn detect_gpus() -> Vec<GpuInfo> {
-    use windows::Win32::Graphics::Dxgi::{CreateDXGIFactory1, IDXGIFactory1, DXGI_ADAPTER_FLAG_SOFTWARE};
+    use windows::Win32::Graphics::Dxgi::{
+        CreateDXGIFactory1, IDXGIFactory1, DXGI_ADAPTER_FLAG_SOFTWARE,
+    };
     let mut out = Vec::new();
     // SAFETY: plain COM calls; every returned interface is reference counted by the bindings.
     unsafe {
@@ -83,7 +85,9 @@ fn detect_gpus() -> Vec<GpuInfo> {
         let mut i = 0;
         while let Ok(adapter) = factory.EnumAdapters1(i) {
             i += 1;
-            let Ok(desc) = adapter.GetDesc1() else { continue };
+            let Ok(desc) = adapter.GetDesc1() else {
+                continue;
+            };
             if desc.Flags & (DXGI_ADAPTER_FLAG_SOFTWARE.0 as u32) != 0 {
                 continue;
             }
@@ -91,9 +95,15 @@ fn detect_gpus() -> Vec<GpuInfo> {
             if vendor == "microsoft" {
                 continue; // Basic Render Driver
             }
-            let len = desc.Description.iter().position(|&c| c == 0).unwrap_or(desc.Description.len());
+            let len = desc
+                .Description
+                .iter()
+                .position(|&c| c == 0)
+                .unwrap_or(desc.Description.len());
             out.push(GpuInfo {
-                name: String::from_utf16_lossy(&desc.Description[..len]).trim().to_string(),
+                name: String::from_utf16_lossy(&desc.Description[..len])
+                    .trim()
+                    .to_string(),
                 vendor: vendor.to_string(),
                 vram_bytes: desc.DedicatedVideoMemory as u64,
             });
@@ -107,7 +117,10 @@ fn detect_gpus() -> Vec<GpuInfo> {
     // nvidia-smi is the most portable probe on Linux; macOS unified memory is
     // treated as CPU RAM by the model selector.
     let Ok(output) = std::process::Command::new("nvidia-smi")
-        .args(["--query-gpu=name,memory.total", "--format=csv,noheader,nounits"])
+        .args([
+            "--query-gpu=name,memory.total",
+            "--format=csv,noheader,nounits",
+        ])
         .output()
     else {
         return Vec::new();

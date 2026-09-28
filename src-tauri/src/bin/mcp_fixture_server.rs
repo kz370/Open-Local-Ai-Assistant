@@ -15,8 +15,12 @@ fn main() {
     let mut out = std::io::stdout();
     for line in stdin.lock().lines() {
         let Ok(line) = line else { break };
-        let Ok(msg) = serde_json::from_str::<Value>(&line) else { continue };
-        let Some(id) = msg.get("id").cloned() else { continue }; // notification
+        let Ok(msg) = serde_json::from_str::<Value>(&line) else {
+            continue;
+        };
+        let Some(id) = msg.get("id").cloned() else {
+            continue;
+        }; // notification
         let method = msg["method"].as_str().unwrap_or("");
         let result = match method {
             "initialize" => json!({
@@ -38,19 +42,30 @@ fn main() {
                         "Title: Result for {}\nURL: https://www.php.net/releases/\n\n[Changelog](https://www.php.net/ChangeLog-8.php)",
                         args["query"].as_str().unwrap_or(""))}]}),
                     "write_file" => json!({"content": [{"type": "text", "text": "written"}]}),
-                    "fail" => json!({"content": [{"type": "text", "text": "boom"}], "isError": true}),
+                    "fail" => {
+                        json!({"content": [{"type": "text", "text": "boom"}], "isError": true})
+                    }
                     _ => {
-                        reply(&mut out, json!({"jsonrpc": "2.0", "id": id, "error": {"code": -32602, "message": "unknown tool"}}));
+                        reply(
+                            &mut out,
+                            json!({"jsonrpc": "2.0", "id": id, "error": {"code": -32602, "message": "unknown tool"}}),
+                        );
                         continue;
                     }
                 }
             }
             "ping" => json!({}),
             _ => {
-                reply(&mut out, json!({"jsonrpc": "2.0", "id": id, "error": {"code": -32601, "message": "method not found"}}));
+                reply(
+                    &mut out,
+                    json!({"jsonrpc": "2.0", "id": id, "error": {"code": -32601, "message": "method not found"}}),
+                );
                 continue;
             }
         };
-        reply(&mut out, json!({"jsonrpc": "2.0", "id": id, "result": result}));
+        reply(
+            &mut out,
+            json!({"jsonrpc": "2.0", "id": id, "result": result}),
+        );
     }
 }

@@ -17,7 +17,11 @@ pub fn get_settings(state: State<'_, AppState>) -> Settings {
 
 /// Saves settings and applies side effects that depend on changed values.
 #[tauri::command]
-pub async fn save_settings(app: AppHandle, state: State<'_, AppState>, settings: Settings) -> CmdResult<Settings> {
+pub async fn save_settings(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    settings: Settings,
+) -> CmdResult<Settings> {
     let before = state.settings.get();
     let saved = state.settings.set(settings)?;
 
@@ -37,7 +41,14 @@ pub async fn save_settings(app: AppHandle, state: State<'_, AppState>, settings:
         state.lmstudio.set_timeout(saved.ai.request_timeout_secs);
     }
     if before.stt.extra_model_dirs != saved.stt.extra_model_dirs {
-        state.models.set_extra_dirs(saved.stt.extra_model_dirs.iter().map(std::path::PathBuf::from).collect());
+        state.models.set_extra_dirs(
+            saved
+                .stt
+                .extra_model_dirs
+                .iter()
+                .map(std::path::PathBuf::from)
+                .collect(),
+        );
         let _ = app.emit("models://changed", ());
     }
     // A language change needs nothing: Whisper switches it in place. The
@@ -59,7 +70,8 @@ pub async fn save_settings(app: AppHandle, state: State<'_, AppState>, settings:
             state.tts.unload_model(&id);
         }
     }
-    if before.tts.output_device != saved.tts.output_device || before.tts.volume != saved.tts.volume {
+    if before.tts.output_device != saved.tts.output_device || before.tts.volume != saved.tts.volume
+    {
         state.tts.apply_settings();
     }
     if !before.general.preload_models && saved.general.preload_models {
@@ -99,7 +111,11 @@ pub async fn save_settings(app: AppHandle, state: State<'_, AppState>, settings:
 /// Writes an encrypted settings backup. API keys are left out unless
 /// `include_keys` is set.
 #[tauri::command]
-pub fn settings_export(state: State<'_, AppState>, path: String, include_keys: bool) -> CmdResult<()> {
+pub fn settings_export(
+    state: State<'_, AppState>,
+    path: String,
+    include_keys: bool,
+) -> CmdResult<()> {
     let mut s = state.settings.get();
     if !include_keys {
         crate::settings::backup::strip_keys(&mut s);
@@ -113,7 +129,10 @@ pub fn settings_export(state: State<'_, AppState>, path: String, include_keys: b
 #[tauri::command]
 pub fn settings_import(state: State<'_, AppState>, path: String) -> CmdResult<Settings> {
     let imported = crate::settings::backup::decrypt(&std::fs::read(path)?)?;
-    Ok(crate::settings::backup::merge_import(&state.settings.get(), imported))
+    Ok(crate::settings::backup::merge_import(
+        &state.settings.get(),
+        imported,
+    ))
 }
 
 /// While the user records a shortcut, global shortcuts must not swallow the keys.
@@ -128,7 +147,11 @@ pub fn shortcuts_capture(app: AppHandle, capturing: bool) {
 
 #[tauri::command]
 pub fn shortcut_errors(state: State<'_, AppState>) -> Vec<String> {
-    state.shortcut_errors.lock().unwrap_or_else(|p| p.into_inner()).clone()
+    state
+        .shortcut_errors
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .clone()
 }
 
 #[derive(Serialize)]
@@ -175,9 +198,15 @@ pub fn open_folder(state: State<'_, AppState>, which: String) -> CmdResult<()> {
 /// Last lines of today's log file (technical details for Diagnostics).
 #[tauri::command]
 pub fn read_log_tail(state: State<'_, AppState>, lines: Option<usize>) -> CmdResult<String> {
-    let mut files: Vec<_> = std::fs::read_dir(&state.paths.logs_dir)?.flatten().map(|e| e.path()).filter(|p| p.extension().is_some_and(|e| e == "log")).collect();
+    let mut files: Vec<_> = std::fs::read_dir(&state.paths.logs_dir)?
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|e| e == "log"))
+        .collect();
     files.sort();
-    let Some(latest) = files.last() else { return Ok(String::new()) };
+    let Some(latest) = files.last() else {
+        return Ok(String::new());
+    };
     let text = std::fs::read_to_string(latest)?;
     let n = lines.unwrap_or(200).min(2000);
     let all: Vec<&str> = text.lines().collect();
@@ -191,26 +220,45 @@ pub async fn scan_capabilities(state: State<'_, AppState>) -> CmdResult<Capabili
 }
 
 #[tauri::command]
-pub async fn lmstudio_test(state: State<'_, AppState>, url: Option<String>, api_key: Option<String>, provider: Option<String>) -> CmdResult<ConnectionStatus> {
+pub async fn lmstudio_test(
+    state: State<'_, AppState>,
+    url: Option<String>,
+    api_key: Option<String>,
+    provider: Option<String>,
+) -> CmdResult<ConnectionStatus> {
     let provider = provider.unwrap_or_else(|| state.settings.get().ai.provider);
-    let url_changed = url.as_deref().is_some_and(|u| u.trim() != state.lmstudio.base_url());
+    let url_changed = url
+        .as_deref()
+        .is_some_and(|u| u.trim() != state.lmstudio.base_url());
     let key_changed = api_key != state.lmstudio.api_key();
     if !url_changed && !key_changed {
         return state.lmstudio.test_connection().await;
     }
-    let probe = crate::services::ai::lmstudio::LmStudioService::new(url.as_deref().unwrap_or(&state.lmstudio.base_url()), 10);
+    let probe = crate::services::ai::lmstudio::LmStudioService::new(
+        url.as_deref().unwrap_or(&state.lmstudio.base_url()),
+        10,
+    );
     probe.set_provider(&provider);
-    probe.set_api_key(if key_changed { api_key } else { state.lmstudio.api_key() });
+    probe.set_api_key(if key_changed {
+        api_key
+    } else {
+        state.lmstudio.api_key()
+    });
     probe.test_connection().await
 }
 
 #[tauri::command]
-pub async fn lmstudio_models(state: State<'_, AppState>, refresh: bool) -> CmdResult<Vec<ModelInfo>> {
+pub async fn lmstudio_models(
+    state: State<'_, AppState>,
+    refresh: bool,
+) -> CmdResult<Vec<ModelInfo>> {
     state.resolver.models(refresh).await
 }
 
 #[tauri::command]
-pub async fn lmstudio_auto_selection(state: State<'_, AppState>) -> CmdResult<Option<ModelSelection>> {
+pub async fn lmstudio_auto_selection(
+    state: State<'_, AppState>,
+) -> CmdResult<Option<ModelSelection>> {
     state.resolver.auto_selection().await
 }
 
@@ -260,7 +308,9 @@ pub fn open_settings_window(app: AppHandle, section: Option<String>) -> CmdResul
 
 #[tauri::command]
 pub fn complete_first_run(app: AppHandle, state: State<'_, AppState>) -> CmdResult<()> {
-    state.settings.update(|s| s.general.first_run_complete = true)?;
+    state
+        .settings
+        .update(|s| s.general.first_run_complete = true)?;
     shortcuts::register_all(&app);
     window::show_main(&app, true);
     let _ = app.emit("settings://changed", state.settings.get());
@@ -292,10 +342,20 @@ pub struct PrivacyStatus {
 #[tauri::command]
 pub async fn privacy_status(state: State<'_, AppState>) -> CmdResult<PrivacyStatus> {
     let url = state.lmstudio.base_url();
-    let host = url::Url::parse(&url).ok().and_then(|u| u.host_str().map(str::to_string)).unwrap_or_default();
-    let local = matches!(host.as_str(), "localhost" | "127.0.0.1" | "::1" | "[::1]") || host.starts_with("192.168.") || host.starts_with("10.") || host.ends_with(".local");
+    let host = url::Url::parse(&url)
+        .ok()
+        .and_then(|u| u.host_str().map(str::to_string))
+        .unwrap_or_default();
+    let local = matches!(host.as_str(), "localhost" | "127.0.0.1" | "::1" | "[::1]")
+        || host.starts_with("192.168.")
+        || host.starts_with("10.")
+        || host.ends_with(".local");
     let statuses = state.mcp.statuses().await?;
-    let internet_servers: Vec<String> = statuses.iter().filter(|s| s.config.enabled && s.internet).map(|s| s.config.name.clone()).collect();
+    let internet_servers: Vec<String> = statuses
+        .iter()
+        .filter(|s| s.config.enabled && s.internet)
+        .map(|s| s.config.name.clone())
+        .collect();
     Ok(PrivacyStatus {
         llm: crate::settings::provider_name(&state.settings.get().ai.provider).into(),
         llm_is_cloud: state.settings.get().ai.provider != "lmstudio",

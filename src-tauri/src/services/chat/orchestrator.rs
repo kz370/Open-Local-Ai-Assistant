@@ -12,7 +12,10 @@ use super::tools::{Permission, Source, SpeechSink, ToolCategory, ToolProvider, T
 use crate::database::conversations::{new_id, now, Message};
 use crate::database::Db;
 use crate::errors::{AppError, AppResult};
-use crate::services::ai::{AiService, ChatMessage, ChatRequest, ContentPart, FunctionDefinition, MessageContent, StreamChunk, ToolCall, ToolDefinition};
+use crate::services::ai::{
+    AiService, ChatMessage, ChatRequest, ContentPart, FunctionDefinition, MessageContent,
+    StreamChunk, ToolCall, ToolDefinition,
+};
 use crate::services::attachments::AttachmentStore;
 use crate::services::language::{detect, Lang};
 use crate::settings::SettingsStore;
@@ -32,15 +35,21 @@ const TOOL_TIMEOUT: Duration = Duration::from_secs(90);
 /// Adds the per-turn note to the latest user message of the request only (the
 /// stored message stays as typed), so the prompt before it stays cacheable.
 fn append_to_last_user(messages: &mut [ChatMessage], note: &str) {
-    let Some(m) = messages.iter_mut().rev().find(|m| m.role == "user") else { return };
+    let Some(m) = messages.iter_mut().rev().find(|m| m.role == "user") else {
+        return;
+    };
     match &mut m.content {
         Some(MessageContent::Text(t)) => {
-            t.push_str("
+            t.push_str(
+                "
 
-");
+",
+            );
             t.push_str(note);
         }
-        Some(MessageContent::Parts(parts)) => parts.push(ContentPart::Text { text: note.to_string() }),
+        Some(MessageContent::Parts(parts)) => parts.push(ContentPart::Text {
+            text: note.to_string(),
+        }),
         None => m.content = Some(MessageContent::Text(note.to_string())),
     }
 }
@@ -78,7 +87,8 @@ impl ReplyStats {
         }
         // Below ~50 ms the rate is noise (a single chunk, a cached reply).
         if self.generation_ms >= 50 {
-            self.tokens_per_second = Some(self.completion_tokens as f32 * 1000.0 / self.generation_ms as f32);
+            self.tokens_per_second =
+                Some(self.completion_tokens as f32 * 1000.0 / self.generation_ms as f32);
         }
         serde_json::to_value(&self).ok()
     }
@@ -97,19 +107,72 @@ pub struct SendInput {
     /// Ids of attachments staged by the composer for this turn.
     #[serde(default)]
     pub attachment_ids: Vec<String>,
+    /// Session-only override for the built-in web search tool.
+    #[serde(default)]
+    pub web_search_enabled: Option<bool>,
+    /// Session-only per-server overrides for MCP tools.
+    #[serde(default)]
+    pub mcp_enabled: Option<HashMap<String, bool>>,
 }
 
 #[derive(Debug, Clone, Serialize)]
-#[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum ChatEvent {
-    Started { turn_id: String, conversation_id: String, user_message: Message, model: String, language: String, new_conversation: bool },
-    Delta { turn_id: String, text: String },
-    Reasoning { turn_id: String, text: String },
-    ToolStarted { turn_id: String, call_id: String, server_name: String, tool_name: String, category: ToolCategory, args: Value },
-    ToolAwaitingConfirmation { turn_id: String, call_id: String, server_name: String, tool_name: String, category: ToolCategory, args: Value },
-    ToolFinished { turn_id: String, call_id: String, ok: bool, duration_ms: u64, result_preview: String, sources: Vec<Source>, denied: bool },
-    Done { turn_id: String, message: Message },
-    Error { turn_id: String, code: String, detail: String, partial_message: Option<Message> },
+    Started {
+        turn_id: String,
+        conversation_id: String,
+        user_message: Message,
+        model: String,
+        language: String,
+        new_conversation: bool,
+    },
+    Delta {
+        turn_id: String,
+        text: String,
+    },
+    Reasoning {
+        turn_id: String,
+        text: String,
+    },
+    ToolStarted {
+        turn_id: String,
+        call_id: String,
+        server_name: String,
+        tool_name: String,
+        category: ToolCategory,
+        args: Value,
+    },
+    ToolAwaitingConfirmation {
+        turn_id: String,
+        call_id: String,
+        server_name: String,
+        tool_name: String,
+        category: ToolCategory,
+        args: Value,
+    },
+    ToolFinished {
+        turn_id: String,
+        call_id: String,
+        ok: bool,
+        duration_ms: u64,
+        result_preview: String,
+        sources: Vec<Source>,
+        denied: bool,
+    },
+    Done {
+        turn_id: String,
+        message: Message,
+    },
+    Error {
+        turn_id: String,
+        code: String,
+        detail: String,
+        partial_message: Option<Message>,
+    },
 }
 
 pub type Emit = Arc<dyn Fn(ChatEvent) + Send + Sync>;
@@ -164,7 +227,12 @@ impl ChatEngine {
     }
 
     pub fn stop(&self, turn_id: &str) {
-        if let Some(t) = self.active.lock().unwrap_or_else(|p| p.into_inner()).get(turn_id) {
+        if let Some(t) = self
+            .active
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .get(turn_id)
+        {
             t.cancel();
         }
         self.speech.cancel(turn_id);
@@ -178,11 +246,20 @@ impl ChatEngine {
     }
 
     pub fn is_busy(&self) -> bool {
-        !self.active.lock().unwrap_or_else(|p| p.into_inner()).is_empty()
+        !self
+            .active
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .is_empty()
     }
 
     pub fn confirm_tool(&self, call_id: &str, approved: bool) -> bool {
-        match self.confirmations.lock().unwrap_or_else(|p| p.into_inner()).remove(call_id) {
+        match self
+            .confirmations
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .remove(call_id)
+        {
             Some(tx) => tx.send(approved).is_ok(),
             None => false,
         }
@@ -190,9 +267,18 @@ impl ChatEngine {
 
     /// Explains `selection` (taken from `passage`, a reply) without touching
     /// the conversation. Streams the answer; `stop(id)` cancels it.
-    pub async fn explain(&self, id: &str, selection: &str, passage: &str, emit: &(dyn Fn(ExplainEvent) + Send + Sync)) {
+    pub async fn explain(
+        &self,
+        id: &str,
+        selection: &str,
+        passage: &str,
+        emit: &(dyn Fn(ExplainEvent) + Send + Sync),
+    ) {
         let token = CancellationToken::new();
-        self.active.lock().unwrap_or_else(|p| p.into_inner()).insert(id.to_string(), token.clone());
+        self.active
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .insert(id.to_string(), token.clone());
         let result = async {
             let settings = self.settings.get();
             let model = self.resolver.resolve(&settings.ai).await?;
@@ -221,12 +307,18 @@ impl ChatEngine {
             AppResult::Ok(())
         }
         .await;
-        self.active.lock().unwrap_or_else(|p| p.into_inner()).remove(id);
+        self.active
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .remove(id);
         match result {
             Ok(()) | Err(AppError::Cancelled) => emit(ExplainEvent::Done),
             Err(e) => {
                 tracing::warn!(error = %e, "explain failed");
-                emit(ExplainEvent::Error { code: e.code().into(), detail: e.to_string() });
+                emit(ExplainEvent::Error {
+                    code: e.code().into(),
+                    detail: e.to_string(),
+                });
             }
         }
     }
@@ -237,20 +329,35 @@ impl ChatEngine {
             return Err(AppError::Invalid("message is empty".into()));
         }
         let token = CancellationToken::new();
-        self.active.lock().unwrap_or_else(|p| p.into_inner()).insert(input.turn_id.clone(), token.clone());
+        self.active
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .insert(input.turn_id.clone(), token.clone());
         let result = self.run_turn(&input, text, token, emit.clone()).await;
-        self.active.lock().unwrap_or_else(|p| p.into_inner()).remove(&input.turn_id);
+        self.active
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .remove(&input.turn_id);
         result
     }
 
-    async fn run_turn(&self, input: &SendInput, text: String, cancel: CancellationToken, emit: Emit) -> AppResult<()> {
+    async fn run_turn(
+        &self,
+        input: &SendInput,
+        text: String,
+        cancel: CancellationToken,
+        emit: Emit,
+    ) -> AppResult<()> {
         let turn_id = input.turn_id.clone();
         let settings = self.settings.get();
 
         // Attachments staged by the composer become part of this user message.
         let attachments = self.attachments.claim(&input.attachment_ids);
         let title_source = if text.is_empty() {
-            attachments.first().map(|a| a.name.clone()).unwrap_or_default()
+            attachments
+                .first()
+                .map(|a| a.name.clone())
+                .unwrap_or_default()
         } else {
             text.clone()
         };
@@ -259,13 +366,23 @@ impl ChatEngine {
         let (conversation, new_conversation) = match input.conversation_id.as_deref() {
             Some(id) => match self.db.get_conversation(id) {
                 Ok(c) => (c, false),
-                Err(AppError::NotFound(_)) => (self.db.create_conversation(&title_from(&title_source), None)?, true),
+                Err(AppError::NotFound(_)) => (
+                    self.db
+                        .create_conversation(&title_from(&title_source), None)?,
+                    true,
+                ),
                 Err(e) => return Err(e),
             },
-            None => (self.db.create_conversation(&title_from(&title_source), None)?, true),
+            None => (
+                self.db
+                    .create_conversation(&title_from(&title_source), None)?,
+                true,
+            ),
         };
         if new_conversation {
-            let _ = self.settings.update(|s| s.last_conversation_id = Some(conversation.id.clone()));
+            let _ = self
+                .settings
+                .update(|s| s.last_conversation_id = Some(conversation.id.clone()));
         }
 
         // Language
@@ -274,7 +391,11 @@ impl ChatEngine {
             .spoken_language
             .as_deref()
             .and_then(Lang::from_code)
-            .or_else(|| detect(&text).filter(|d| d.confidence >= 0.4).map(|d| d.lang))
+            .or_else(|| {
+                detect(&text)
+                    .filter(|d| d.confidence >= 0.4)
+                    .map(|d| d.lang)
+            })
             .or(conv_lang);
         let forced = Lang::from_code(&settings.language.response_language);
         let response_lang = forced.or(detected).unwrap_or(Lang::En);
@@ -300,7 +421,11 @@ impl ChatEngine {
             tool_activity: None,
             tool_calls: None,
             tool_call_id: None,
-            attachments: if attachments.is_empty() { None } else { Some(serde_json::to_value(&attachments)?) },
+            attachments: if attachments.is_empty() {
+                None
+            } else {
+                Some(serde_json::to_value(&attachments)?)
+            },
             stats: None,
             created_at: now(),
         };
@@ -346,7 +471,11 @@ impl ChatEngine {
                 return Err(e);
             }
         };
-        self.db.touch_conversation(&conversation.id, Some(&model.id), Some(response_lang.code()))?;
+        self.db.touch_conversation(
+            &conversation.id,
+            Some(&model.id),
+            Some(response_lang.code()),
+        )?;
 
         emit(ChatEvent::Started {
             turn_id: turn_id.clone(),
@@ -358,10 +487,27 @@ impl ChatEngine {
         });
 
         // Tools & prompt
-        let specs = self.tools.available_tools().await;
-        let tool_map: HashMap<String, ToolSpec> = specs.iter().map(|s| (s.llm_name.clone(), s.clone())).collect();
+        let mut specs = self.tools.available_tools().await;
+        if let Some(false) = input.web_search_enabled {
+            specs.retain(|s| s.server_id != "builtin-web-search");
+        }
+        if let Some(ref mcp_enabled) = input.mcp_enabled {
+            specs.retain(|s| {
+                if s.server_id == "builtin-web-search" {
+                    return input.web_search_enabled.unwrap_or(true);
+                }
+                *mcp_enabled.get(&s.server_id).unwrap_or(&true)
+            });
+        }
+        let tool_map: HashMap<String, ToolSpec> = specs
+            .iter()
+            .map(|s| (s.llm_name.clone(), s.clone()))
+            .collect();
         let has_web_tool = specs.iter().any(|s| s.category == ToolCategory::Search);
-        let tool_desc: Vec<(String, String)> = specs.iter().map(|s| (s.llm_name.clone(), s.description.clone())).collect();
+        let tool_desc: Vec<(String, String)> = specs
+            .iter()
+            .map(|s| (s.llm_name.clone(), s.description.clone()))
+            .collect();
         // Whether this reply will be spoken aloud: voice input always replies by
         // voice, and "speak responses" also reads out replies to typed messages.
         let speak = input.voice || settings.tts.speak_responses;
@@ -380,7 +526,12 @@ impl ChatEngine {
             expressive_sounds: speak && self.speech.expressive(),
             expressive_instruction: &settings.tts.expressive_instruction,
         });
-        let note = turn_note(chrono::Local::now(), forced, detected.filter(|_| custom_language.is_none()), needs_fresh_info(&text).then(|| freshness_hint(has_web_tool)));
+        let note = turn_note(
+            chrono::Local::now(),
+            forced,
+            detected.filter(|_| custom_language.is_none()),
+            needs_fresh_info(&text).then(|| freshness_hint(has_web_tool)),
+        );
 
         let ctx_tokens = settings
             .ai
@@ -390,7 +541,13 @@ impl ChatEngine {
         let history = self.db.list_messages(&conversation.id)?;
         let vision = model.info.as_ref().map(|i| i.vision).unwrap_or(false);
         let mut messages = vec![ChatMessage::text("system", system.clone())];
-        messages.extend(build_history(&history, ctx_tokens, system.len() + note.len(), &self.attachments, vision));
+        messages.extend(build_history(
+            &history,
+            ctx_tokens,
+            system.len() + note.len(),
+            &self.attachments,
+            vision,
+        ));
         append_to_last_user(&mut messages, &note);
 
         let tool_defs: Vec<ToolDefinition> = specs
@@ -414,10 +571,10 @@ impl ChatEngine {
         let mut sources: Vec<Source> = Vec::new();
         let mut activity: Vec<ActivityRecord> = Vec::new();
         let mut stats = ReplyStats {
-            context_length: settings
-                .ai
-                .context_length
-                .or(model.info.as_ref().and_then(|i| i.loaded_context_length.or(i.max_context_length))),
+            context_length: settings.ai.context_length.or(model
+                .info
+                .as_ref()
+                .and_then(|i| i.loaded_context_length.or(i.max_context_length))),
             ..Default::default()
         };
 
@@ -436,7 +593,11 @@ impl ChatEngine {
             let req = ChatRequest {
                 model: model.id.clone(),
                 messages: messages.clone(),
-                tools: if last_round { vec![] } else { tool_defs.clone() },
+                tools: if last_round {
+                    vec![]
+                } else {
+                    tool_defs.clone()
+                },
                 temperature: settings.ai.temperature,
                 max_tokens: settings.ai.max_tokens,
                 stream: settings.ai.streaming,
@@ -448,19 +609,28 @@ impl ChatEngine {
                     let (vis, rea) = filter.push(&c);
                     if !rea.is_empty() {
                         full_reasoning.push_str(&rea);
-                        emit(ChatEvent::Reasoning { turn_id: turn_id.clone(), text: rea });
+                        emit(ChatEvent::Reasoning {
+                            turn_id: turn_id.clone(),
+                            text: rea,
+                        });
                     }
                     if !vis.is_empty() {
                         round_visible.push_str(&vis);
                         if speak {
                             self.speech.push_text(&turn_id, &vis);
                         }
-                        emit(ChatEvent::Delta { turn_id: turn_id.clone(), text: vis });
+                        emit(ChatEvent::Delta {
+                            turn_id: turn_id.clone(),
+                            text: vis,
+                        });
                     }
                 }
                 StreamChunk::Reasoning(r) => {
                     full_reasoning.push_str(&r);
-                    emit(ChatEvent::Reasoning { turn_id: turn_id.clone(), text: r });
+                    emit(ChatEvent::Reasoning {
+                        turn_id: turn_id.clone(),
+                        text: r,
+                    });
                 }
             };
             let result = self.ai.chat(req, cancel.clone(), &mut on_chunk).await;
@@ -473,7 +643,10 @@ impl ChatEngine {
                 if speak {
                     self.speech.push_text(&turn_id, &vis);
                 }
-                emit(ChatEvent::Delta { turn_id: turn_id.clone(), text: vis });
+                emit(ChatEvent::Delta {
+                    turn_id: turn_id.clone(),
+                    text: vis,
+                });
             }
 
             let completion = match result {
@@ -489,7 +662,14 @@ impl ChatEngine {
                     let partial = if full_content.trim().is_empty() {
                         None
                     } else {
-                        let m = self.assistant_message(&conversation.id, &full_content, &full_reasoning, &sources, &activity, response_lang)?;
+                        let m = self.assistant_message(
+                            &conversation.id,
+                            &full_content,
+                            &full_reasoning,
+                            &sources,
+                            &activity,
+                            response_lang,
+                        )?;
                         self.db.insert_message(&m)?;
                         Some(m)
                     };
@@ -497,7 +677,11 @@ impl ChatEngine {
                         tracing::warn!(error = %e, code = e.code(), "chat turn failed");
                     }
                     emit_error(&e, partial);
-                    return if matches!(e, AppError::Cancelled) { Ok(()) } else { Err(e) };
+                    return if matches!(e, AppError::Cancelled) {
+                        Ok(())
+                    } else {
+                        Err(e)
+                    };
                 }
             };
 
@@ -515,7 +699,11 @@ impl ChatEngine {
             let calls = completion.tool_calls.clone();
             messages.push(ChatMessage {
                 role: "assistant".into(),
-                content: if round_text.is_empty() { None } else { Some(MessageContent::Text(round_text.clone())) },
+                content: if round_text.is_empty() {
+                    None
+                } else {
+                    Some(MessageContent::Text(round_text.clone()))
+                },
                 tool_calls: Some(calls.clone()),
                 tool_call_id: None,
             });
@@ -539,7 +727,9 @@ impl ChatEngine {
                 if cancel.is_cancelled() {
                     break;
                 }
-                let (record, output_text, new_sources) = self.execute_call(&turn_id, &call, &tool_map, &cancel, &emit).await;
+                let (record, output_text, new_sources) = self
+                    .execute_call(&turn_id, &call, &tool_map, &cancel, &emit)
+                    .await;
                 for s in new_sources {
                     if !sources.iter().any(|x| x.url == s.url) {
                         sources.push(s);
@@ -581,11 +771,21 @@ impl ChatEngine {
             self.speech.finish(&turn_id);
         }
 
-        let mut final_message = self.assistant_message(&conversation.id, full_content.trim(), &full_reasoning, &sources, &activity, response_lang)?;
+        let mut final_message = self.assistant_message(
+            &conversation.id,
+            full_content.trim(),
+            &full_reasoning,
+            &sources,
+            &activity,
+            response_lang,
+        )?;
         final_message.stats = stats.finish();
         self.db.insert_message(&final_message)?;
         self.db.touch_conversation(&conversation.id, None, None)?;
-        emit(ChatEvent::Done { turn_id, message: final_message });
+        emit(ChatEvent::Done {
+            turn_id,
+            message: final_message,
+        });
         Ok(())
     }
 
@@ -605,9 +805,21 @@ impl ChatEngine {
             role: "assistant".into(),
             content: content.into(),
             language: Some(lang.code().into()),
-            reasoning: if reasoning.trim().is_empty() { None } else { Some(reasoning.trim().into()) },
-            sources: if sources.is_empty() { None } else { Some(serde_json::to_value(sources)?) },
-            tool_activity: if activity.is_empty() { None } else { Some(serde_json::to_value(activity)?) },
+            reasoning: if reasoning.trim().is_empty() {
+                None
+            } else {
+                Some(reasoning.trim().into())
+            },
+            sources: if sources.is_empty() {
+                None
+            } else {
+                Some(serde_json::to_value(sources)?)
+            },
+            tool_activity: if activity.is_empty() {
+                None
+            } else {
+                Some(serde_json::to_value(activity)?)
+            },
             tool_calls: None,
             tool_call_id: None,
             attachments: None,
@@ -627,22 +839,41 @@ impl ChatEngine {
         let started = Instant::now();
         let args: Value = serde_json::from_str(&call.function.arguments).unwrap_or(Value::Null);
         let Some(spec) = tool_map.get(&call.function.name) else {
-            let msg = format!("Error: tool '{}' does not exist. Available tools: {}", call.function.name, tool_map.keys().cloned().collect::<Vec<_>>().join(", "));
-            return (record(call, None, &args, false, false, 0, &msg), msg, vec![]);
+            let msg = format!(
+                "Error: tool '{}' does not exist. Available tools: {}",
+                call.function.name,
+                tool_map.keys().cloned().collect::<Vec<_>>().join(", ")
+            );
+            return (
+                record(call, None, &args, false, false, 0, &msg),
+                msg,
+                vec![],
+            );
         };
         if !args.is_object() {
             let msg = "Error: tool arguments must be a JSON object.".to_string();
-            return (record(call, Some(spec), &args, false, false, 0, &msg), msg, vec![]);
+            return (
+                record(call, Some(spec), &args, false, false, 0, &msg),
+                msg,
+                vec![],
+            );
         }
 
         let needs_confirmation = spec.permission == Permission::Ask;
         if spec.permission == Permission::Deny {
             let msg = "Error: the user has not permitted this tool.".to_string();
-            return (record(call, Some(spec), &args, false, true, 0, &msg), msg, vec![]);
+            return (
+                record(call, Some(spec), &args, false, true, 0, &msg),
+                msg,
+                vec![],
+            );
         }
         if needs_confirmation {
             let (tx, rx) = oneshot::channel();
-            self.confirmations.lock().unwrap_or_else(|p| p.into_inner()).insert(call.id.clone(), tx);
+            self.confirmations
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .insert(call.id.clone(), tx);
             emit(ChatEvent::ToolAwaitingConfirmation {
                 turn_id: turn_id.into(),
                 call_id: call.id.clone(),
@@ -656,7 +887,10 @@ impl ChatEngine {
                 _ = tokio::time::sleep(CONFIRM_TIMEOUT) => false,
                 _ = cancel.cancelled() => false,
             };
-            self.confirmations.lock().unwrap_or_else(|p| p.into_inner()).remove(&call.id);
+            self.confirmations
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .remove(&call.id);
             if !approved {
                 let msg = "The user declined to run this tool. Do not retry it; answer without it or explain what you would need.".to_string();
                 emit(ChatEvent::ToolFinished {
@@ -668,7 +902,11 @@ impl ChatEngine {
                     sources: vec![],
                     denied: true,
                 });
-                return (record(call, Some(spec), &args, false, true, 0, &msg), msg, vec![]);
+                return (
+                    record(call, Some(spec), &args, false, true, 0, &msg),
+                    msg,
+                    vec![],
+                );
             }
         }
 
@@ -690,7 +928,11 @@ impl ChatEngine {
         };
         let duration_ms = started.elapsed().as_millis() as u64;
         let (ok, text, sources) = match outcome {
-            Ok(out) => (!out.is_error, truncate_chars(&out.text, TOOL_RESULT_LIMIT), out.sources),
+            Ok(out) => (
+                !out.is_error,
+                truncate_chars(&out.text, TOOL_RESULT_LIMIT),
+                out.sources,
+            ),
             Err(e) => {
                 tracing::warn!(server = %spec.server_name, tool = %spec.tool_name, error = %e, "tool call failed");
                 (false, format!("Error: the tool failed ({}). Tell the user the tool is unavailable; do not invent its results.", e), vec![])
@@ -706,15 +948,29 @@ impl ChatEngine {
             sources: sources.clone(),
             denied: false,
         });
-        (record(call, Some(spec), &args, ok, false, duration_ms, &preview), text, sources)
+        (
+            record(call, Some(spec), &args, ok, false, duration_ms, &preview),
+            text,
+            sources,
+        )
     }
 }
 
-fn record(call: &ToolCall, spec: Option<&ToolSpec>, args: &Value, ok: bool, denied: bool, duration_ms: u64, preview: &str) -> ActivityRecord {
+fn record(
+    call: &ToolCall,
+    spec: Option<&ToolSpec>,
+    args: &Value,
+    ok: bool,
+    denied: bool,
+    duration_ms: u64,
+    preview: &str,
+) -> ActivityRecord {
     ActivityRecord {
         call_id: call.id.clone(),
         server_name: spec.map(|s| s.server_name.clone()).unwrap_or_default(),
-        tool_name: spec.map(|s| s.tool_name.clone()).unwrap_or_else(|| call.function.name.clone()),
+        tool_name: spec
+            .map(|s| s.tool_name.clone())
+            .unwrap_or_else(|| call.function.name.clone()),
         category: spec.map(|s| s.category).unwrap_or(ToolCategory::Other),
         args: args.clone(),
         ok,
@@ -725,7 +981,11 @@ fn record(call: &ToolCall, spec: Option<&ToolSpec>, args: &Value, ok: bool, deni
 }
 
 pub fn title_from(text: &str) -> String {
-    let line = text.lines().find(|l| !l.trim().is_empty()).unwrap_or("").trim();
+    let line = text
+        .lines()
+        .find(|l| !l.trim().is_empty())
+        .unwrap_or("")
+        .trim();
     let t: String = line.chars().take(60).collect();
     if line.chars().count() > 60 {
         format!("{}…", t.trim_end())
@@ -762,7 +1022,13 @@ fn normalize_schema(schema: &Value) -> Value {
 /// Attachments are re-rendered from the store on every turn. Only the newest
 /// user message may carry images: replaying every image of a long conversation
 /// would fill the context window several times over.
-pub fn build_history(history: &[Message], ctx_tokens: u32, system_chars: usize, store: &AttachmentStore, vision: bool) -> Vec<ChatMessage> {
+pub fn build_history(
+    history: &[Message],
+    ctx_tokens: u32,
+    system_chars: usize,
+    store: &AttachmentStore,
+    vision: bool,
+) -> Vec<ChatMessage> {
     let last_user = history.iter().rposition(|m| m.role == "user");
     // Pass 1: map rows, keeping tool results only when their call exists.
     let mut out: Vec<ChatMessage> = Vec::new();
@@ -772,7 +1038,12 @@ pub fn build_history(history: &[Message], ctx_tokens: u32, system_chars: usize, 
         match m.role.as_str() {
             "user" => {
                 let attachments = attach::from_json(&m.attachments);
-                out.push(attach::user_message(&m.content, &attachments, store, vision && last_user == Some(i)));
+                out.push(attach::user_message(
+                    &m.content,
+                    &attachments,
+                    store,
+                    vision && last_user == Some(i),
+                ));
             }
             "assistant" => {
                 if !m.content.trim().is_empty() {
@@ -780,7 +1051,11 @@ pub fn build_history(history: &[Message], ctx_tokens: u32, system_chars: usize, 
                 }
             }
             "assistant_tool_calls" => {
-                let calls: Vec<ToolCall> = m.tool_calls.clone().and_then(|v| serde_json::from_value(v).ok()).unwrap_or_default();
+                let calls: Vec<ToolCall> = m
+                    .tool_calls
+                    .clone()
+                    .and_then(|v| serde_json::from_value(v).ok())
+                    .unwrap_or_default();
                 let mut results = Vec::new();
                 let mut j = i + 1;
                 while j < history.len() && history[j].role == "tool" {
@@ -788,11 +1063,19 @@ pub fn build_history(history: &[Message], ctx_tokens: u32, system_chars: usize, 
                     j += 1;
                 }
                 let complete = !calls.is_empty()
-                    && calls.iter().all(|c| results.iter().any(|r| r.tool_call_id.as_deref() == Some(c.id.as_str())));
+                    && calls.iter().all(|c| {
+                        results
+                            .iter()
+                            .any(|r| r.tool_call_id.as_deref() == Some(c.id.as_str()))
+                    });
                 if complete {
                     out.push(ChatMessage {
                         role: "assistant".into(),
-                        content: if m.content.is_empty() { None } else { Some(MessageContent::Text(m.content.clone())) },
+                        content: if m.content.is_empty() {
+                            None
+                        } else {
+                            Some(MessageContent::Text(m.content.clone()))
+                        },
                         tool_calls: Some(calls),
                         tool_call_id: None,
                     });
@@ -815,13 +1098,19 @@ pub fn build_history(history: &[Message], ctx_tokens: u32, system_chars: usize, 
 
     // Pass 2: keep the newest messages within ~60% of the context window
     // (≈3 chars/token), never splitting an assistant tool call from its results.
-    let budget = ((ctx_tokens as usize) * 3 * 6 / 10).saturating_sub(system_chars).max(2000);
+    let budget = ((ctx_tokens as usize) * 3 * 6 / 10)
+        .saturating_sub(system_chars)
+        .max(2000);
     let mut used = 0;
     let mut start = out.len();
     while start > 0 {
         let msg = &out[start - 1];
         let len = msg.content.as_ref().map(MessageContent::len).unwrap_or(0)
-            + msg.tool_calls.as_ref().map(|c| c.iter().map(|t| t.function.arguments.len() + 40).sum()).unwrap_or(0);
+            + msg
+                .tool_calls
+                .as_ref()
+                .map(|c| c.iter().map(|t| t.function.arguments.len() + 40).sum())
+                .unwrap_or(0);
         let is_latest = start == out.len();
         if used + len > budget && !is_latest {
             break;
@@ -862,12 +1151,23 @@ mod tests {
             if let Some(f) = self.fail {
                 return Err(f());
             }
-            Ok(vec![ModelInfo { id: "test-model".into(), kind: "llm".into(), loaded: true, tool_use: true, ..Default::default() }])
+            Ok(vec![ModelInfo {
+                id: "test-model".into(),
+                kind: "llm".into(),
+                loaded: true,
+                tool_use: true,
+                ..Default::default()
+            }])
         }
         async fn load_model(&self, _: &str, _: Option<u32>) -> AppResult<()> {
             Ok(())
         }
-        async fn chat(&self, req: ChatRequest, _c: CancellationToken, on_chunk: &mut (dyn FnMut(StreamChunk) + Send)) -> AppResult<ChatCompletion> {
+        async fn chat(
+            &self,
+            req: ChatRequest,
+            _c: CancellationToken,
+            on_chunk: &mut (dyn FnMut(StreamChunk) + Send),
+        ) -> AppResult<ChatCompletion> {
             self.requests.lock().unwrap().push(req);
             let next = self.script.lock().unwrap().remove(0);
             for word in next.content.split_inclusive(' ') {
@@ -899,23 +1199,53 @@ mod tests {
             Ok(ToolOutput {
                 text: format!("PHP 8.5 released. query={}", args["query"]),
                 is_error: false,
-                sources: vec![Source { url: "https://www.php.net/releases/".into(), title: Some("PHP releases".into()) }],
+                sources: vec![Source {
+                    url: "https://www.php.net/releases/".into(),
+                    title: Some("PHP releases".into()),
+                }],
             })
         }
     }
 
     fn store() -> (Arc<AttachmentStore>, tempfile::TempDir) {
         let dir = tempfile::tempdir().unwrap();
-        (Arc::new(AttachmentStore::new(dir.path().join("attachments"))), dir)
+        (
+            Arc::new(AttachmentStore::new(dir.path().join("attachments"))),
+            dir,
+        )
     }
 
-    fn engine(script: Vec<ChatCompletion>, permission: Permission) -> (Arc<ChatEngine>, Arc<FakeAi>, Arc<Db>, Arc<AttachmentStore>, tempfile::TempDir) {
+    fn engine(
+        script: Vec<ChatCompletion>,
+        permission: Permission,
+    ) -> (
+        Arc<ChatEngine>,
+        Arc<FakeAi>,
+        Arc<Db>,
+        Arc<AttachmentStore>,
+        tempfile::TempDir,
+    ) {
         let db = Arc::new(Db::open_in_memory().unwrap());
         let settings = Arc::new(SettingsStore::load(db.clone()).unwrap());
-        let ai = Arc::new(FakeAi { script: StdMutex::new(script), requests: StdMutex::new(vec![]), fail: None });
-        let resolver = Arc::new(ModelResolver::with_hardware(ai.clone(), HardwareInfo::default()));
+        let ai = Arc::new(FakeAi {
+            script: StdMutex::new(script),
+            requests: StdMutex::new(vec![]),
+            fail: None,
+        });
+        let resolver = Arc::new(ModelResolver::with_hardware(
+            ai.clone(),
+            HardwareInfo::default(),
+        ));
         let (files, dir) = store();
-        let e = ChatEngine::new(db.clone(), settings, ai.clone(), resolver, Arc::new(FakeTools { permission }), Arc::new(NoSpeech), files.clone());
+        let e = ChatEngine::new(
+            db.clone(),
+            settings,
+            ai.clone(),
+            resolver,
+            Arc::new(FakeTools { permission }),
+            Arc::new(NoSpeech),
+            files.clone(),
+        );
         (Arc::new(e), ai, db, files, dir)
     }
 
@@ -926,26 +1256,55 @@ mod tests {
     }
 
     fn input(text: &str) -> SendInput {
-        SendInput { turn_id: "t1".into(), conversation_id: None, text: text.into(), spoken_language: None, voice: false, attachment_ids: vec![] }
+        SendInput {
+            turn_id: "t1".into(),
+            conversation_id: None,
+            text: text.into(),
+            spoken_language: None,
+            voice: false,
+            attachment_ids: vec![],
+            web_search_enabled: None,
+            mcp_enabled: None,
+        }
     }
 
     fn tool_call(args: &str) -> ToolCall {
-        ToolCall { id: "call1".into(), kind: "function".into(), function: crate::services::ai::sse::ToolCallFunction { name: "web__search".into(), arguments: args.into() } }
+        ToolCall {
+            id: "call1".into(),
+            kind: "function".into(),
+            function: crate::services::ai::sse::ToolCallFunction {
+                name: "web__search".into(),
+                arguments: args.into(),
+            },
+        }
     }
 
     #[tokio::test]
     async fn simple_turn_persists_and_detects_language() {
-        let (e, ai, db, _files, _dir) = engine(vec![ChatCompletion { content: "مرحبا! أنا بخير.".into(), ..Default::default() }], Permission::Allow);
+        let (e, ai, db, _files, _dir) = engine(
+            vec![ChatCompletion {
+                content: "مرحبا! أنا بخير.".into(),
+                ..Default::default()
+            }],
+            Permission::Allow,
+        );
         let (emit, events) = collector();
         e.send(input("كيف حالك اليوم؟"), emit).await.unwrap();
         let ev = events.lock().unwrap();
-        let ChatEvent::Done { message, .. } = ev.last().unwrap() else { panic!("expected done") };
+        let ChatEvent::Done { message, .. } = ev.last().unwrap() else {
+            panic!("expected done")
+        };
         assert_eq!(message.language.as_deref(), Some("ar"));
         let req = &ai.requests.lock().unwrap()[0];
         // The language hint rides on the latest message, keeping the system
         // prompt cacheable; the stored message stays exactly as typed.
         assert!(!req.messages[0].content_text().contains("respond in Arabic"));
-        assert!(req.messages.last().unwrap().content_text().contains("respond in Arabic"));
+        assert!(req
+            .messages
+            .last()
+            .unwrap()
+            .content_text()
+            .contains("respond in Arabic"));
         let convs = db.list_conversations(10, 0).unwrap();
         let stored = db.list_messages(&convs[0].id).unwrap();
         assert_eq!(stored.len(), 2);
@@ -954,16 +1313,39 @@ mod tests {
 
     #[tokio::test]
     async fn explain_streams_without_touching_the_conversation() {
-        let (e, ai, db, _files, _dir) = engine(vec![ChatCompletion { content: "<think>hm</think>It means plants make food from light.".into(), ..Default::default() }], Permission::Allow);
+        let (e, ai, db, _files, _dir) = engine(
+            vec![ChatCompletion {
+                content: "<think>hm</think>It means plants make food from light.".into(),
+                ..Default::default()
+            }],
+            Permission::Allow,
+        );
         let events = StdMutex::new(Vec::new());
-        e.explain("x1", "photosynthesis", "Plants rely on photosynthesis.", &|ev| events.lock().unwrap().push(ev)).await;
+        e.explain(
+            "x1",
+            "photosynthesis",
+            "Plants rely on photosynthesis.",
+            &|ev| events.lock().unwrap().push(ev),
+        )
+        .await;
         let events = events.into_inner().unwrap();
-        let text: String = events.iter().filter_map(|ev| if let ExplainEvent::Delta { text } = ev { Some(text.as_str()) } else { None }).collect();
+        let text: String = events
+            .iter()
+            .filter_map(|ev| {
+                if let ExplainEvent::Delta { text } = ev {
+                    Some(text.as_str())
+                } else {
+                    None
+                }
+            })
+            .collect();
         assert_eq!(text, "It means plants make food from light.");
         assert!(matches!(events.last(), Some(ExplainEvent::Done)));
         let req = &ai.requests.lock().unwrap()[0];
         assert!(req.tools.is_empty());
-        assert!(req.messages[1].content_text().contains("<selection>\nphotosynthesis"));
+        assert!(req.messages[1]
+            .content_text()
+            .contains("<selection>\nphotosynthesis"));
         assert!(db.list_conversations(10, 0).unwrap().is_empty());
         assert!(!e.is_busy());
     }
@@ -971,43 +1353,90 @@ mod tests {
     #[tokio::test]
     async fn tool_round_collects_sources() {
         let script = vec![
-            ChatCompletion { tool_calls: vec![tool_call(r#"{"query":"latest php"}"#)], finish_reason: Some("tool_calls".into()), ..Default::default() },
-            ChatCompletion { content: "PHP 8.5 is the latest. [php.net](https://www.php.net/releases/)".into(), ..Default::default() },
+            ChatCompletion {
+                tool_calls: vec![tool_call(r#"{"query":"latest php"}"#)],
+                finish_reason: Some("tool_calls".into()),
+                ..Default::default()
+            },
+            ChatCompletion {
+                content: "PHP 8.5 is the latest. [php.net](https://www.php.net/releases/)".into(),
+                ..Default::default()
+            },
         ];
         let (e, ai, db, files, _dir) = engine(script, Permission::Allow);
         let (emit, events) = collector();
-        e.send(input("What is the latest PHP version?"), emit).await.unwrap();
+        e.send(input("What is the latest PHP version?"), emit)
+            .await
+            .unwrap();
         let ev = events.lock().unwrap();
-        assert!(ev.iter().any(|e| matches!(e, ChatEvent::ToolStarted { tool_name, .. } if tool_name == "search")));
-        let ChatEvent::Done { message, .. } = ev.last().unwrap() else { panic!() };
-        assert_eq!(message.sources.as_ref().unwrap()[0]["url"], "https://www.php.net/releases/");
+        assert!(ev.iter().any(
+            |e| matches!(e, ChatEvent::ToolStarted { tool_name, .. } if tool_name == "search")
+        ));
+        let ChatEvent::Done { message, .. } = ev.last().unwrap() else {
+            panic!()
+        };
+        assert_eq!(
+            message.sources.as_ref().unwrap()[0]["url"],
+            "https://www.php.net/releases/"
+        );
         let reqs = ai.requests.lock().unwrap();
-        assert!(reqs[0].messages[0].content_text().contains("use the web search tool"));
+        assert!(reqs[0].messages[0]
+            .content_text()
+            .contains("use the web search tool"));
         let second = &reqs[1].messages;
         assert_eq!(second[second.len() - 1].role, "tool");
-        assert_eq!(second[second.len() - 2].tool_calls.as_ref().unwrap()[0].id, "call1");
+        assert_eq!(
+            second[second.len() - 2].tool_calls.as_ref().unwrap()[0].id,
+            "call1"
+        );
         // History replay keeps the complete tool exchange
         let conv = &db.list_conversations(1, 0).unwrap()[0];
         let hist = build_history(&db.list_messages(&conv.id).unwrap(), 8192, 0, &files, false);
-        assert_eq!(hist.iter().map(|m| m.role.as_str()).collect::<Vec<_>>(), vec!["user", "assistant", "tool", "assistant"]);
+        assert_eq!(
+            hist.iter().map(|m| m.role.as_str()).collect::<Vec<_>>(),
+            vec!["user", "assistant", "tool", "assistant"]
+        );
     }
 
     #[tokio::test]
     async fn attachments_reach_the_prompt_and_the_stored_message() {
-        let (e, ai, db, files, _dir) = engine(vec![ChatCompletion { content: "It lists two steps.".into(), ..Default::default() }], Permission::Allow);
-        let attachment = files.ingest_text("plan.md", "step one
-step two").unwrap();
+        let (e, ai, db, files, _dir) = engine(
+            vec![ChatCompletion {
+                content: "It lists two steps.".into(),
+                ..Default::default()
+            }],
+            Permission::Allow,
+        );
+        let attachment = files
+            .ingest_text(
+                "plan.md",
+                "step one
+step two",
+            )
+            .unwrap();
         let (emit, events) = collector();
         let mut input = input("what does this say?");
         input.attachment_ids = vec![attachment.id.clone()];
         e.send(input, emit).await.unwrap();
 
-        let prompt = ai.requests.lock().unwrap()[0].messages.last().unwrap().content_text();
-        assert!(prompt.contains("plan.md"), "attachment missing from prompt: {prompt}");
+        let prompt = ai.requests.lock().unwrap()[0]
+            .messages
+            .last()
+            .unwrap()
+            .content_text();
+        assert!(
+            prompt.contains("plan.md"),
+            "attachment missing from prompt: {prompt}"
+        );
         assert!(prompt.contains("step two"));
 
-        let ChatEvent::Started { user_message, .. } = &events.lock().unwrap()[0] else { panic!("expected started") };
-        assert_eq!(user_message.attachments.as_ref().unwrap()[0]["name"], "plan.md");
+        let ChatEvent::Started { user_message, .. } = &events.lock().unwrap()[0] else {
+            panic!("expected started")
+        };
+        assert_eq!(
+            user_message.attachments.as_ref().unwrap()[0]["name"],
+            "plan.md"
+        );
         // Claiming it once means a second turn cannot silently resend the file.
         assert!(files.claim(&[attachment.id]).is_empty());
         let conv = &db.list_conversations(1, 0).unwrap()[0];
@@ -1018,8 +1447,14 @@ step two").unwrap();
     #[tokio::test]
     async fn ask_permission_declined() {
         let script = vec![
-            ChatCompletion { tool_calls: vec![tool_call(r#"{"query":"x"}"#)], ..Default::default() },
-            ChatCompletion { content: "Okay, I won't search.".into(), ..Default::default() },
+            ChatCompletion {
+                tool_calls: vec![tool_call(r#"{"query":"x"}"#)],
+                ..Default::default()
+            },
+            ChatCompletion {
+                content: "Okay, I won't search.".into(),
+                ..Default::default()
+            },
         ];
         let (e, ai, _db, _files, _dir) = engine(script, Permission::Ask);
         let (emit, events) = collector();
@@ -1038,11 +1473,26 @@ step two").unwrap();
                 }
             }
         });
-        e.send(input("search something current today"), emit).await.unwrap();
-        assert!(events.lock().unwrap().iter().any(|ev| matches!(ev, ChatEvent::ToolFinished { denied: true, .. })));
-        assert!(!events.lock().unwrap().iter().any(|ev| matches!(ev, ChatEvent::ToolStarted { .. })));
+        e.send(input("search something current today"), emit)
+            .await
+            .unwrap();
+        assert!(events
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|ev| matches!(ev, ChatEvent::ToolFinished { denied: true, .. })));
+        assert!(!events
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|ev| matches!(ev, ChatEvent::ToolStarted { .. })));
         let reqs = ai.requests.lock().unwrap();
-        assert!(reqs[1].messages.last().unwrap().content_text().contains("declined"));
+        assert!(reqs[1]
+            .messages
+            .last()
+            .unwrap()
+            .content_text()
+            .contains("declined"));
     }
 
     #[tokio::test]
@@ -1050,33 +1500,72 @@ step two").unwrap();
         let mut bad = tool_call("{}");
         bad.function.name = "rm_rf".into();
         let script = vec![
-            ChatCompletion { tool_calls: vec![bad], ..Default::default() },
-            ChatCompletion { content: "Sorry.".into(), ..Default::default() },
+            ChatCompletion {
+                tool_calls: vec![bad],
+                ..Default::default()
+            },
+            ChatCompletion {
+                content: "Sorry.".into(),
+                ..Default::default()
+            },
         ];
         let (e, ai, _db, _files, _dir) = engine(script, Permission::Allow);
         let (emit, _events) = collector();
         e.send(input("hello there"), emit).await.unwrap();
-        assert!(ai.requests.lock().unwrap()[1].messages.last().unwrap().content_text().contains("does not exist"));
+        assert!(ai.requests.lock().unwrap()[1]
+            .messages
+            .last()
+            .unwrap()
+            .content_text()
+            .contains("does not exist"));
     }
 
     #[tokio::test]
     async fn lmstudio_unavailable_emits_error() {
         let db = Arc::new(Db::open_in_memory().unwrap());
         let settings = Arc::new(SettingsStore::load(db.clone()).unwrap());
-        let ai = Arc::new(FakeAi { script: StdMutex::new(vec![]), requests: StdMutex::new(vec![]), fail: Some(|| AppError::LmStudioUnavailable("refused".into())) });
-        let resolver = Arc::new(ModelResolver::with_hardware(ai.clone(), HardwareInfo::default()));
+        let ai = Arc::new(FakeAi {
+            script: StdMutex::new(vec![]),
+            requests: StdMutex::new(vec![]),
+            fail: Some(|| AppError::LmStudioUnavailable("refused".into())),
+        });
+        let resolver = Arc::new(ModelResolver::with_hardware(
+            ai.clone(),
+            HardwareInfo::default(),
+        ));
         let (files, _dir) = store();
-        let e = ChatEngine::new(db, settings, ai, resolver, Arc::new(super::super::tools::NoTools), Arc::new(NoSpeech), files);
+        let e = ChatEngine::new(
+            db,
+            settings,
+            ai,
+            resolver,
+            Arc::new(super::super::tools::NoTools),
+            Arc::new(NoSpeech),
+            files,
+        );
         let (emit, events) = collector();
         assert!(e.send(input("hi"), emit).await.is_err());
-        assert!(events.lock().unwrap().iter().any(|ev| matches!(ev, ChatEvent::Error { code, .. } if code == "lmstudio_unavailable")));
+        assert!(events.lock().unwrap().iter().any(
+            |ev| matches!(ev, ChatEvent::Error { code, .. } if code == "lmstudio_unavailable")
+        ));
     }
 
     #[test]
     fn history_trimming_starts_with_user() {
         let mk = |role: &str, content: String| Message {
-            id: new_id(), conversation_id: "c".into(), role: role.into(), content, language: None, reasoning: None,
-            sources: None, tool_activity: None, tool_calls: None, tool_call_id: None, attachments: None, stats: None, created_at: now(),
+            id: new_id(),
+            conversation_id: "c".into(),
+            role: role.into(),
+            content,
+            language: None,
+            reasoning: None,
+            sources: None,
+            tool_activity: None,
+            tool_calls: None,
+            tool_call_id: None,
+            attachments: None,
+            stats: None,
+            created_at: now(),
         };
         let mut hist = Vec::new();
         for i in 0..50 {

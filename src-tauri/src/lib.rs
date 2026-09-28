@@ -30,7 +30,10 @@ fn init_state(app: &AppHandle) -> Result<AppState, Box<dyn std::error::Error>> {
     let data_dir = app.path().app_data_dir()?;
     let paths = AppPaths {
         models_dir: data_dir.join("models"),
-        logs_dir: app.path().app_log_dir().unwrap_or_else(|_| data_dir.join("logs")),
+        logs_dir: app
+            .path()
+            .app_log_dir()
+            .unwrap_or_else(|_| data_dir.join("logs")),
         database: data_dir.join("assistant.db"),
         data_dir,
     };
@@ -42,25 +45,45 @@ fn init_state(app: &AppHandle) -> Result<AppState, Box<dyn std::error::Error>> {
     let hardware = services::hardware::detect();
     tracing::info!(cpu = %hardware.cpu_name, cores = hardware.physical_cores, ram_gb = hardware.total_ram_bytes / (1 << 30), gpus = hardware.gpus.len(), "hardware detected");
 
-    let lmstudio = Arc::new(LmStudioService::new(&s.ai.server_url, s.ai.request_timeout_secs));
+    let lmstudio = Arc::new(LmStudioService::new(
+        &s.ai.server_url,
+        s.ai.request_timeout_secs,
+    ));
     lmstudio.set_provider(&s.ai.provider);
     lmstudio.set_api_key(s.ai.api_key.clone());
-    let resolver = Arc::new(ModelResolver::with_hardware(lmstudio.clone(), hardware.clone()));
+    let resolver = Arc::new(ModelResolver::with_hardware(
+        lmstudio.clone(),
+        hardware.clone(),
+    ));
     let models = Arc::new(ModelStore::new(paths.models_dir.clone()));
     if let Err(e) = models.install_bundled() {
         tracing::warn!(error = %e, "could not install the bundled VAD model");
     }
-    models.set_extra_dirs(s.stt.extra_model_dirs.iter().map(std::path::PathBuf::from).collect());
+    models.set_extra_dirs(
+        s.stt
+            .extra_model_dirs
+            .iter()
+            .map(std::path::PathBuf::from)
+            .collect(),
+    );
 
     let handle = app.clone();
-    let mcp = Arc::new(McpManager::new(db.clone(), Arc::new(move || {
-        let _ = handle.emit("mcp://changed", ());
-    })));
+    let mcp = Arc::new(McpManager::new(
+        db.clone(),
+        Arc::new(move || {
+            let _ = handle.emit("mcp://changed", ());
+        }),
+    ));
 
     let handle = app.clone();
-    let tts = TtsService::new(models.clone(), settings.clone(), hardware.clone(), Arc::new(move |ev| {
-        let _ = handle.emit("tts://event", ev);
-    }));
+    let tts = TtsService::new(
+        models.clone(),
+        settings.clone(),
+        hardware.clone(),
+        Arc::new(move |ev| {
+            let _ = handle.emit("tts://event", ev);
+        }),
+    );
 
     let stt = Arc::new(SttService::new(models.clone(), hardware.clone()));
 
@@ -76,16 +99,29 @@ fn init_state(app: &AppHandle) -> Result<AppState, Box<dyn std::error::Error>> {
     // Web search works out of the box (no API key, no extra runtime) and sits
     // next to whatever MCP servers the user has added.
     let web_search = Arc::new(services::search::WebSearch::new(settings.clone()));
-    let tools = Arc::new(services::chat::tools::CombinedTools::new(vec![mcp.clone(), web_search.clone()]));
+    let tools = Arc::new(services::chat::tools::CombinedTools::new(vec![
+        mcp.clone(),
+        web_search.clone(),
+    ]));
     // Attachment files outlive a single run; anything no message points at any
     // more is left over from a composer that was never sent, so drop it now.
-    let attachments = Arc::new(services::attachments::AttachmentStore::new(paths.data_dir.join("attachments")));
+    let attachments = Arc::new(services::attachments::AttachmentStore::new(
+        paths.data_dir.join("attachments"),
+    ));
     match db.attachment_ids() {
         Ok(keep) => attachments.gc(&keep),
         Err(e) => tracing::warn!(error = %e, "skipping attachment cleanup"),
     }
 
-    let chat = Arc::new(ChatEngine::new(db.clone(), settings.clone(), lmstudio.clone(), resolver.clone(), tools, tts.clone(), attachments.clone()));
+    let chat = Arc::new(ChatEngine::new(
+        db.clone(),
+        settings.clone(),
+        lmstudio.clone(),
+        resolver.clone(),
+        tools,
+        tts.clone(),
+        attachments.clone(),
+    ));
 
     Ok(AppState {
         paths,
@@ -117,33 +153,58 @@ fn init_state(app: &AppHandle) -> Result<AppState, Box<dyn std::error::Error>> {
 /// else is forwarded to the UI.
 fn on_voice_event(app: &AppHandle, ev: VoiceEvent) {
     match &ev {
-        VoiceEvent::Transcript { mode: ListenMode::Dictation, text, .. } => {
+        VoiceEvent::Transcript {
+            mode: ListenMode::Dictation,
+            text,
+            ..
+        } => {
             let text = text.clone();
             let app = app.clone();
             tauri::async_runtime::spawn(async move { run_dictation(app, text).await });
         }
-        VoiceEvent::State { mode: ListenMode::Dictation, state, .. } => {
+        VoiceEvent::State {
+            mode: ListenMode::Dictation,
+            state,
+            ..
+        } => {
             if state == "listening" {
                 // A new session must not inherit live-typed text from the last one.
                 app.state::<AppState>().dictation_live_typer.reset();
             }
             // A stop arriving after Esc-cancel must not resurrect the overlay
             // as idle; report cancelled instead (flag stays for run_dictation).
-            if state == "idle" && app.state::<AppState>().dictation_cancel.load(Ordering::Relaxed) {
-                let _ = app.emit("dictation://state", serde_json::json!({ "state": "cancelled" }));
+            if state == "idle"
+                && app
+                    .state::<AppState>()
+                    .dictation_cancel
+                    .load(Ordering::Relaxed)
+            {
+                let _ = app.emit(
+                    "dictation://state",
+                    serde_json::json!({ "state": "cancelled" }),
+                );
             } else {
                 let _ = app.emit("dictation://state", serde_json::json!({ "state": state }));
             }
         }
-        VoiceEvent::Partial { mode: ListenMode::Dictation, text } => {
+        VoiceEvent::Partial {
+            mode: ListenMode::Dictation,
+            text,
+        } => {
             let state = app.state::<AppState>();
             // Review mode types nothing until the user confirms the result.
             let d = state.settings.get().dictation;
             if d.insert_method == "type" && !d.review_before_insert {
-                state.dictation_live_typer.set_target(app.clone(), text.clone());
+                state
+                    .dictation_live_typer
+                    .set_target(app.clone(), text.clone());
             }
         }
-        VoiceEvent::Error { mode: ListenMode::Dictation, code, detail } => {
+        VoiceEvent::Error {
+            mode: ListenMode::Dictation,
+            code,
+            detail,
+        } => {
             let typer_app = app.clone();
             tauri::async_runtime::spawn_blocking(move || {
                 if let Err(e) = typer_app.state::<AppState>().dictation_live_typer.retract() {
@@ -156,7 +217,16 @@ fn on_voice_event(app: &AppHandle, ev: VoiceEvent) {
         _ => {}
     }
     // Dictation feedback (levels and live partial text) goes to the overlay only.
-    if matches!(&ev, VoiceEvent::Level { mode: ListenMode::Dictation, .. } | VoiceEvent::Partial { mode: ListenMode::Dictation, .. }) {
+    if matches!(
+        &ev,
+        VoiceEvent::Level {
+            mode: ListenMode::Dictation,
+            ..
+        } | VoiceEvent::Partial {
+            mode: ListenMode::Dictation,
+            ..
+        }
+    ) {
         let _ = app.emit_to(window::OVERLAY, "voice://event", ev);
         return;
     }
@@ -165,7 +235,13 @@ fn on_voice_event(app: &AppHandle, ev: VoiceEvent) {
 
 /// Warms every model up at startup when the user asked for it.
 pub(crate) fn preload_models(app: &AppHandle) {
-    if app.state::<AppState>().settings.get().general.preload_models {
+    if app
+        .state::<AppState>()
+        .settings
+        .get()
+        .general
+        .preload_models
+    {
         tracing::info!("preloading models");
         commands::memory::load_all(app, true);
     }
@@ -181,7 +257,9 @@ fn hide_overlay_later(app: &AppHandle, ms: u64) {
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(std::time::Duration::from_millis(ms)).await;
         let state = app.state::<AppState>();
-        if state.voice.active_mode() != Some(ListenMode::Dictation) && !state.dictation_busy.load(Ordering::Relaxed) {
+        if state.voice.active_mode() != Some(ListenMode::Dictation)
+            && !state.dictation_busy.load(Ordering::Relaxed)
+        {
             window::hide_overlay(&app);
         }
     });
@@ -204,7 +282,10 @@ async fn run_dictation(app: AppHandle, raw: String) {
     // Esc/X cancel wins over any pending transcript or correction.
     if state.dictation_cancel.swap(false, Ordering::Relaxed) {
         retract_live_typed(&app).await;
-        let _ = app.emit("dictation://state", serde_json::json!({ "state": "cancelled" }));
+        let _ = app.emit(
+            "dictation://state",
+            serde_json::json!({ "state": "cancelled" }),
+        );
         state.dictation_busy.store(false, Ordering::Relaxed);
         return;
     }
@@ -220,9 +301,16 @@ async fn run_dictation(app: AppHandle, raw: String) {
         linger = LINGER_MSG_MS;
     } else {
         if settings.correction_enabled {
-            match settings.correction_model.as_deref().filter(|m| !m.is_empty()) {
+            match settings
+                .correction_model
+                .as_deref()
+                .filter(|m| !m.is_empty())
+            {
                 Some(model) => {
-                    let _ = app.emit("dictation://state", serde_json::json!({ "state": "correcting" }));
+                    let _ = app.emit(
+                        "dictation://state",
+                        serde_json::json!({ "state": "correcting" }),
+                    );
                     match dictation::correct_text(state.lmstudio.as_ref(), model, &raw).await {
                         Ok(c) => {
                             text = c;
@@ -240,21 +328,42 @@ async fn run_dictation(app: AppHandle, raw: String) {
         // Cancel may have landed during the (slow) correction call.
         if state.dictation_cancel.swap(false, Ordering::Relaxed) {
             retract_live_typed(&app).await;
-            let _ = app.emit("dictation://state", serde_json::json!({ "state": "cancelled" }));
+            let _ = app.emit(
+                "dictation://state",
+                serde_json::json!({ "state": "cancelled" }),
+            );
             state.dictation_busy.store(false, Ordering::Relaxed);
             return;
         }
         let correction_error = correction_error.map(|e| e.to_string());
         if settings.review_before_insert {
             // Hold the result for editing. Stays "busy" until confirmed, retried or cancelled.
-            *state.dictation_review.lock().unwrap_or_else(|p| p.into_inner()) =
-                Some(dictation::ReviewPending { raw: raw.clone(), corrected, correction_error: correction_error.clone() });
+            *state
+                .dictation_review
+                .lock()
+                .unwrap_or_else(|p| p.into_inner()) = Some(dictation::ReviewPending {
+                raw: raw.clone(),
+                corrected,
+                correction_error: correction_error.clone(),
+            });
             window::set_overlay_review(&app, true);
-            let result = dictation::DictationResult { raw, inserted: text, corrected, correction_error };
-            let _ = app.emit("dictation://state", serde_json::json!({ "state": "review", "result": result }));
+            let result = dictation::DictationResult {
+                raw,
+                inserted: text,
+                corrected,
+                correction_error,
+            };
+            let _ = app.emit(
+                "dictation://state",
+                serde_json::json!({ "state": "review", "result": result }),
+            );
             return;
         }
-        linger = if insert_and_report(&app, raw, text, corrected, correction_error, true).await { LINGER_OK_MS } else { LINGER_MSG_MS };
+        linger = if insert_and_report(&app, raw, text, corrected, correction_error, true).await {
+            LINGER_OK_MS
+        } else {
+            LINGER_MSG_MS
+        };
     }
     state.dictation_busy.store(false, Ordering::Relaxed);
     hide_overlay_later(&app, linger);
@@ -263,13 +372,25 @@ async fn run_dictation(app: AppHandle, raw: String) {
 /// Types or pastes the final text, records it in the history and reports the
 /// outcome to the overlay. `live` means partials were typed while speaking.
 /// Returns whether the text was inserted.
-async fn insert_and_report(app: &AppHandle, raw: String, text: String, corrected: bool, correction_error: Option<String>, live: bool) -> bool {
+async fn insert_and_report(
+    app: &AppHandle,
+    raw: String,
+    text: String,
+    corrected: bool,
+    correction_error: Option<String>,
+    live: bool,
+) -> bool {
     let state = app.state::<AppState>();
     let settings = state.settings.get().dictation;
     let final_text = dictation::finalize_text(&text, &settings);
     let insert = if live && settings.insert_method == "type" {
         let app2 = app.clone();
-        tokio::task::spawn_blocking(move || app2.state::<AppState>().dictation_live_typer.finish(&final_text)).await
+        tokio::task::spawn_blocking(move || {
+            app2.state::<AppState>()
+                .dictation_live_typer
+                .finish(&final_text)
+        })
+        .await
     } else {
         let s2 = settings.clone();
         tokio::task::spawn_blocking(move || dictation::insert_text(&final_text, &s2)).await
@@ -285,12 +406,23 @@ async fn insert_and_report(app: &AppHandle, raw: String, text: String, corrected
     }
     match insert {
         Ok(Ok(())) => {
-            let result = dictation::DictationResult { raw, inserted: text, corrected, correction_error };
-            let _ = app.emit("dictation://state", serde_json::json!({ "state": "inserted", "result": result }));
+            let result = dictation::DictationResult {
+                raw,
+                inserted: text,
+                corrected,
+                correction_error,
+            };
+            let _ = app.emit(
+                "dictation://state",
+                serde_json::json!({ "state": "inserted", "result": result }),
+            );
             true
         }
         Ok(Err(e)) => {
-            let _ = app.emit("dictation://state", serde_json::json!({ "state": "error", "error": e }));
+            let _ = app.emit(
+                "dictation://state",
+                serde_json::json!({ "state": "error", "error": e }),
+            );
             false
         }
         Err(e) => {
@@ -318,7 +450,16 @@ pub(crate) async fn confirm_review(app: AppHandle, text: String) -> Result<(), e
     let linger = if text.is_empty() {
         let _ = app.emit("dictation://state", serde_json::json!({ "state": "empty" }));
         LINGER_MSG_MS
-    } else if insert_and_report(&app, pending.raw, text, pending.corrected, pending.correction_error, false).await {
+    } else if insert_and_report(
+        &app,
+        pending.raw,
+        text,
+        pending.corrected,
+        pending.correction_error,
+        false,
+    )
+    .await
+    {
         LINGER_OK_MS
     } else {
         LINGER_MSG_MS
@@ -357,24 +498,39 @@ pub fn run() {
             tracing::info!("second instance launched; focusing the existing window");
             window::show_main(app, true);
         }))
-        .plugin(tauri_plugin_global_shortcut::Builder::new().with_handler(shortcuts::handle).build())
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_handler(shortcuts::handle)
+                .build(),
+        )
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let handle = app.handle().clone();
-            let log_dir = handle.path().app_log_dir().unwrap_or_else(|_| std::env::temp_dir().join("local-assistant-logs"));
+            let log_dir = handle
+                .path()
+                .app_log_dir()
+                .unwrap_or_else(|_| std::env::temp_dir().join("local-assistant-logs"));
             if let Some(guard) = logging::init(&log_dir) {
                 // Keep the non-blocking writer alive for the whole process.
                 Box::leak(Box::new(guard));
             }
-            tracing::info!(version = env!("CARGO_PKG_VERSION"), "starting Open Local Assistant");
+            tracing::info!(
+                version = env!("CARGO_PKG_VERSION"),
+                "starting Open Local Assistant"
+            );
 
             let state = init_state(&handle)?;
             let mcp = state.mcp.clone();
             app.manage(state);
 
             {
-                let start_with_os = handle.state::<AppState>().settings.get().general.start_with_os;
+                let start_with_os = handle
+                    .state::<AppState>()
+                    .settings
+                    .get()
+                    .general
+                    .start_with_os;
                 autostart::sync(&handle, start_with_os);
             }
             tray::create(&handle)?;
@@ -386,7 +542,13 @@ pub fn run() {
             let _ = window::ensure_settings(&handle);
             // Tint tray + taskbar icons to match saved accent.
             {
-                let accent = handle.state::<AppState>().settings.get().general.accent.clone();
+                let accent = handle
+                    .state::<AppState>()
+                    .settings
+                    .get()
+                    .general
+                    .accent
+                    .clone();
                 icon::apply_accent(&handle, &accent);
             }
 

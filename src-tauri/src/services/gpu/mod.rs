@@ -191,15 +191,22 @@ pub fn mark_healthy() {
 
 /// True when an NVIDIA driver is installed on this machine.
 fn has_nvidia_driver() -> bool {
-    let Some(root) = std::env::var_os("SystemRoot") else { return false };
-    Path::new(&root).join("System32").join("nvcuda.dll").exists()
+    let Some(root) = std::env::var_os("SystemRoot") else {
+        return false;
+    };
+    Path::new(&root)
+        .join("System32")
+        .join("nvcuda.dll")
+        .exists()
 }
 
 /// Called first thing at startup: relaunches this process with the GPU pack's
 /// libraries when the pack is installed and switched on. Returns true when the
 /// caller should exit because the replacement process is running.
 pub fn activate_early() -> bool {
-    let Some(dir) = default_data_dir() else { return false };
+    let Some(dir) = default_data_dir() else {
+        return false;
+    };
     if std::env::var_os(RELAUNCH_MARKER).is_none() {
         if let Ok(exe) = std::env::current_exe() {
             if is_pack_copy(&dir, &exe) {
@@ -207,7 +214,11 @@ pub fn activate_early() -> bool {
                 // pinned shortcut): hand over to the installed app, which
                 // refreshes the copy before it runs again.
                 if let Some(installed) = recorded_launcher(&dir) {
-                    if std::process::Command::new(&installed).args(std::env::args_os().skip(1)).spawn().is_ok() {
+                    if std::process::Command::new(&installed)
+                        .args(std::env::args_os().skip(1))
+                        .spawn()
+                        .is_ok()
+                    {
                         return true;
                     }
                 }
@@ -244,7 +255,11 @@ fn record_launcher(data_dir: &Path, exe: &Path) {
 }
 
 fn recorded_launcher(data_dir: &Path) -> Option<PathBuf> {
-    let path = PathBuf::from(std::fs::read_to_string(launcher_file(data_dir)).ok()?.trim());
+    let path = PathBuf::from(
+        std::fs::read_to_string(launcher_file(data_dir))
+            .ok()?
+            .trim(),
+    );
     path.is_file().then_some(path)
 }
 
@@ -268,7 +283,9 @@ pub fn is_installed(data_dir: &Path) -> bool {
 }
 
 fn dir_size(dir: &Path) -> u64 {
-    let Ok(entries) = std::fs::read_dir(dir) else { return 0 };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return 0;
+    };
     entries
         .filter_map(|e| e.ok())
         .map(|e| match e.file_type() {
@@ -284,9 +301,17 @@ pub fn status(data_dir: &Path, hw: &HardwareInfo, enabled: bool) -> GpuStatus {
     let active = is_active();
     GpuStatus {
         supported: hw.has_nvidia(),
-        gpu_name: hw.gpus.iter().find(|g| g.vendor == "nvidia").map(|g| g.name.clone()),
+        gpu_name: hw
+            .gpus
+            .iter()
+            .find(|g| g.vendor == "nvidia")
+            .map(|g| g.name.clone()),
         installed,
-        size_bytes: if installed { dir_size(&pack_dir(data_dir)) } else { 0 },
+        size_bytes: if installed {
+            dir_size(&pack_dir(data_dir))
+        } else {
+            0
+        },
         download_bytes: PACK_BYTES,
         active,
         restart_required: installed && enabled && !active,
@@ -309,7 +334,9 @@ pub fn activate(data_dir: &Path, enabled: bool) -> bool {
         return false;
     }
     if !has_nvidia_driver() {
-        tracing::warn!("GPU acceleration is on but no NVIDIA driver is installed, staying on the CPU");
+        tracing::warn!(
+            "GPU acceleration is on but no NVIDIA driver is installed, staying on the CPU"
+        );
         return false;
     }
     let attempt = attempt_file(data_dir);
@@ -364,7 +391,8 @@ fn supervise(mut child: std::process::Child) -> i32 {
     use std::os::windows::io::AsRawHandle;
     use windows::Win32::Foundation::HANDLE;
     use windows::Win32::System::JobObjects::{
-        AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation, SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+        AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
+        SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
         JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
     };
     // SAFETY: plain Win32 calls on handles owned by this process. The job
@@ -393,7 +421,9 @@ fn supervise(mut child: std::process::Child) -> i32 {
 /// updated app never runs as a stale binary.
 fn stage_executable(pack: &Path) -> AppResult<PathBuf> {
     let exe = std::env::current_exe()?;
-    let name = exe.file_name().ok_or_else(|| AppError::Other("the app has no file name".into()))?;
+    let name = exe
+        .file_name()
+        .ok_or_else(|| AppError::Other("the app has no file name".into()))?;
     let copy = pack.join(name);
     let fresh = match (std::fs::metadata(&exe), std::fs::metadata(&copy)) {
         (Ok(a), Ok(b)) => a.len() == b.len() && a.modified().ok() == b.modified().ok(),
@@ -426,7 +456,12 @@ pub async fn install(
     std::fs::create_dir_all(&staging)?;
 
     let progress = |state: &str, downloaded: u64, total: u64, error: Option<String>| {
-        on_progress(GpuProgress { state: state.into(), downloaded_bytes: downloaded, total_bytes: total, error })
+        on_progress(GpuProgress {
+            state: state.into(),
+            downloaded_bytes: downloaded,
+            total_bytes: total,
+            error,
+        })
     };
 
     let result: AppResult<()> = async {
@@ -435,9 +470,16 @@ pub async fn install(
             .user_agent(concat!("LocalAssistant/", env!("CARGO_PKG_VERSION")))
             .build()
             .map_err(|e| AppError::Download(e.to_string()))?;
-        let resp = client.get(PACK_URL).send().await.map_err(|e| AppError::Download(e.to_string()))?;
+        let resp = client
+            .get(PACK_URL)
+            .send()
+            .await
+            .map_err(|e| AppError::Download(e.to_string()))?;
         if !resp.status().is_success() {
-            return Err(AppError::Download(format!("{PACK_URL} returned {}", resp.status())));
+            return Err(AppError::Download(format!(
+                "{PACK_URL} returned {}",
+                resp.status()
+            )));
         }
         let total = resp.content_length().unwrap_or(PACK_BYTES);
         let archive = staging.join("pack.tar.bz2");
@@ -473,9 +515,17 @@ pub async fn install(
         let mut done = got;
         for part in CUDA_PARTS {
             let zip_path = staging.join("part.zip");
-            let mut resp = client.get(part.url).send().await.map_err(|e| AppError::Download(e.to_string()))?;
+            let mut resp = client
+                .get(part.url)
+                .send()
+                .await
+                .map_err(|e| AppError::Download(e.to_string()))?;
             if !resp.status().is_success() {
-                return Err(AppError::Download(format!("{} returned {}", part.url, resp.status())));
+                return Err(AppError::Download(format!(
+                    "{} returned {}",
+                    part.url,
+                    resp.status()
+                )));
             }
             let mut out = std::fs::File::create(&zip_path)?;
             loop {
@@ -500,9 +550,16 @@ pub async fn install(
                 .map_err(|e| AppError::Download(e.to_string()))??;
             let _ = std::fs::remove_file(&zip_path);
         }
-        let missing: Vec<&str> = REQUIRED.iter().copied().filter(|f| !staging.join(f).is_file()).collect();
+        let missing: Vec<&str> = REQUIRED
+            .iter()
+            .copied()
+            .filter(|f| !staging.join(f).is_file())
+            .collect();
         if !missing.is_empty() {
-            return Err(AppError::Download(format!("the GPU pack is missing {}", missing.join(", "))));
+            return Err(AppError::Download(format!(
+                "the GPU pack is missing {}",
+                missing.join(", ")
+            )));
         }
         Ok(())
     }
@@ -536,11 +593,17 @@ pub async fn install(
 /// and drops them in the pack root next to everything else.
 fn extract_zip_libraries(archive: &Path, dest: &Path, wanted: &[&str]) -> AppResult<()> {
     let file = std::fs::File::open(archive)?;
-    let mut zip = zip::ZipArchive::new(std::io::BufReader::new(file)).map_err(|e| AppError::Download(e.to_string()))?;
+    let mut zip = zip::ZipArchive::new(std::io::BufReader::new(file))
+        .map_err(|e| AppError::Download(e.to_string()))?;
     let mut found = Vec::new();
     for i in 0..zip.len() {
-        let mut entry = zip.by_index(i).map_err(|e| AppError::Download(e.to_string()))?;
-        let Some(name) = entry.enclosed_name().and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_string())) else {
+        let mut entry = zip
+            .by_index(i)
+            .map_err(|e| AppError::Download(e.to_string()))?;
+        let Some(name) = entry
+            .enclosed_name()
+            .and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_string()))
+        else {
             continue;
         };
         if !wanted.iter().any(|w| w.eq_ignore_ascii_case(&name)) {
@@ -550,9 +613,17 @@ fn extract_zip_libraries(archive: &Path, dest: &Path, wanted: &[&str]) -> AppRes
         std::io::copy(&mut entry, &mut out)?;
         found.push(name);
     }
-    let missing: Vec<&str> = wanted.iter().copied().filter(|w| !found.iter().any(|f| f.eq_ignore_ascii_case(w))).collect();
+    let missing: Vec<&str> = wanted
+        .iter()
+        .copied()
+        .filter(|w| !found.iter().any(|f| f.eq_ignore_ascii_case(w)))
+        .collect();
     if !missing.is_empty() {
-        return Err(AppError::Download(format!("{} does not contain {}", archive.display(), missing.join(", "))));
+        return Err(AppError::Download(format!(
+            "{} does not contain {}",
+            archive.display(),
+            missing.join(", ")
+        )));
     }
     Ok(())
 }
@@ -568,7 +639,12 @@ fn flatten_libraries(root: &Path) -> AppResult<()> {
         for entry in std::fs::read_dir(&dir)? {
             let entry = entry?;
             let path = entry.path();
-            if path.extension().and_then(|e| e.to_str()).map(|e| e.eq_ignore_ascii_case("dll")) != Some(true) {
+            if path
+                .extension()
+                .and_then(|e| e.to_str())
+                .map(|e| e.eq_ignore_ascii_case("dll"))
+                != Some(true)
+            {
                 continue;
             }
             let target = root.join(entry.file_name());
@@ -601,7 +677,10 @@ mod tests {
         }
         assert!(is_installed(dir.path()));
         std::fs::remove_file(pack.join(REQUIRED[1])).unwrap();
-        assert!(!is_installed(dir.path()), "a half-extracted pack must not count as installed");
+        assert!(
+            !is_installed(dir.path()),
+            "a half-extracted pack must not count as installed"
+        );
     }
 
     #[test]
@@ -616,7 +695,11 @@ mod tests {
         assert!(!is_pack_copy(dir.path(), &installed));
 
         record_launcher(dir.path(), &installed);
-        assert_eq!(recorded_launcher(dir.path()), None, "nothing is written before a pack exists");
+        assert_eq!(
+            recorded_launcher(dir.path()),
+            None,
+            "nothing is written before a pack exists"
+        );
 
         std::fs::create_dir_all(pack_dir(dir.path())).unwrap();
         record_launcher(dir.path(), &installed);
@@ -628,7 +711,9 @@ mod tests {
     #[test]
     #[ignore]
     fn takes_the_wanted_libraries_out_of_the_nvidia_archives() {
-        let src = std::path::PathBuf::from(std::env::var("LA_CUDA_ZIP_DIR").expect("set LA_CUDA_ZIP_DIR"));
+        let src = std::path::PathBuf::from(
+            std::env::var("LA_CUDA_ZIP_DIR").expect("set LA_CUDA_ZIP_DIR"),
+        );
         let out = tempfile::tempdir().unwrap();
         for part in CUDA_PARTS {
             let name = part.url.rsplit('/').next().unwrap();
@@ -656,7 +741,10 @@ mod tests {
         flatten_libraries(root).unwrap();
         assert!(root.join("onnxruntime.dll").is_file());
         assert!(root.join("cudnn64_9.dll").is_file());
-        assert!(!root.join("lib").exists(), "the rest of the archive is thrown away");
+        assert!(
+            !root.join("lib").exists(),
+            "the rest of the archive is thrown away"
+        );
     }
 
     #[test]
@@ -667,12 +755,18 @@ mod tests {
         let exe = std::env::current_exe().unwrap();
         let copy = stage_executable(&pack).unwrap();
         assert_eq!(copy, pack.join(exe.file_name().unwrap()));
-        assert_eq!(std::fs::metadata(&copy).unwrap().len(), std::fs::metadata(&exe).unwrap().len());
+        assert_eq!(
+            std::fs::metadata(&copy).unwrap().len(),
+            std::fs::metadata(&exe).unwrap().len()
+        );
 
         // A stale copy of a different size is replaced.
         std::fs::write(&copy, b"old build").unwrap();
         stage_executable(&pack).unwrap();
-        assert_eq!(std::fs::metadata(&copy).unwrap().len(), std::fs::metadata(&exe).unwrap().len());
+        assert_eq!(
+            std::fs::metadata(&copy).unwrap().len(),
+            std::fs::metadata(&exe).unwrap().len()
+        );
     }
 
     #[test]
@@ -686,8 +780,14 @@ mod tests {
         set_enabled(dir.path(), true).unwrap();
         // A leftover file means the previous GPU run died before a model loaded.
         std::fs::write(attempt_file(dir.path()), b"1").unwrap();
-        assert!(!activate(dir.path(), true), "a crashed GPU run must not be retried");
-        assert!(!is_enabled(dir.path()), "GPU must switch itself off after a crash");
+        assert!(
+            !activate(dir.path(), true),
+            "a crashed GPU run must not be retried"
+        );
+        assert!(
+            !is_enabled(dir.path()),
+            "GPU must switch itself off after a crash"
+        );
         assert!(!attempt_file(dir.path()).exists());
     }
 

@@ -55,7 +55,12 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
             _ => {}
         })
         .on_tray_icon_event(|tray, event| {
-            if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = event {
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
                 window::toggle_main(tray.app_handle());
             }
         });
@@ -71,7 +76,12 @@ pub fn quit(app: &AppHandle) {
     state.chat.stop_all();
     state.voice.stop(true);
     state.tts.stop_all();
-    for label in [window::MAIN, window::BUBBLE, window::OVERLAY, window::SETTINGS] {
+    for label in [
+        window::MAIN,
+        window::BUBBLE,
+        window::OVERLAY,
+        window::SETTINGS,
+    ] {
         if let Some(w) = app.get_webview_window(label) {
             let _ = w.hide();
         }

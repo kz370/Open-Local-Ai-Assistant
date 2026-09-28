@@ -14,7 +14,9 @@ async fn installs_the_cuda_pack() {
             println!("{} {} / {}", p.state, p.downloaded_bytes, p.total_bytes);
         }
     };
-    gpu::install(&dir, CancellationToken::new(), &progress).await.expect("install failed");
+    gpu::install(&dir, CancellationToken::new(), &progress)
+        .await
+        .expect("install failed");
     assert!(gpu::is_installed(&dir), "pack incomplete after install");
     let pack = gpu::pack_dir(&dir);
     let mut dlls: Vec<String> = std::fs::read_dir(&pack)

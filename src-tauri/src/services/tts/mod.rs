@@ -25,17 +25,31 @@ use std::sync::{Arc, Mutex};
 use voices::{list_voices, select_voice, VoiceInfo};
 
 #[derive(Debug, Clone, Serialize)]
-#[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum TtsEvent {
-    Speaking { tag: String },
+    Speaking {
+        tag: String,
+    },
     /// A sentence started playing: what is being said right now and how long it
     /// takes, so the UI can follow the speech word by word.
-    Sentence { tag: String, text: String, duration_ms: u64 },
+    Sentence {
+        tag: String,
+        text: String,
+        duration_ms: u64,
+    },
     Paused,
     Resumed,
     Idle,
-    VoiceUnavailable { language: String },
-    Error { detail: String },
+    VoiceUnavailable {
+        language: String,
+    },
+    Error {
+        detail: String,
+    },
 }
 
 /// Flow-matching steps for Supertonic: more is cleaner but slower (5 is its default).
@@ -81,7 +95,12 @@ pub struct TtsService {
 }
 
 impl TtsService {
-    pub fn new(store: Arc<ModelStore>, settings: Arc<SettingsStore>, hw: HardwareInfo, emit: Arc<dyn Fn(TtsEvent) + Send + Sync>) -> Arc<Self> {
+    pub fn new(
+        store: Arc<ModelStore>,
+        settings: Arc<SettingsStore>,
+        hw: HardwareInfo,
+        emit: Arc<dyn Fn(TtsEvent) + Send + Sync>,
+    ) -> Arc<Self> {
         let s = settings.get();
         let player = Arc::new(Player::new(s.tts.output_device.clone()));
         player.set_volume(s.tts.volume);
@@ -109,13 +128,19 @@ impl TtsService {
                 while let Ok(job) = rx.recv() {
                     let Some(svc) = weak.upgrade() else { break };
                     if job.generation != svc.generation.load(Ordering::SeqCst)
-                        || svc.cancelled.lock().unwrap_or_else(|p| p.into_inner()).contains(&job.tag)
+                        || svc
+                            .cancelled
+                            .lock()
+                            .unwrap_or_else(|p| p.into_inner())
+                            .contains(&job.tag)
                     {
                         continue;
                     }
                     if let Err(e) = svc.synthesize_and_queue(&job, threads) {
                         tracing::warn!(error = %e, "tts synthesis failed");
-                        (svc.emit)(TtsEvent::Error { detail: e.to_string() });
+                        (svc.emit)(TtsEvent::Error {
+                            detail: e.to_string(),
+                        });
                     }
                 }
             })
@@ -153,7 +178,9 @@ impl TtsService {
                     spoke = true;
                     let mut queued = svc.queued.lock().unwrap_or_else(|p| p.into_inner());
                     queued.retain(|id, _| *id >= current);
-                    let Some(sentence) = queued.get(&current) else { continue };
+                    let Some(sentence) = queued.get(&current) else {
+                        continue;
+                    };
                     (svc.emit)(TtsEvent::Sentence {
                         tag: sentence.tag.clone(),
                         text: sentence.text.clone(),
@@ -179,23 +206,42 @@ impl TtsService {
 
     /// Ids of the ONNX voice models in memory.
     pub fn loaded_models(&self) -> Vec<String> {
-        self.engines.lock().unwrap_or_else(|p| p.into_inner()).keys().cloned().collect()
+        self.engines
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .keys()
+            .cloned()
+            .collect()
     }
 
     /// Frees a voice model (a sentence being spoken keeps its own handle).
     pub fn unload_model(&self, model_id: &str) {
-        self.engines.lock().unwrap_or_else(|p| p.into_inner()).remove(model_id);
+        self.engines
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .remove(model_id);
     }
 
     /// Loads the voice for `lang` now.
     pub fn preload_lang(&self, lang: Lang, threads: i32) -> AppResult<()> {
-        let voice = self.voice_for(lang).ok_or_else(|| AppError::Tts(format!("no local voice installed for {}", lang.english_name())))?;
+        let voice = self.voice_for(lang).ok_or_else(|| {
+            AppError::Tts(format!(
+                "no local voice installed for {}",
+                lang.english_name()
+            ))
+        })?;
         self.engine(&voice.model_id, threads).map(|_| ())
     }
 
     fn voice_for(&self, lang: Lang) -> Option<VoiceInfo> {
         let s = self.settings.get();
-        let pref = s.language.entries.iter().find(|e| e.code == lang.code()).map(|e| e.tts_voice.clone()).unwrap_or_else(|| "auto".into());
+        let pref = s
+            .language
+            .entries
+            .iter()
+            .find(|e| e.code == lang.code())
+            .map(|e| e.tts_voice.clone())
+            .unwrap_or_else(|| "auto".into());
         select_voice(&self.voices(), lang, &pref, &s.tts.preferred_gender)
     }
 
@@ -206,7 +252,12 @@ impl TtsService {
     }
 
     fn engine(&self, model_id: &str, threads: i32) -> AppResult<Arc<sherpa_onnx::OfflineTts>> {
-        if let Some(e) = self.engines.lock().unwrap_or_else(|p| p.into_inner()).get(model_id) {
+        if let Some(e) = self
+            .engines
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .get(model_id)
+        {
             return Ok(e.clone());
         }
         let model = self
@@ -217,13 +268,23 @@ impl TtsService {
         let path = |p: std::path::PathBuf| Some(p.to_string_lossy().to_string());
         let mut config = sherpa_onnx::OfflineTtsConfig::default();
         config.model.num_threads = threads;
-        let hw_pref = self.settings.get().tts.voice_hardware.get(model_id).cloned().unwrap_or_else(|| "auto".into());
+        let hw_pref = self
+            .settings
+            .get()
+            .tts
+            .voice_hardware
+            .get(model_id)
+            .cloned()
+            .unwrap_or_else(|| "auto".into());
         config.model.provider = Some(crate::services::gpu::provider_for(&hw_pref).into());
         config.max_num_sentences = 1;
         if model.engine == Engine::Supertonic {
             // "<stem>.onnx", or a quantized "<stem>.int8.onnx".
             let file = |stem: &str, ext: &str| {
-                let p = find_file(dir, |n| n.starts_with(&format!("{stem}.")) && n.ends_with(ext)).ok_or_else(|| AppError::Tts(format!("{stem}{ext} missing")))?;
+                let p = find_file(dir, |n| {
+                    n.starts_with(&format!("{stem}.")) && n.ends_with(ext)
+                })
+                .ok_or_else(|| AppError::Tts(format!("{stem}{ext} missing")))?;
                 Ok::<_, AppError>(path(p))
             };
             let st = &mut config.model.supertonic;
@@ -236,8 +297,10 @@ impl TtsService {
             st.voice_style = file("voice", ".bin")?;
             return self.create_engine(model_id, &config);
         }
-        let onnx = find_file(dir, |n| n.ends_with(".onnx")).ok_or_else(|| AppError::Tts("model file missing".into()))?;
-        let tokens = find_file(dir, |n| n == "tokens.txt").ok_or_else(|| AppError::Tts("tokens.txt missing".into()))?;
+        let onnx = find_file(dir, |n| n.ends_with(".onnx"))
+            .ok_or_else(|| AppError::Tts("model file missing".into()))?;
+        let tokens = find_file(dir, |n| n == "tokens.txt")
+            .ok_or_else(|| AppError::Tts("tokens.txt missing".into()))?;
         let data_dir = dir.join("espeak-ng-data");
         match model.engine {
             Engine::Kokoro => {
@@ -250,7 +313,10 @@ impl TtsService {
                 config.model.vits.model = path(onnx);
                 config.model.vits.tokens = path(tokens);
                 config.model.vits.data_dir = path(data_dir);
-                config.model.vits.lexicon = dir.join("lexicon.txt").exists().then(|| dir.join("lexicon.txt").to_string_lossy().to_string());
+                config.model.vits.lexicon = dir
+                    .join("lexicon.txt")
+                    .exists()
+                    .then(|| dir.join("lexicon.txt").to_string_lossy().to_string());
             }
             Engine::Kitten => {
                 config.model.kitten.model = path(onnx);
@@ -263,31 +329,58 @@ impl TtsService {
         self.create_engine(model_id, &config)
     }
 
-    fn create_engine(&self, model_id: &str, config: &sherpa_onnx::OfflineTtsConfig) -> AppResult<Arc<sherpa_onnx::OfflineTts>> {
+    fn create_engine(
+        &self,
+        model_id: &str,
+        config: &sherpa_onnx::OfflineTtsConfig,
+    ) -> AppResult<Arc<sherpa_onnx::OfflineTts>> {
         let started = std::time::Instant::now();
-        let tts = sherpa_onnx::OfflineTts::create(config).ok_or_else(|| AppError::Tts(format!("failed to load voice model {model_id}")))?;
-        tracing::info!(model = model_id, ms = started.elapsed().as_millis() as u64, "tts model loaded");
+        let tts = sherpa_onnx::OfflineTts::create(config)
+            .ok_or_else(|| AppError::Tts(format!("failed to load voice model {model_id}")))?;
+        tracing::info!(
+            model = model_id,
+            ms = started.elapsed().as_millis() as u64,
+            "tts model loaded"
+        );
         let tts = Arc::new(tts);
-        self.engines.lock().unwrap_or_else(|p| p.into_inner()).insert(model_id.into(), tts.clone());
+        self.engines
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .insert(model_id.into(), tts.clone());
         Ok(tts)
     }
 
     /// Synthesizes text to 16-bit-range float PCM (for tests / warm-up).
     pub fn synthesize(&self, text: &str, lang: Lang, threads: i32) -> AppResult<(Vec<f32>, u32)> {
-        let voice = self.voice_for(lang).ok_or_else(|| AppError::Tts(format!("no local voice installed for {}", lang.english_name())))?;
+        let voice = self.voice_for(lang).ok_or_else(|| {
+            AppError::Tts(format!(
+                "no local voice installed for {}",
+                lang.english_name()
+            ))
+        })?;
         let tts = self.settings.get().tts;
         let speed = tts.speed;
         // Sound cues reach only a voice that performs them; others would read them out.
-        let text = &speech_text::sound_tags(text, voice.engine == Engine::Supertonic && tts.expressive_sounds);
+        let text = &speech_text::sound_tags(
+            text,
+            voice.engine == Engine::Supertonic && tts.expressive_sounds,
+        );
         if text.is_empty() {
             return Ok((Vec::new(), 24_000));
         }
         let engine = self.engine(&voice.model_id, threads)?;
-        let mut gen = sherpa_onnx::GenerationConfig { speed, sid: voice.speaker_id, ..Default::default() };
+        let mut gen = sherpa_onnx::GenerationConfig {
+            speed,
+            sid: voice.speaker_id,
+            ..Default::default()
+        };
         if voice.engine == Engine::Supertonic {
             // One model for every language: it has to be told which one this is.
             gen.num_steps = SUPERTONIC_STEPS;
-            gen.extra = Some(HashMap::from([("lang".to_string(), serde_json::Value::from(lang.code()))]));
+            gen.extra = Some(HashMap::from([(
+                "lang".to_string(),
+                serde_json::Value::from(lang.code()),
+            )]));
         }
         let audio = engine
             .generate_with_config::<fn(&[f32], f32) -> bool>(text, &gen, None)
@@ -300,8 +393,15 @@ impl TtsService {
         crate::services::gpu::mark_healthy();
         let Some(_voice) = self.voice_for(job.lang) else {
             let key = (job.tag.clone(), job.lang);
-            if self.warned.lock().unwrap_or_else(|p| p.into_inner()).insert(key) {
-                (self.emit)(TtsEvent::VoiceUnavailable { language: job.lang.code().into() });
+            if self
+                .warned
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .insert(key)
+            {
+                (self.emit)(TtsEvent::VoiceUnavailable {
+                    language: job.lang.code().into(),
+                });
             }
             return Ok(());
         };
@@ -310,17 +410,34 @@ impl TtsService {
             return Ok(());
         }
         if job.generation != self.generation.load(Ordering::SeqCst)
-            || self.cancelled.lock().unwrap_or_else(|p| p.into_inner()).contains(&job.tag)
+            || self
+                .cancelled
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .contains(&job.tag)
         {
             return Ok(());
         }
-        (self.emit)(TtsEvent::Speaking { tag: job.tag.clone() });
+        (self.emit)(TtsEvent::Speaking {
+            tag: job.tag.clone(),
+        });
         let duration_ms = samples.len() as u64 * 1000 / rate.max(1) as u64;
-        let id = self.player.enqueue(Clip { samples, sample_rate: rate, tag: job.tag.clone() })?;
-        self.queued.lock().unwrap_or_else(|p| p.into_inner()).insert(
-            id,
-            QueuedSentence { tag: job.tag.clone(), text: speech_text::sound_tags(&job.text, false), duration_ms },
-        );
+        let id = self.player.enqueue(Clip {
+            samples,
+            sample_rate: rate,
+            tag: job.tag.clone(),
+        })?;
+        self.queued
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .insert(
+                id,
+                QueuedSentence {
+                    tag: job.tag.clone(),
+                    text: speech_text::sound_tags(&job.text, false),
+                    duration_ms,
+                },
+            );
         Ok(())
     }
 
@@ -334,7 +451,12 @@ impl TtsService {
 
     fn send_job(&self, tag: &str, text: String, lang: Lang) {
         let generation = self.generation.load(Ordering::SeqCst);
-        let _ = self.jobs.send(Job { generation, tag: tag.into(), text, lang });
+        let _ = self.jobs.send(Job {
+            generation,
+            tag: tag.into(),
+            text,
+            lang,
+        });
     }
 
     fn queue_sentence(&self, tag: &str, sentence: String, fallback: Option<Lang>) -> Lang {
@@ -346,7 +468,10 @@ impl TtsService {
     /// Speaks arbitrary text (Test Voice, replay of a message).
     pub fn speak(&self, tag: &str, text: &str, lang_hint: Option<Lang>) {
         self.stop_all();
-        self.cancelled.lock().unwrap_or_else(|p| p.into_inner()).remove(tag);
+        self.cancelled
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .remove(tag);
         let mut buf = SentenceBuffer::default();
         let mut sentences = buf.push(text);
         sentences.extend(buf.flush());
@@ -357,12 +482,24 @@ impl TtsService {
     }
 
     pub fn replay_last(&self) -> bool {
-        let Some(turn) = self.last_turn.lock().unwrap_or_else(|p| p.into_inner()).clone() else { return false };
+        let Some(turn) = self
+            .last_turn
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .clone()
+        else {
+            return false;
+        };
         self.stop_all();
         let tag = format!("replay-{}", uuid::Uuid::new_v4().simple());
         let generation = self.generation.load(Ordering::SeqCst);
         for (text, lang) in turn {
-            let _ = self.jobs.send(Job { generation, tag: tag.clone(), text, lang });
+            let _ = self.jobs.send(Job {
+                generation,
+                tag: tag.clone(),
+                text,
+                lang,
+            });
         }
         true
     }
@@ -370,7 +507,10 @@ impl TtsService {
     pub fn stop_all(&self) {
         self.generation.fetch_add(1, Ordering::SeqCst);
         self.turns.lock().unwrap_or_else(|p| p.into_inner()).clear();
-        self.queued.lock().unwrap_or_else(|p| p.into_inner()).clear();
+        self.queued
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .clear();
         self.player.stop(None);
         (self.emit)(TtsEvent::Idle);
     }
@@ -382,7 +522,11 @@ impl TtsService {
     /// Pauses or resumes the current speech without losing the queue.
     pub fn set_paused(&self, paused: bool) {
         self.player.set_paused(paused);
-        (self.emit)(if paused { TtsEvent::Paused } else { TtsEvent::Resumed });
+        (self.emit)(if paused {
+            TtsEvent::Paused
+        } else {
+            TtsEvent::Resumed
+        });
     }
 
     pub fn is_paused(&self) -> bool {
@@ -400,7 +544,10 @@ impl SpeechSink for TtsService {
         // Any Supertonic language counts, so the system prompt stays the same
         // whichever language the next reply is in; other voices drop the cues.
         self.settings.get().tts.expressive_sounds
-            && [Lang::En, Lang::Ar, Lang::De].into_iter().any(|l| self.voice_for(l).is_some_and(|v| v.engine == Engine::Supertonic))
+            && [Lang::En, Lang::Ar, Lang::De].into_iter().any(|l| {
+                self.voice_for(l)
+                    .is_some_and(|v| v.engine == Engine::Supertonic)
+            })
     }
 
     fn begin(&self, turn_id: &str) {
@@ -408,7 +555,11 @@ impl SpeechSink for TtsService {
         self.player.stop(None);
         self.turns.lock().unwrap_or_else(|p| p.into_inner()).insert(
             turn_id.into(),
-            TurnState { buffer: SentenceBuffer::default(), last_lang: None, spoken: Vec::new() },
+            TurnState {
+                buffer: SentenceBuffer::default(),
+                last_lang: None,
+                spoken: Vec::new(),
+            },
         );
     }
 
@@ -416,7 +567,9 @@ impl SpeechSink for TtsService {
         // "Speak after the reply" collects sentences here and queues them in finish().
         let hold = self.settings.get().tts.speak_after_reply;
         let mut turns = self.turns.lock().unwrap_or_else(|p| p.into_inner());
-        let Some(state) = turns.get_mut(turn_id) else { return };
+        let Some(state) = turns.get_mut(turn_id) else {
+            return;
+        };
         for sentence in state.buffer.push(text) {
             let lang = if hold {
                 self.sentence_lang(&sentence, state.last_lang)
@@ -431,7 +584,9 @@ impl SpeechSink for TtsService {
     fn finish(&self, turn_id: &str) {
         let hold = self.settings.get().tts.speak_after_reply;
         let mut turns = self.turns.lock().unwrap_or_else(|p| p.into_inner());
-        let Some(mut state) = turns.remove(turn_id) else { return };
+        let Some(mut state) = turns.remove(turn_id) else {
+            return;
+        };
         for sentence in state.buffer.flush() {
             let lang = self.sentence_lang(&sentence, state.last_lang);
             state.last_lang = Some(lang);
@@ -450,8 +605,14 @@ impl SpeechSink for TtsService {
     }
 
     fn cancel(&self, turn_id: &str) {
-        self.turns.lock().unwrap_or_else(|p| p.into_inner()).remove(turn_id);
-        self.cancelled.lock().unwrap_or_else(|p| p.into_inner()).insert(turn_id.into());
+        self.turns
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .remove(turn_id);
+        self.cancelled
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .insert(turn_id.into());
         self.player.stop(Some(turn_id));
     }
 }

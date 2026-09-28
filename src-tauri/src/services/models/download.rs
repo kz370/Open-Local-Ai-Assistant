@@ -54,9 +54,17 @@ pub async fn install(
     let result: AppResult<()> = async {
         for file in model.files {
             let tmp = staging.join(format!("download-{}.part", done_bytes));
-            let resp = client.get(file.url).send().await.map_err(|e| AppError::Download(e.to_string()))?;
+            let resp = client
+                .get(file.url)
+                .send()
+                .await
+                .map_err(|e| AppError::Download(e.to_string()))?;
             if !resp.status().is_success() {
-                return Err(AppError::Download(format!("{} returned {}", file.url, resp.status())));
+                return Err(AppError::Download(format!(
+                    "{} returned {}",
+                    file.url,
+                    resp.status()
+                )));
             }
             let mut out = std::fs::File::create(&tmp)?;
             let mut hasher = Sha256::new();
@@ -86,7 +94,10 @@ pub async fn install(
             if let Some(expected) = file.sha256 {
                 let actual = hex::encode(hasher.finalize());
                 if !actual.eq_ignore_ascii_case(expected) {
-                    return Err(AppError::Download(format!("checksum mismatch for {}", file.url)));
+                    return Err(AppError::Download(format!(
+                        "checksum mismatch for {}",
+                        file.url
+                    )));
                 }
             }
 
@@ -113,7 +124,8 @@ pub async fn install(
             std::fs::rename(&staging, &dir)?;
             std::fs::write(
                 dir.join(COMPLETE_MARKER),
-                serde_json::json!({"id": model.id, "installedAt": chrono::Utc::now().to_rfc3339()}).to_string(),
+                serde_json::json!({"id": model.id, "installedAt": chrono::Utc::now().to_rfc3339()})
+                    .to_string(),
             )?;
             tracing::info!(model = model.id, bytes = done_bytes, "model installed");
             progress("done", total, None);
@@ -139,7 +151,12 @@ fn safe_join(root: &Path, rel: &Path) -> AppResult<PathBuf> {
         match c {
             Component::Normal(p) => out.push(p),
             Component::CurDir => {}
-            _ => return Err(AppError::Download(format!("unsafe path in archive: {}", rel.display()))),
+            _ => {
+                return Err(AppError::Download(format!(
+                    "unsafe path in archive: {}",
+                    rel.display()
+                )))
+            }
         }
     }
     Ok(out)
@@ -190,11 +207,13 @@ mod tests {
             h.set_size(data.len() as u64);
             h.set_mode(0o644);
             h.set_cksum();
-            b.append_data(&mut h, "vits-piper-x/espeak-ng-data/voices.txt", &data[..]).unwrap();
+            b.append_data(&mut h, "vits-piper-x/espeak-ng-data/voices.txt", &data[..])
+                .unwrap();
             let mut h2 = tar::Header::new_gnu();
             h2.set_size(data.len() as u64);
             h2.set_cksum();
-            b.append_data(&mut h2, "vits-piper-x/model.onnx", &data[..]).unwrap();
+            b.append_data(&mut h2, "vits-piper-x/model.onnx", &data[..])
+                .unwrap();
             b.into_inner().unwrap().finish().unwrap();
         }
         let out = dir.path().join("out");

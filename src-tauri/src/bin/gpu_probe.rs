@@ -6,7 +6,10 @@
 
 fn main() {
     let mut args = std::env::args().skip(1);
-    let model_dir = std::path::PathBuf::from(args.next().expect("usage: gpu_probe <piper model dir> [provider]"));
+    let model_dir = std::path::PathBuf::from(
+        args.next()
+            .expect("usage: gpu_probe <piper model dir> [provider]"),
+    );
     let provider = args.next().unwrap_or_else(|| "cuda".into());
     let onnx = std::fs::read_dir(&model_dir)
         .expect("model dir")
@@ -50,7 +53,9 @@ fn main() {
 
     // Speech recognition on the same audio, which is the heavier of the two
     // models and the one most likely to gain from the GPU.
-    let Some(stt_dir) = std::env::var_os("LA_STT_DIR").map(std::path::PathBuf::from) else { return };
+    let Some(stt_dir) = std::env::var_os("LA_STT_DIR").map(std::path::PathBuf::from) else {
+        return;
+    };
     let audio = tts
         .generate_with_config::<fn(&[f32], f32) -> bool>(
             "The quick brown fox jumps over the lazy dog, again and again.",
@@ -63,7 +68,12 @@ fn main() {
             .expect("stt dir")
             .filter_map(|e| e.ok())
             .map(|e| e.path())
-            .find(|p| p.file_name().and_then(|n| n.to_str()).map(|n| n.contains(needle)).unwrap_or(false))
+            .find(|p| {
+                p.file_name()
+                    .and_then(|n| n.to_str())
+                    .map(|n| n.contains(needle))
+                    .unwrap_or(false)
+            })
             .map(|p| p.to_string_lossy().to_string())
     };
     let mut cfg = sherpa_onnx::OfflineRecognizerConfig::default();
@@ -80,14 +90,21 @@ fn main() {
     };
     cfg.decoding_method = Some("greedy_search".into());
     let started = std::time::Instant::now();
-    let rec = sherpa_onnx::OfflineRecognizer::create(&cfg).expect("recognizer could not be created");
+    let rec =
+        sherpa_onnx::OfflineRecognizer::create(&cfg).expect("recognizer could not be created");
     println!("recognizer ready in {} ms", started.elapsed().as_millis());
     for run in 1..=3 {
         let started = std::time::Instant::now();
         let stream = rec.create_stream();
         stream.accept_waveform(audio.sample_rate(), audio.samples());
         rec.decode(&stream);
-        let text = stream.get_result().map(|r| r.text.to_string()).unwrap_or_default();
-        println!("stt run {run}: {} ms -> {text}", started.elapsed().as_millis());
+        let text = stream
+            .get_result()
+            .map(|r| r.text.to_string())
+            .unwrap_or_default();
+        println!(
+            "stt run {run}: {} ms -> {text}",
+            started.elapsed().as_millis()
+        );
     }
 }

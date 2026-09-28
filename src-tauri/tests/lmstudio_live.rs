@@ -52,24 +52,57 @@ async fn harness() -> Option<Harness> {
     mcp.set_enabled(&cfg.id, true).await.unwrap();
     // Only expose the read-only search tool for this test.
     for tool in ["write_file", "fail"] {
-        mcp.set_permission(&cfg.id, tool, local_ai_assistant_lib::services::chat::tools::Permission::Deny).await.unwrap();
+        mcp.set_permission(
+            &cfg.id,
+            tool,
+            local_ai_assistant_lib::services::chat::tools::Permission::Deny,
+        )
+        .await
+        .unwrap();
     }
-    let attachments = Arc::new(local_ai_assistant_lib::services::attachments::AttachmentStore::new(
-        std::env::temp_dir().join("local-assistant-live-attachments"),
-    ));
-    Some(Harness { engine: ChatEngine::new(db, settings, ai, resolver, mcp, Arc::new(NoSpeech), attachments) })
+    let attachments = Arc::new(
+        local_ai_assistant_lib::services::attachments::AttachmentStore::new(
+            std::env::temp_dir().join("local-assistant-live-attachments"),
+        ),
+    );
+    Some(Harness {
+        engine: ChatEngine::new(
+            db,
+            settings,
+            ai,
+            resolver,
+            mcp,
+            Arc::new(NoSpeech),
+            attachments,
+        ),
+    })
 }
 
 async fn ask(h: &Harness, text: &str) -> Vec<ChatEvent> {
     let events = Arc::new(Mutex::new(Vec::new()));
     let e2 = events.clone();
     let emit: Emit = Arc::new(move |ev| e2.lock().unwrap().push(ev));
-    let input = SendInput { turn_id: uuid::Uuid::new_v4().to_string(), conversation_id: None, text: text.into(), spoken_language: None, voice: false, attachment_ids: vec![] };
+    let input = SendInput {
+        turn_id: uuid::Uuid::new_v4().to_string(),
+        conversation_id: None,
+        text: text.into(),
+        spoken_language: None,
+        voice: false,
+        attachment_ids: vec![],
+        web_search_enabled: None,
+        mcp_enabled: None,
+    };
     let started = std::time::Instant::now();
     h.engine.send(input, emit).await.expect("turn");
     let ev = events.lock().unwrap().clone();
-    let deltas = ev.iter().filter(|e| matches!(e, ChatEvent::Delta { .. })).count();
-    eprintln!("[{text}] {} ms, {deltas} deltas", started.elapsed().as_millis());
+    let deltas = ev
+        .iter()
+        .filter(|e| matches!(e, ChatEvent::Delta { .. }))
+        .count();
+    eprintln!(
+        "[{text}] {} ms, {deltas} deltas",
+        started.elapsed().as_millis()
+    );
     ev
 }
 
@@ -86,19 +119,45 @@ fn final_message(ev: &[ChatEvent]) -> &local_ai_assistant_lib::database::convers
 async fn live_languages_and_web_search() {
     let Some(h) = harness().await else { return };
 
-    for (q, lang) in [("In one short sentence: what is dependency injection?", "en"), ("اشرح باختصار ما هو حقن التبعية في جملة واحدة.", "ar"), ("Erkläre kurz in einem Satz, was Dependency Injection ist.", "de")] {
+    for (q, lang) in [
+        ("In one short sentence: what is dependency injection?", "en"),
+        ("اشرح باختصار ما هو حقن التبعية في جملة واحدة.", "ar"),
+        (
+            "Erkläre kurz in einem Satz, was Dependency Injection ist.",
+            "de",
+        ),
+    ] {
         let ev = ask(&h, q).await;
         let m = final_message(&ev);
         eprintln!("  -> {}", m.content);
-        assert!(ev.iter().filter(|e| matches!(e, ChatEvent::Delta { .. })).count() > 1, "response should stream");
-        assert_eq!(detect(&m.content).map(|d| d.lang.code()), Some(lang), "response language");
-        assert!(!ev.iter().any(|e| matches!(e, ChatEvent::ToolStarted { .. })), "general knowledge should not use tools");
+        assert!(
+            ev.iter()
+                .filter(|e| matches!(e, ChatEvent::Delta { .. }))
+                .count()
+                > 1,
+            "response should stream"
+        );
+        assert_eq!(
+            detect(&m.content).map(|d| d.lang.code()),
+            Some(lang),
+            "response language"
+        );
+        assert!(
+            !ev.iter()
+                .any(|e| matches!(e, ChatEvent::ToolStarted { .. })),
+            "general knowledge should not use tools"
+        );
     }
 
     let ev = ask(&h, "What is the latest PHP version?").await;
     let m = final_message(&ev);
     eprintln!("  -> {}", m.content);
-    assert!(ev.iter().any(|e| matches!(e, ChatEvent::ToolStarted { tool_name, .. } if tool_name == "web_search")), "latest-info question must use web search");
+    assert!(
+        ev.iter().any(
+            |e| matches!(e, ChatEvent::ToolStarted { tool_name, .. } if tool_name == "web_search")
+        ),
+        "latest-info question must use web search"
+    );
     let sources = m.sources.as_ref().expect("sources preserved");
     assert!(sources.to_string().contains("php.net"));
 }

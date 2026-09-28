@@ -15,7 +15,11 @@ Use the surrounding reply only as context. Answer in the language of the selecte
 Do not repeat the selected text and do not start with a preamble.";
 
 #[derive(Debug, Clone, Serialize)]
-#[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum ExplainEvent {
     Delta { text: String },
     Done,
@@ -39,7 +43,10 @@ pub fn request(model: &str, selection: &str, passage: &str, temperature: f32) ->
     };
     ChatRequest {
         model: model.to_string(),
-        messages: vec![ChatMessage::text("system", EXPLAIN_PROMPT), ChatMessage::text("user", user)],
+        messages: vec![
+            ChatMessage::text("system", EXPLAIN_PROMPT),
+            ChatMessage::text("user", user),
+        ],
         tools: vec![],
         temperature,
         max_tokens: Some(700),
@@ -53,7 +60,12 @@ mod tests {
 
     #[test]
     fn builds_a_bounded_request() {
-        let req = request("m", "  Photosynthese  ", "Pflanzen nutzen Photosynthese.", 0.7);
+        let req = request(
+            "m",
+            "  Photosynthese  ",
+            "Pflanzen nutzen Photosynthese.",
+            0.7,
+        );
         let user = req.messages[1].content_text();
         assert!(user.contains("<selection>\nPhotosynthese\n</selection>"));
         assert!(user.contains("<reply>\nPflanzen nutzen Photosynthese.\n</reply>"));
@@ -66,6 +78,9 @@ mod tests {
         // Long input is clipped on a character boundary.
         let long = "ع".repeat(MAX_PASSAGE_CHARS + 50);
         let req = request("m", "x", &long, 0.7);
-        assert_eq!(req.messages[1].content_text().matches('ع').count(), MAX_PASSAGE_CHARS);
+        assert_eq!(
+            req.messages[1].content_text().matches('ع').count(),
+            MAX_PASSAGE_CHARS
+        );
     }
 }

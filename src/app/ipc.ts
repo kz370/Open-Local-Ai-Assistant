@@ -77,7 +77,7 @@ export const ipc = {
 
   // chat
   chatSend: (
-    input: { turnId: string; conversationId: string | null; text: string; spokenLanguage: string | null; voice: boolean; attachmentIds: string[] },
+    input: { turnId: string; conversationId: string | null; text: string; spokenLanguage: string | null; voice: boolean; attachmentIds: string[]; webSearchEnabled?: boolean | null; mcpEnabled?: Record<string, boolean> | null },
     onEvent: (e: ChatEvent) => void,
   ) => {
     const channel = new Channel<ChatEvent>();

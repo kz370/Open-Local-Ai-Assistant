@@ -9,7 +9,9 @@
 //! orchestrator, permissions and citations treat it like any MCP search tool.
 
 use crate::errors::{AppError, AppResult};
-use crate::services::chat::tools::{Permission, Source, ToolCategory, ToolOutput, ToolProvider, ToolSpec};
+use crate::services::chat::tools::{
+    Permission, Source, ToolCategory, ToolOutput, ToolProvider, ToolSpec,
+};
 use crate::settings::{SearchSettings, SettingsStore};
 use async_trait::async_trait;
 use std::collections::HashMap;
@@ -23,7 +25,10 @@ pub const TOOL_NAME: &str = "web_search";
 /// The no-JavaScript result page, and the classic one as a second try. Both
 /// answer with a bot challenge when they see too many requests at once, so a
 /// search falls back from one to the other before giving up.
-const ENDPOINTS: [&str; 2] = ["https://lite.duckduckgo.com/lite/", "https://html.duckduckgo.com/html/"];
+const ENDPOINTS: [&str; 2] = [
+    "https://lite.duckduckgo.com/lite/",
+    "https://html.duckduckgo.com/html/",
+];
 /// Repeat searches inside this window are answered from memory instead of
 /// hitting the engine again (models like to retry the same query).
 const CACHE_TTL: Duration = Duration::from_secs(600);
@@ -112,13 +117,19 @@ impl WebSearch {
 
     async fn fetch(&self, query: &str, endpoint: &str) -> AppResult<String> {
         let mut endpoint = url::Url::parse(endpoint).expect("valid endpoint");
-        endpoint.query_pairs_mut().append_pair("q", query).append_pair("kl", "wt-wt");
+        endpoint
+            .query_pairs_mut()
+            .append_pair("q", query)
+            .append_pair("kl", "wt-wt");
         // Browser-shaped headers: the endpoint answers bare HTTP clients with a
         // captcha page instead of results.
         let body = self
             .http
             .get(endpoint)
-            .header("accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+            .header(
+                "accept",
+                "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            )
             .header("accept-language", "en-US,en;q=0.9")
             .header("referer", "https://lite.duckduckgo.com/")
             .header("upgrade-insecure-requests", "1")
@@ -135,7 +146,9 @@ impl WebSearch {
             .await
             .map_err(|e| AppError::Other(format!("web search failed: {e}")))?;
         if body.contains("anomaly-modal") || body.contains("challenge-form") {
-            return Err(AppError::Other("the search engine asked for a captcha, so this search could not run".into()));
+            return Err(AppError::Other(
+                "the search engine asked for a captcha, so this search could not run".into(),
+            ));
         }
         Ok(body)
     }
@@ -159,13 +172,19 @@ impl WebSearch {
         for engine in engine_order(&search) {
             let outcome = match engine {
                 Engine::Searxng => self.search_searxng_any(&search, query).await,
-                Engine::DuckDuckGo => self.search_duckduckgo(query).await.map(|r| (r, engine.name().to_string())),
+                Engine::DuckDuckGo => self
+                    .search_duckduckgo(query)
+                    .await
+                    .map(|r| (r, engine.name().to_string())),
             };
             match outcome {
                 // Say when this was the fallback, so a test in settings does
                 // not look like the "try first" choice was ignored.
                 Ok((results, label)) if !errors.is_empty() => {
-                    return Ok((results, format!("{label}, used as fallback because {}", errors.join("; "))));
+                    return Ok((
+                        results,
+                        format!("{label}, used as fallback because {}", errors.join("; ")),
+                    ));
                 }
                 Ok(found) => return Ok(found),
                 Err(e) => errors.push(format!("{} failed: {e}", engine.name())),
@@ -174,11 +193,18 @@ impl WebSearch {
         if errors.is_empty() {
             return Err(AppError::Invalid("no search engine is switched on".into()));
         }
-        Err(AppError::Other(format!("web search failed ({})", errors.join("; "))))
+        Err(AppError::Other(format!(
+            "web search failed ({})",
+            errors.join("; ")
+        )))
     }
 
     /// Tries the configured SearXNG instances in turn.
-    async fn search_searxng_any(&self, search: &SearchSettings, query: &str) -> AppResult<(Vec<SearchResult>, String)> {
+    async fn search_searxng_any(
+        &self,
+        search: &SearchSettings,
+        query: &str,
+    ) -> AppResult<(Vec<SearchResult>, String)> {
         let candidates = self.searxng_candidates(search).await;
         if candidates.is_empty() {
             return Err(AppError::Invalid(if search.searxng_source == "public" {
@@ -190,7 +216,9 @@ impl WebSearch {
         let mut last = String::new();
         for instance in candidates {
             match self.search_searxng(&instance, query).await {
-                Ok(results) if !results.is_empty() => return Ok((results, format!("SearXNG ({instance})"))),
+                Ok(results) if !results.is_empty() => {
+                    return Ok((results, format!("SearXNG ({instance})")))
+                }
                 Ok(_) => {
                     tracing::info!(%instance, "searxng returned no results");
                     last = format!("{instance} returned no results");
@@ -235,7 +263,11 @@ impl WebSearch {
             // Automatic: the fastest few from the list, so one instance that is
             // down or rate limiting does not end the search.
             return match self.public_instances(false).await {
-                Ok(list) => list.into_iter().take(AUTO_INSTANCES).map(|i| i.url).collect(),
+                Ok(list) => list
+                    .into_iter()
+                    .take(AUTO_INSTANCES)
+                    .map(|i| i.url)
+                    .collect(),
                 Err(e) => {
                     tracing::warn!(error = %e, "could not load the searx.space instance list");
                     Vec::new()
@@ -274,9 +306,12 @@ impl WebSearch {
             .map_err(|e| AppError::Other(format!("could not load the searx.space list: {e}")))?;
         let list = parse_instances(&body);
         if list.is_empty() {
-            return Err(AppError::Other("the searx.space list has no working instances right now".into()));
+            return Err(AppError::Other(
+                "the searx.space list has no working instances right now".into(),
+            ));
         }
-        *self.instances.lock().unwrap_or_else(|p| p.into_inner()) = Some((Instant::now(), list.clone()));
+        *self.instances.lock().unwrap_or_else(|p| p.into_inner()) =
+            Some((Instant::now(), list.clone()));
         Ok(list)
     }
 
@@ -285,7 +320,12 @@ impl WebSearch {
     /// install alike), while the HTML page always answers.
     async fn search_searxng(&self, instance: &str, query: &str) -> AppResult<Vec<SearchResult>> {
         let base = instance_base(instance)?;
-        let known = self.endpoints.lock().unwrap_or_else(|p| p.into_inner()).get(base.as_str()).cloned();
+        let known = self
+            .endpoints
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .get(base.as_str())
+            .cloned();
         let mut endpoint = known.unwrap_or_else(|| base.join("search").expect("relative path"));
         // One retry: an instance under a sub path (searxng.site serves from
         // /searxng/) bounces /search to a home page whose search form names
@@ -293,14 +333,26 @@ impl WebSearch {
         for _ in 0..2 {
             let (status, final_url, body) = self.fetch_searxng(&endpoint, &base, query).await?;
             if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
-                return Err(AppError::Other("the instance is rate limiting requests (HTTP 429), try another one".into()));
+                return Err(AppError::Other(
+                    "the instance is rate limiting requests (HTTP 429), try another one".into(),
+                ));
             }
             if !status.is_success() {
-                return Err(AppError::Other(format!("the instance answered HTTP {}", status.as_u16())));
+                return Err(AppError::Other(format!(
+                    "the instance answered HTTP {}",
+                    status.as_u16()
+                )));
             }
-            let results = if body.trim_start().starts_with('{') { parse_searxng(&body) } else { parse_searxng_html(&body) };
+            let results = if body.trim_start().starts_with('{') {
+                parse_searxng(&body)
+            } else {
+                parse_searxng_html(&body)
+            };
             if !results.is_empty() || is_result_page(&body) {
-                self.endpoints.lock().unwrap_or_else(|p| p.into_inner()).insert(base.to_string(), endpoint);
+                self.endpoints
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner())
+                    .insert(base.to_string(), endpoint);
                 return Ok(results);
             }
             match form_action(&body).and_then(|a| final_url.join(&a).ok()) {
@@ -308,18 +360,30 @@ impl WebSearch {
                 _ => break,
             }
         }
-        Err(AppError::Other("this address did not return a SearXNG result page, check the URL".into()))
+        Err(AppError::Other(
+            "this address did not return a SearXNG result page, check the URL".into(),
+        ))
     }
 
-    async fn fetch_searxng(&self, endpoint: &url::Url, base: &url::Url, query: &str) -> AppResult<(reqwest::StatusCode, url::Url, String)> {
+    async fn fetch_searxng(
+        &self,
+        endpoint: &url::Url,
+        base: &url::Url,
+        query: &str,
+    ) -> AppResult<(reqwest::StatusCode, url::Url, String)> {
         let mut url = endpoint.clone();
-        url.query_pairs_mut().append_pair("q", query).append_pair("safesearch", "0");
+        url.query_pairs_mut()
+            .append_pair("q", query)
+            .append_pair("safesearch", "0");
         // SearXNG's bot detection turns away clients without browser headers
         // (Accept-Language, Accept-Encoding and the Sec-Fetch set).
         let resp = self
             .http
             .get(url)
-            .header("accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+            .header(
+                "accept",
+                "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            )
             .header("accept-language", "en-US,en;q=0.9")
             .header("referer", base.as_str())
             .header("sec-fetch-dest", "document")
@@ -332,7 +396,10 @@ impl WebSearch {
             .map_err(|e| AppError::Other(format!("could not reach the instance: {e}")))?;
         let status = resp.status();
         let final_url = resp.url().clone();
-        let body = resp.text().await.map_err(|e| AppError::Other(format!("could not read the answer: {e}")))?;
+        let body = resp
+            .text()
+            .await
+            .map_err(|e| AppError::Other(format!("could not read the answer: {e}")))?;
         Ok((status, final_url, body))
     }
 
@@ -362,7 +429,12 @@ impl ToolProvider for WebSearch {
         if spec.server_id != SERVER_ID {
             return Err(AppError::Mcp(format!("tool {} unavailable", spec.llm_name)));
         }
-        let query = args.get("query").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+        let query = args
+            .get("query")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .trim()
+            .to_string();
         if query.is_empty() {
             return Err(AppError::Invalid("query is required".into()));
         }
@@ -376,17 +448,34 @@ impl ToolProvider for WebSearch {
 
         let results = self.search(&query, max).await?;
         if results.is_empty() {
-            return Ok(ToolOutput { text: format!("No results for \"{query}\"."), is_error: false, sources: Vec::new() });
+            return Ok(ToolOutput {
+                text: format!("No results for \"{query}\"."),
+                is_error: false,
+                sources: Vec::new(),
+            });
         }
         let mut text = format!("Results for \"{query}\":\n");
         for (i, r) in results.iter().enumerate() {
-            text.push_str(&format!("\n{}. {}\n   {}\n   {}\n", i + 1, r.title, r.url, r.snippet));
+            text.push_str(&format!(
+                "\n{}. {}\n   {}\n   {}\n",
+                i + 1,
+                r.title,
+                r.url,
+                r.snippet
+            ));
         }
         let sources = results
             .iter()
-            .map(|r| Source { url: r.url.clone(), title: Some(r.title.clone()) })
+            .map(|r| Source {
+                url: r.url.clone(),
+                title: Some(r.title.clone()),
+            })
             .collect();
-        Ok(ToolOutput { text, is_error: false, sources })
+        Ok(ToolOutput {
+            text,
+            is_error: false,
+            sources,
+        })
     }
 }
 
@@ -396,7 +485,10 @@ impl ToolProvider for WebSearch {
 fn parse_results(html: &str, max: usize) -> Vec<SearchResult> {
     let link = regex::Regex::new(r#"(?s)<a[^>]*href=['"]([^'"]+)['"][^>]*class=['"][^'"]*result(?:-link|__a)[^'"]*['"][^>]*>(.*?)</a>"#).expect("valid regex");
     let snippet = regex::Regex::new(r#"(?s)<(?:td|a)[^>]*class=['"][^'"]*result(?:-snippet|__snippet)[^'"]*['"][^>]*>(.*?)</(?:td|a)>"#).expect("valid regex");
-    let snippets: Vec<String> = snippet.captures_iter(html).map(|c| clean_text(&c[1])).collect();
+    let snippets: Vec<String> = snippet
+        .captures_iter(html)
+        .map(|c| clean_text(&c[1]))
+        .collect();
 
     link.captures_iter(html)
         .enumerate()
@@ -406,7 +498,11 @@ fn parse_results(html: &str, max: usize) -> Vec<SearchResult> {
             if url.is_empty() || title.is_empty() {
                 return None;
             }
-            Some(SearchResult { title, url, snippet: snippets.get(i).cloned().unwrap_or_default() })
+            Some(SearchResult {
+                title,
+                url,
+                snippet: snippets.get(i).cloned().unwrap_or_default(),
+            })
         })
         .take(max)
         .collect()
@@ -414,8 +510,14 @@ fn parse_results(html: &str, max: usize) -> Vec<SearchResult> {
 
 /// DuckDuckGo wraps every hit in a redirect (`/l/?uddg=<encoded target>`).
 fn real_url(href: &str) -> String {
-    let absolute = if href.starts_with("//") { format!("https:{href}") } else { href.to_string() };
-    let Ok(parsed) = url::Url::parse(&absolute) else { return String::new() };
+    let absolute = if href.starts_with("//") {
+        format!("https:{href}")
+    } else {
+        href.to_string()
+    };
+    let Ok(parsed) = url::Url::parse(&absolute) else {
+        return String::new();
+    };
     if let Some((_, target)) = parsed.query_pairs().find(|(k, _)| k == "uddg") {
         return target.to_string();
     }
@@ -447,18 +549,34 @@ fn clean_text(raw: &str) -> String {
 
 /// Reads the result list of a SearXNG JSON response.
 fn parse_searxng(body: &str) -> Vec<SearchResult> {
-    let Ok(json) = serde_json::from_str::<serde_json::Value>(body) else { return Vec::new() };
-    let Some(items) = json.get("results").and_then(|r| r.as_array()) else { return Vec::new() };
+    let Ok(json) = serde_json::from_str::<serde_json::Value>(body) else {
+        return Vec::new();
+    };
+    let Some(items) = json.get("results").and_then(|r| r.as_array()) else {
+        return Vec::new();
+    };
     items
         .iter()
         .filter_map(|r| {
-            let url = r.get("url").and_then(|v| v.as_str()).unwrap_or("").to_string();
-            let title = r.get("title").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let url = r
+                .get("url")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let title = r
+                .get("title")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
             if url.is_empty() || title.is_empty() {
                 return None;
             }
             let snippet = clean_text(r.get("content").and_then(|v| v.as_str()).unwrap_or(""));
-            Some(SearchResult { title, url, snippet })
+            Some(SearchResult {
+                title,
+                url,
+                snippet,
+            })
         })
         .collect()
 }
@@ -496,7 +614,8 @@ fn engine_order(search: &SearchSettings) -> Vec<Engine> {
 /// Reads the result list of a SearXNG HTML page (the "simple" theme wraps
 /// each hit in `<article class="result ...">`, older themes in a div).
 fn parse_searxng_html(html: &str) -> Vec<SearchResult> {
-    let title = regex::Regex::new(r#"(?s)<h3[^>]*>\s*<a[^>]*href="([^"]+)"[^>]*>(.*?)</a>"#).expect("valid regex");
+    let title = regex::Regex::new(r#"(?s)<h3[^>]*>\s*<a[^>]*href="([^"]+)"[^>]*>(.*?)</a>"#)
+        .expect("valid regex");
     let content = regex::Regex::new(r#"(?s)<p class="content">(.*?)</p>"#).expect("valid regex");
     html.split(r#"class="result result-"#)
         .skip(1)
@@ -511,8 +630,15 @@ fn parse_searxng_html(html: &str) -> Vec<SearchResult> {
             if title.is_empty() {
                 return None;
             }
-            let snippet = content.captures(block).map(|s| clean_text(&s[1])).unwrap_or_default();
-            Some(SearchResult { title, url, snippet })
+            let snippet = content
+                .captures(block)
+                .map(|s| clean_text(&s[1]))
+                .unwrap_or_default();
+            Some(SearchResult {
+                title,
+                url,
+                snippet,
+            })
         })
         .collect()
 }
@@ -539,17 +665,28 @@ fn instance_base(instance: &str) -> AppResult<url::Url> {
         raw.to_string()
     } else {
         let host = raw.split(['/', ':']).next().unwrap_or("");
-        let local = host == "localhost" || host.starts_with("127.") || host.starts_with("192.168.") || host.starts_with("10.") || host.ends_with(".local");
+        let local = host == "localhost"
+            || host.starts_with("127.")
+            || host.starts_with("192.168.")
+            || host.starts_with("10.")
+            || host.ends_with(".local");
         format!("{}://{raw}", if local { "http" } else { "https" })
     };
-    let mut url = url::Url::parse(&with_scheme).map_err(|_| AppError::Invalid("the SearXNG address is not a valid URL".into()))?;
+    let mut url = url::Url::parse(&with_scheme)
+        .map_err(|_| AppError::Invalid("the SearXNG address is not a valid URL".into()))?;
     if !matches!(url.scheme(), "http" | "https") {
-        return Err(AppError::Invalid("the SearXNG address must start with http:// or https://".into()));
+        return Err(AppError::Invalid(
+            "the SearXNG address must start with http:// or https://".into(),
+        ));
     }
     url.set_query(None);
     url.set_fragment(None);
     // "…/search" pasted from the address bar still means the instance itself.
-    let path = url.path().trim_end_matches('/').trim_end_matches("/search").to_string();
+    let path = url
+        .path()
+        .trim_end_matches('/')
+        .trim_end_matches("/search")
+        .to_string();
     url.set_path(&format!("{path}/"));
     Ok(url)
 }
@@ -558,8 +695,12 @@ fn instance_base(instance: &str) -> AppResult<url::Url> {
 /// plain web (no Tor), answering, and passing most test searches. Fastest
 /// first.
 fn parse_instances(body: &str) -> Vec<PublicInstance> {
-    let Ok(json) = serde_json::from_str::<serde_json::Value>(body) else { return Vec::new() };
-    let Some(map) = json.get("instances").and_then(|i| i.as_object()) else { return Vec::new() };
+    let Ok(json) = serde_json::from_str::<serde_json::Value>(body) else {
+        return Vec::new();
+    };
+    let Some(map) = json.get("instances").and_then(|i| i.as_object()) else {
+        return Vec::new();
+    };
     let mut list: Vec<PublicInstance> = map
         .iter()
         .filter_map(|(url, v)| {
@@ -569,15 +710,23 @@ fn parse_instances(body: &str) -> Vec<PublicInstance> {
             if v.pointer("/http/status_code").and_then(|s| s.as_u64()) != Some(200) {
                 return None;
             }
-            let success = v.pointer("/timing/search/success_percentage").and_then(|s| s.as_f64()).unwrap_or(0.0);
+            let success = v
+                .pointer("/timing/search/success_percentage")
+                .and_then(|s| s.as_f64())
+                .unwrap_or(0.0);
             if success < 50.0 {
                 return None;
             }
             Some(PublicInstance {
                 url: url.clone(),
                 search_success: success,
-                search_time: v.pointer("/timing/search/all/value").and_then(|s| s.as_f64()),
-                version: v.get("version").and_then(|s| s.as_str()).map(str::to_string),
+                search_time: v
+                    .pointer("/timing/search/all/value")
+                    .and_then(|s| s.as_f64()),
+                version: v
+                    .get("version")
+                    .and_then(|s| s.as_str())
+                    .map(str::to_string),
             })
         })
         .collect();
@@ -585,7 +734,12 @@ fn parse_instances(body: &str) -> Vec<PublicInstance> {
         b.search_success
             .partial_cmp(&a.search_success)
             .unwrap_or(std::cmp::Ordering::Equal)
-            .then(a.search_time.unwrap_or(f64::MAX).partial_cmp(&b.search_time.unwrap_or(f64::MAX)).unwrap_or(std::cmp::Ordering::Equal))
+            .then(
+                a.search_time
+                    .unwrap_or(f64::MAX)
+                    .partial_cmp(&b.search_time.unwrap_or(f64::MAX))
+                    .unwrap_or(std::cmp::Ordering::Equal),
+            )
     });
     list
 }
@@ -614,7 +768,10 @@ mod tests {
         let r = parse_results(PAGE, 10);
         assert_eq!(r.len(), 2);
         assert_eq!(r[0].title, "Rust lang");
-        assert_eq!(r[0].url, "https://www.rust-lang.org/", "the redirect wrapper must be unwrapped");
+        assert_eq!(
+            r[0].url, "https://www.rust-lang.org/",
+            "the redirect wrapper must be unwrapped"
+        );
         assert_eq!(r[0].snippet, "A language empowering everyone.");
         assert_eq!(r[1].url, "https://doc.rust-lang.org/book/");
         assert_eq!(r[1].snippet, "Learn Rust's basics.");
@@ -661,25 +818,52 @@ mod tests {
         assert_eq!(r.len(), 2);
         assert_eq!(r[0].url, "https://www.python.org/?a=1&b=2");
         assert_eq!(r[0].title, "Welcome to Python.org");
-        assert_eq!(r[0].snippet, "The official home of the Python Programming Language");
+        assert_eq!(
+            r[0].snippet,
+            "The official home of the Python Programming Language"
+        );
         assert_eq!(r[1].snippet, "");
         assert!(is_result_page(SEARXNG_PAGE));
-        assert!(!is_result_page("<form id=\"search\" action=\"/searxng/search\"></form>"));
+        assert!(!is_result_page(
+            "<form id=\"search\" action=\"/searxng/search\"></form>"
+        ));
     }
 
     #[test]
     fn finds_the_search_form_action() {
-        assert_eq!(form_action(SEARXNG_PAGE).as_deref(), Some("/searxng/search"));
+        assert_eq!(
+            form_action(SEARXNG_PAGE).as_deref(),
+            Some("/searxng/search")
+        );
         assert_eq!(form_action("<html></html>"), None);
     }
 
     #[test]
     fn normalises_instance_addresses() {
-        assert_eq!(instance_base("https://searxng.site").unwrap().as_str(), "https://searxng.site/");
-        assert_eq!(instance_base("https://searxng.site/searxng").unwrap().as_str(), "https://searxng.site/searxng/");
-        assert_eq!(instance_base("https://searxng.site/searxng/search?q=x").unwrap().as_str(), "https://searxng.site/searxng/");
-        assert_eq!(instance_base("localhost:8080").unwrap().as_str(), "http://localhost:8080/");
-        assert_eq!(instance_base("searx.be").unwrap().as_str(), "https://searx.be/");
+        assert_eq!(
+            instance_base("https://searxng.site").unwrap().as_str(),
+            "https://searxng.site/"
+        );
+        assert_eq!(
+            instance_base("https://searxng.site/searxng")
+                .unwrap()
+                .as_str(),
+            "https://searxng.site/searxng/"
+        );
+        assert_eq!(
+            instance_base("https://searxng.site/searxng/search?q=x")
+                .unwrap()
+                .as_str(),
+            "https://searxng.site/searxng/"
+        );
+        assert_eq!(
+            instance_base("localhost:8080").unwrap().as_str(),
+            "http://localhost:8080/"
+        );
+        assert_eq!(
+            instance_base("searx.be").unwrap().as_str(),
+            "https://searx.be/"
+        );
         assert!(instance_base("ftp://x").is_err());
     }
 
@@ -701,8 +885,16 @@ mod tests {
 
     #[test]
     fn engines_are_independent() {
-        let mut s = SearchSettings { enabled: false, searxng_enabled: true, ..Default::default() };
-        assert_eq!(engine_order(&s), [Engine::Searxng], "SearXNG must work with DuckDuckGo off");
+        let mut s = SearchSettings {
+            enabled: false,
+            searxng_enabled: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            engine_order(&s),
+            [Engine::Searxng],
+            "SearXNG must work with DuckDuckGo off"
+        );
         s.enabled = true;
         assert_eq!(engine_order(&s), [Engine::Searxng, Engine::DuckDuckGo]);
         s.primary = "duckduckgo".into();
@@ -716,6 +908,9 @@ mod tests {
     #[test]
     fn rejects_non_http_links() {
         assert_eq!(real_url("javascript:alert(1)"), "");
-        assert_eq!(real_url("https://example.com/a?b=c"), "https://example.com/a?b=c");
+        assert_eq!(
+            real_url("https://example.com/a?b=c"),
+            "https://example.com/a?b=c"
+        );
     }
 }

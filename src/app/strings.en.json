@@ -112,7 +112,12 @@
     "closeHint": "The assistant keeps running in the tray",
     "pause": "Pause",
     "resume": "Resume",
-    "stopSpeaking": "Stop speaking"
+    "stopSpeaking": "Stop speaking",
+    "webSearch": "Web search",
+    "webSearchOn": "Web search on",
+    "webSearchOff": "Web search off",
+    "mcpTools": "MCP tools",
+    "mcpMenuHint": "Toggle MCP servers for this session"
   },
   "attach": {
     "listLabel": "Attachments",

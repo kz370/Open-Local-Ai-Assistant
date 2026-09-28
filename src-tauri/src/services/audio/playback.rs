@@ -55,12 +55,28 @@ impl Player {
         let paused = Arc::new(AtomicBool::new(false));
         let current_clip = Arc::new(AtomicU64::new(0));
         let (cmd, rx) = mpsc::channel();
-        let (s, v, r, p, pa, cc) = (shared.clone(), volume_bits.clone(), device_rate.clone(), playing.clone(), paused.clone(), current_clip.clone());
+        let (s, v, r, p, pa, cc) = (
+            shared.clone(),
+            volume_bits.clone(),
+            device_rate.clone(),
+            playing.clone(),
+            paused.clone(),
+            current_clip.clone(),
+        );
         std::thread::Builder::new()
             .name("audio-playback".into())
             .spawn(move || run(rx, s, v, r, p, pa, cc))
             .expect("spawn playback thread");
-        let player = Self { shared, volume_bits, device_rate, playing, paused, current_clip, next_clip: AtomicU64::new(1), cmd };
+        let player = Self {
+            shared,
+            volume_bits,
+            device_rate,
+            playing,
+            paused,
+            current_clip,
+            next_clip: AtomicU64::new(1),
+            cmd,
+        };
         let _ = player.cmd.send(Cmd::Open(device_id));
         player
     }
@@ -70,7 +86,8 @@ impl Player {
     }
 
     pub fn set_volume(&self, v: f32) {
-        self.volume_bits.store(v.clamp(0.0, 1.0).to_bits(), Ordering::Relaxed);
+        self.volume_bits
+            .store(v.clamp(0.0, 1.0).to_bits(), Ordering::Relaxed);
     }
 
     /// Queues a clip and returns its id, which `current_clip` reports once the
@@ -166,14 +183,29 @@ impl Drop for Player {
     }
 }
 
-fn run(rx: Receiver<Cmd>, shared: Arc<Mutex<Shared>>, volume: Arc<AtomicU32>, rate: Arc<AtomicU32>, playing: Arc<AtomicBool>, paused: Arc<AtomicBool>, current_clip: Arc<AtomicU64>) {
+fn run(
+    rx: Receiver<Cmd>,
+    shared: Arc<Mutex<Shared>>,
+    volume: Arc<AtomicU32>,
+    rate: Arc<AtomicU32>,
+    playing: Arc<AtomicBool>,
+    paused: Arc<AtomicBool>,
+    current_clip: Arc<AtomicU64>,
+) {
     let mut stream: Option<cpal::Stream> = None;
     loop {
         match rx.recv_timeout(Duration::from_millis(500)) {
             Ok(Cmd::Open(id)) => {
                 drop(stream.take());
                 rate.store(0, Ordering::Relaxed);
-                match open(id.as_deref(), shared.clone(), volume.clone(), playing.clone(), paused.clone(), current_clip.clone()) {
+                match open(
+                    id.as_deref(),
+                    shared.clone(),
+                    volume.clone(),
+                    playing.clone(),
+                    paused.clone(),
+                    current_clip.clone(),
+                ) {
                     Ok((s, r)) => {
                         rate.store(r, Ordering::Relaxed);
                         stream = Some(s);
@@ -197,14 +229,48 @@ fn open(
     current_clip: Arc<AtomicU64>,
 ) -> AppResult<(cpal::Stream, u32)> {
     let device = devices::output_device(id)?;
-    let supported = device.default_output_config().map_err(|e| AppError::Audio(e.to_string()))?;
+    let supported = device
+        .default_output_config()
+        .map_err(|e| AppError::Audio(e.to_string()))?;
     let config = supported.config();
     let r = config.sample_rate;
     let stream = match supported.sample_format() {
-        SampleFormat::F32 => build::<f32>(&device, config, shared, volume, playing, paused, current_clip),
-        SampleFormat::I16 => build::<i16>(&device, config, shared, volume, playing, paused, current_clip),
-        SampleFormat::U16 => build::<u16>(&device, config, shared, volume, playing, paused, current_clip),
-        SampleFormat::I32 => build::<i32>(&device, config, shared, volume, playing, paused, current_clip),
+        SampleFormat::F32 => build::<f32>(
+            &device,
+            config,
+            shared,
+            volume,
+            playing,
+            paused,
+            current_clip,
+        ),
+        SampleFormat::I16 => build::<i16>(
+            &device,
+            config,
+            shared,
+            volume,
+            playing,
+            paused,
+            current_clip,
+        ),
+        SampleFormat::U16 => build::<u16>(
+            &device,
+            config,
+            shared,
+            volume,
+            playing,
+            paused,
+            current_clip,
+        ),
+        SampleFormat::I32 => build::<i32>(
+            &device,
+            config,
+            shared,
+            volume,
+            playing,
+            paused,
+            current_clip,
+        ),
         other => Err(format!("unsupported output format {other:?}")),
     }
     .map_err(AppError::Audio)?;

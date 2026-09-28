@@ -123,16 +123,29 @@ pub struct ChatMessage {
 
 impl ChatMessage {
     pub fn text(role: &str, content: impl Into<String>) -> Self {
-        Self { role: role.into(), content: Some(MessageContent::Text(content.into())), tool_calls: None, tool_call_id: None }
+        Self {
+            role: role.into(),
+            content: Some(MessageContent::Text(content.into())),
+            tool_calls: None,
+            tool_call_id: None,
+        }
     }
 
     pub fn parts(role: &str, parts: Vec<ContentPart>) -> Self {
-        Self { role: role.into(), content: Some(MessageContent::Parts(parts)), tool_calls: None, tool_call_id: None }
+        Self {
+            role: role.into(),
+            content: Some(MessageContent::Parts(parts)),
+            tool_calls: None,
+            tool_call_id: None,
+        }
     }
 
     /// The message's text, or an empty string when it carries none.
     pub fn content_text(&self) -> String {
-        self.content.as_ref().map(MessageContent::as_text).unwrap_or_default()
+        self.content
+            .as_ref()
+            .map(MessageContent::as_text)
+            .unwrap_or_default()
     }
 }
 

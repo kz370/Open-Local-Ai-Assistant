@@ -154,7 +154,12 @@ impl Db {
         Ok(())
     }
 
-    pub fn touch_conversation(&self, id: &str, model: Option<&str>, language: Option<&str>) -> AppResult<()> {
+    pub fn touch_conversation(
+        &self,
+        id: &str,
+        model: Option<&str>,
+        language: Option<&str>,
+    ) -> AppResult<()> {
         self.conn().execute(
             "UPDATE conversations SET updated_at = ?1,
                 model = COALESCE(?2, model), language = COALESCE(?3, language)
@@ -165,7 +170,8 @@ impl Db {
     }
 
     pub fn delete_conversation(&self, id: &str) -> AppResult<()> {
-        self.conn().execute("DELETE FROM conversations WHERE id = ?1", [id])?;
+        self.conn()
+            .execute("DELETE FROM conversations WHERE id = ?1", [id])?;
         Ok(())
     }
 
@@ -219,12 +225,19 @@ impl Db {
     /// delete attachment files that no conversation points at any more.
     pub fn attachment_ids(&self) -> AppResult<std::collections::HashSet<String>> {
         let conn = self.conn();
-        let mut stmt = conn.prepare("SELECT attachments_json FROM messages WHERE attachments_json IS NOT NULL")?;
+        let mut stmt = conn
+            .prepare("SELECT attachments_json FROM messages WHERE attachments_json IS NOT NULL")?;
         let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
         let mut ids = std::collections::HashSet::new();
         for json in rows.flatten() {
-            let Ok(values) = serde_json::from_str::<Vec<serde_json::Value>>(&json) else { continue };
-            ids.extend(values.iter().filter_map(|v| v["id"].as_str().map(str::to_string)));
+            let Ok(values) = serde_json::from_str::<Vec<serde_json::Value>>(&json) else {
+                continue;
+            };
+            ids.extend(
+                values
+                    .iter()
+                    .filter_map(|v| v["id"].as_str().map(str::to_string)),
+            );
         }
         Ok(ids)
     }
@@ -236,7 +249,10 @@ impl Db {
             return Ok(self
                 .list_conversations(limit, 0)?
                 .into_iter()
-                .map(|c| SearchHit { conversation: c, snippet: String::new() })
+                .map(|c| SearchHit {
+                    conversation: c,
+                    snippet: String::new(),
+                })
                 .collect());
         }
         // Quote every term so user input cannot inject FTS5 syntax.
@@ -245,7 +261,12 @@ impl Db {
             .map(|t| format!("\"{}\"", t.replace('"', "\"\"")))
             .collect::<Vec<_>>()
             .join(" ");
-        let like = format!("%{}%", q.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_"));
+        let like = format!(
+            "%{}%",
+            q.replace('\\', "\\\\")
+                .replace('%', "\\%")
+                .replace('_', "\\_")
+        );
         let conn = self.conn();
         let mut stmt = conn.prepare(&format!(
             "SELECT {cols}, snippet FROM (
@@ -260,7 +281,10 @@ impl Db {
             cols = CONV_COLS
         ))?;
         let rows = stmt.query_map(params![fts_query, like, limit], |r| {
-            Ok(SearchHit { conversation: conv_from_row(r)?, snippet: r.get(6)? })
+            Ok(SearchHit {
+                conversation: conv_from_row(r)?,
+                snippet: r.get(6)?,
+            })
         })?;
         Ok(rows.collect::<Result<_, _>>()?)
     }
@@ -292,8 +316,10 @@ mod tests {
     fn create_save_list_delete() {
         let db = Db::open_in_memory().unwrap();
         let c = db.create_conversation("Hello", Some("m")).unwrap();
-        db.insert_message(&msg(&c.id, "user", "How do I organize files?")).unwrap();
-        db.insert_message(&msg(&c.id, "assistant", "Use folders.")).unwrap();
+        db.insert_message(&msg(&c.id, "user", "How do I organize files?"))
+            .unwrap();
+        db.insert_message(&msg(&c.id, "assistant", "Use folders."))
+            .unwrap();
         assert_eq!(db.list_messages(&c.id).unwrap().len(), 2);
         assert_eq!(db.list_conversations(10, 0).unwrap().len(), 1);
         db.rename_conversation(&c.id, "Files").unwrap();
@@ -308,8 +334,10 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
         let a = db.create_conversation("One", None).unwrap();
         let b = db.create_conversation("Two", None).unwrap();
-        db.insert_message(&msg(&a.id, "user", "findable words")).unwrap();
-        db.insert_message(&msg(&b.id, "user", "more words")).unwrap();
+        db.insert_message(&msg(&a.id, "user", "findable words"))
+            .unwrap();
+        db.insert_message(&msg(&b.id, "user", "more words"))
+            .unwrap();
         assert_eq!(db.delete_all_conversations().unwrap(), 2);
         assert!(db.list_conversations(10, 0).unwrap().is_empty());
         assert!(db.list_messages(&a.id).unwrap().is_empty());
@@ -327,17 +355,29 @@ mod tests {
     fn search_content_title_and_arabic() {
         let db = Db::open_in_memory().unwrap();
         let a = db.create_conversation("PHP versions", None).unwrap();
-        db.insert_message(&msg(&a.id, "user", "dependency injection explained")).unwrap();
+        db.insert_message(&msg(&a.id, "user", "dependency injection explained"))
+            .unwrap();
         let b = db.create_conversation("Arabic", None).unwrap();
-        db.insert_message(&msg(&b.id, "user", "كيف حالك اليوم؟")).unwrap();
+        db.insert_message(&msg(&b.id, "user", "كيف حالك اليوم؟"))
+            .unwrap();
 
         let hits = db.search_conversations("injection", 10).unwrap();
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].conversation.id, a.id);
         assert!(hits[0].snippet.contains("[injection]"));
 
-        assert_eq!(db.search_conversations("PHP", 10).unwrap()[0].conversation.id, a.id);
-        assert_eq!(db.search_conversations("حالك", 10).unwrap()[0].conversation.id, b.id);
+        assert_eq!(
+            db.search_conversations("PHP", 10).unwrap()[0]
+                .conversation
+                .id,
+            a.id
+        );
+        assert_eq!(
+            db.search_conversations("حالك", 10).unwrap()[0]
+                .conversation
+                .id,
+            b.id
+        );
         // FTS syntax characters must not error
         assert!(db.search_conversations("\"AND OR*( ", 10).is_ok());
         assert_eq!(db.search_conversations("", 10).unwrap().len(), 2);
@@ -347,7 +387,11 @@ mod tests {
     fn tool_messages_not_indexed() {
         let db = Db::open_in_memory().unwrap();
         let c = db.create_conversation("t", None).unwrap();
-        db.insert_message(&msg(&c.id, "tool", "secretword")).unwrap();
-        assert!(db.search_conversations("secretword", 10).unwrap().is_empty());
+        db.insert_message(&msg(&c.id, "tool", "secretword"))
+            .unwrap();
+        assert!(db
+            .search_conversations("secretword", 10)
+            .unwrap()
+            .is_empty());
     }
 }

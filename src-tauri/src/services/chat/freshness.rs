@@ -2,17 +2,70 @@
 
 const PHRASES: &[&str] = &[
     // English
-    "latest", "current version", "current price", "current status", "currently", "today", "tonight",
-    "yesterday", "recently", "recent", "this week", "this month", "this year", "right now", "news",
-    "latest release", "recent announcement", "up to date", "up-to-date", "as of now", "breaking",
-    "stock price", "weather", "exchange rate",
+    "latest",
+    "current version",
+    "current price",
+    "current status",
+    "currently",
+    "today",
+    "tonight",
+    "yesterday",
+    "recently",
+    "recent",
+    "this week",
+    "this month",
+    "this year",
+    "right now",
+    "news",
+    "latest release",
+    "recent announcement",
+    "up to date",
+    "up-to-date",
+    "as of now",
+    "breaking",
+    "stock price",
+    "weather",
+    "exchange rate",
     // German
-    "neueste", "neuesten", "neuster", "aktuell", "aktuelle", "aktuellen", "aktueller", "heute",
-    "kürzlich", "neulich", "diese woche", "diesen monat", "dieses jahr", "nachrichten", "derzeit",
-    "zurzeit", "momentan", "gerade jetzt", "wetter", "kurs",
+    "neueste",
+    "neuesten",
+    "neuster",
+    "aktuell",
+    "aktuelle",
+    "aktuellen",
+    "aktueller",
+    "heute",
+    "kürzlich",
+    "neulich",
+    "diese woche",
+    "diesen monat",
+    "dieses jahr",
+    "nachrichten",
+    "derzeit",
+    "zurzeit",
+    "momentan",
+    "gerade jetzt",
+    "wetter",
+    "kurs",
     // Arabic
-    "أحدث", "آخر إصدار", "آخر الأخبار", "الحالي", "الحالية", "حاليا", "حالياً", "اليوم", "مؤخرا",
-    "مؤخراً", "هذا الأسبوع", "هذا الشهر", "هذه السنة", "أخبار", "الأخبار", "الآن", "سعر", "الطقس",
+    "أحدث",
+    "آخر إصدار",
+    "آخر الأخبار",
+    "الحالي",
+    "الحالية",
+    "حاليا",
+    "حالياً",
+    "اليوم",
+    "مؤخرا",
+    "مؤخراً",
+    "هذا الأسبوع",
+    "هذا الشهر",
+    "هذه السنة",
+    "أخبار",
+    "الأخبار",
+    "الآن",
+    "سعر",
+    "الطقس",
 ];
 
 /// Whole-word-ish match for Latin phrases, substring match for Arabic
@@ -26,9 +79,15 @@ pub fn needs_fresh_info(text: &str) -> bool {
         let mut start = 0;
         while let Some(pos) = lower[start..].find(p) {
             let abs = start + pos;
-            let before_ok = lower[..abs].chars().last().map_or(true, |c| !c.is_alphanumeric());
+            let before_ok = lower[..abs]
+                .chars()
+                .last()
+                .map_or(true, |c| !c.is_alphanumeric());
             let end = abs + p.len();
-            let after_ok = lower[end..].chars().next().map_or(true, |c| !c.is_alphanumeric());
+            let after_ok = lower[end..]
+                .chars()
+                .next()
+                .map_or(true, |c| !c.is_alphanumeric());
             if before_ok && after_ok {
                 return true;
             }

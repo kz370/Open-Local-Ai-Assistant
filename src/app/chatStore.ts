@@ -58,6 +58,8 @@ interface ChatState {
   /** Set when the last turn failed because LM Studio is unreachable. */
   connectionError: AppErrorPayload | null;
   voiceNotice: string | null;
+  sessionWebSearch: boolean;
+  sessionMcpEnabled: Record<string, boolean>;
   setDraft: (d: string) => void;
   addAttachments: (added: Attachment[], failures?: string[]) => void;
   removeAttachment: (id: string) => void;
@@ -72,6 +74,9 @@ interface ChatState {
   confirmTool: (approved: boolean) => void;
   setVoiceNotice: (n: string | null) => void;
   handleEvent: (ev: ChatEvent) => void;
+  setSessionWebSearch: (enabled: boolean) => void;
+  setSessionMcpEnabled: (serverId: string, enabled: boolean) => void;
+  resetSessionTools: (defaults: { webSearch: boolean; mcp: Record<string, boolean> }) => void;
 }
 
 export function activityToUi(a: ActivityRecord): UiToolActivity {
@@ -148,6 +153,7 @@ export const useChat = create<ChatState>((set, get) => {
       ],
     }));
     try {
+      const { sessionWebSearch, sessionMcpEnabled } = get();
       await ipc.chatSend(
         {
           turnId,
@@ -156,6 +162,8 @@ export const useChat = create<ChatState>((set, get) => {
           spokenLanguage: opts?.spokenLanguage ?? null,
           voice: !!opts?.voice,
           attachmentIds: attachments.map((a) => a.id),
+          webSearchEnabled: sessionWebSearch,
+          mcpEnabled: Object.keys(sessionMcpEnabled).length ? sessionMcpEnabled : null,
         },
         (ev) => get().handleEvent(ev),
       );
@@ -194,9 +202,16 @@ export const useChat = create<ChatState>((set, get) => {
     confirmation: null,
     connectionError: null,
     voiceNotice: null,
+    sessionWebSearch: false,
+    sessionMcpEnabled: {},
 
     setDraft: (draft) => set({ draft }),
     setVoiceNotice: (voiceNotice) => set({ voiceNotice }),
+    setSessionWebSearch: (sessionWebSearch) => set({ sessionWebSearch }),
+    setSessionMcpEnabled: (serverId, enabled) =>
+      set((s) => ({ sessionMcpEnabled: { ...s.sessionMcpEnabled, [serverId]: enabled } })),
+    resetSessionTools: (defaults) =>
+      set({ sessionWebSearch: defaults.webSearch, sessionMcpEnabled: defaults.mcp }),
 
     addAttachments: (added, failures = []) =>
       set((s) => ({ attachments: [...s.attachments, ...added], attachmentErrors: failures })),
@@ -257,7 +272,7 @@ export const useChat = create<ChatState>((set, get) => {
     newConversation: () => {
       get().stop();
       get().clearAttachments();
-      set({ conversationId: null, messages: [], turnId: null, confirmation: null, connectionError: null, draft: "" });
+      set({ conversationId: null, messages: [], turnId: null, confirmation: null, connectionError: null, draft: "", sessionWebSearch: true, sessionMcpEnabled: {} });
       void ipc.convSetLast(null);
       // Lazy import avoids a circular dependency (voiceStore imports chatStore).
       void import("./voiceStore").then(({ useVoice }) => {

@@ -20,7 +20,12 @@ pub fn from_json(value: &Option<Value>) -> Vec<Attachment> {
 
 /// Builds the user turn: the attachment blocks first, then the typed message,
 /// plus image parts when `allow_images` is set (a vision model on this turn).
-pub fn user_message(text: &str, attachments: &[Attachment], store: &AttachmentStore, allow_images: bool) -> ChatMessage {
+pub fn user_message(
+    text: &str,
+    attachments: &[Attachment],
+    store: &AttachmentStore,
+    allow_images: bool,
+) -> ChatMessage {
     if attachments.is_empty() {
         return ChatMessage::text("user", text);
     }
@@ -30,8 +35,17 @@ pub fn user_message(text: &str, attachments: &[Attachment], store: &AttachmentSt
     for a in attachments {
         match a.kind {
             AttachmentKind::Text => {
-                let content = store.text(&a.id).unwrap_or_else(|| "[the stored copy of this file is no longer available]".into());
-                body.push_str(&open_tag(a, if a.truncated { Some("only the first part of the file is included") } else { None }));
+                let content = store.text(&a.id).unwrap_or_else(|| {
+                    "[the stored copy of this file is no longer available]".into()
+                });
+                body.push_str(&open_tag(
+                    a,
+                    if a.truncated {
+                        Some("only the first part of the file is included")
+                    } else {
+                        None
+                    },
+                ));
                 body.push('\n');
                 body.push_str(content.trim_end());
                 body.push_str("\n</attachment>\n\n");
@@ -42,7 +56,9 @@ pub fn user_message(text: &str, attachments: &[Attachment], store: &AttachmentSt
                 } else {
                     match store.data_url(a) {
                         Ok(url) => {
-                            images.push(ContentPart::ImageUrl { image_url: ImageUrl { url } });
+                            images.push(ContentPart::ImageUrl {
+                                image_url: ImageUrl { url },
+                            });
                             None
                         }
                         Err(_) => Some("the stored copy of this image is no longer available"),
@@ -52,7 +68,10 @@ pub fn user_message(text: &str, attachments: &[Attachment], store: &AttachmentSt
                 body.push_str("</attachment>\n\n");
             }
             AttachmentKind::Binary => {
-                body.push_str(&open_tag(a, a.note.as_deref().or(Some("the contents could not be read"))));
+                body.push_str(&open_tag(
+                    a,
+                    a.note.as_deref().or(Some("the contents could not be read")),
+                ));
                 body.push_str("</attachment>\n\n");
             }
         }
@@ -71,7 +90,9 @@ pub fn user_message(text: &str, attachments: &[Attachment], store: &AttachmentSt
 }
 
 fn open_tag(a: &Attachment, note: Option<&str>) -> String {
-    let note = note.map(|n| format!(" note=\"{}\"", escape(n))).unwrap_or_default();
+    let note = note
+        .map(|n| format!(" note=\"{}\"", escape(n)))
+        .unwrap_or_default();
     format!(
         "<attachment name=\"{}\" type=\"{}\" size=\"{}\"{note}>",
         escape(&a.name),
@@ -81,7 +102,10 @@ fn open_tag(a: &Attachment, note: Option<&str>) -> String {
 }
 
 fn escape(s: &str) -> String {
-    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
 }
 
 #[cfg(test)]
@@ -113,7 +137,9 @@ mod tests {
         let a = s.ingest_bytes("chart.png", None, png.to_vec()).unwrap();
 
         let seen = user_message("what is this?", std::slice::from_ref(&a), &s, true);
-        let Some(MessageContent::Parts(parts)) = &seen.content else { panic!("expected parts") };
+        let Some(MessageContent::Parts(parts)) = &seen.content else {
+            panic!("expected parts")
+        };
         assert!(matches!(parts[1], ContentPart::ImageUrl { .. }));
 
         let unseen = user_message("what is this?", &[a], &s, false);
@@ -124,7 +150,9 @@ mod tests {
     #[test]
     fn unreadable_files_are_announced_not_invented() {
         let (s, _d) = store();
-        let a = s.ingest_bytes("scan.pdf", None, b"%PDF-1.7\n\x00\x01binary".to_vec()).unwrap();
+        let a = s
+            .ingest_bytes("scan.pdf", None, b"%PDF-1.7\n\x00\x01binary".to_vec())
+            .unwrap();
         let text = user_message("", &[a], &s, true).content_text();
         assert!(text.contains("scan.pdf"));
         assert!(text.contains("note=\""));

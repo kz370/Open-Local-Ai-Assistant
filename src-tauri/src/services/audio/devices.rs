@@ -12,8 +12,15 @@ pub struct AudioDevice {
 
 fn describe(d: &cpal::Device, default_id: &Option<String>) -> Option<AudioDevice> {
     let id = d.id().ok()?.to_string();
-    let name = d.description().map(|x| x.name().to_string()).unwrap_or_else(|_| d.to_string());
-    Some(AudioDevice { is_default: default_id.as_deref() == Some(id.as_str()), id, name })
+    let name = d
+        .description()
+        .map(|x| x.name().to_string())
+        .unwrap_or_else(|_| d.to_string());
+    Some(AudioDevice {
+        is_default: default_id.as_deref() == Some(id.as_str()),
+        id,
+        name,
+    })
 }
 
 /// Names that capture system output instead of a microphone
@@ -44,7 +51,10 @@ fn is_loopback_name(name: &str) -> bool {
 /// PC's own audio to speech recognition, so they are never offered.
 pub fn list_inputs() -> Vec<AudioDevice> {
     let host = cpal::default_host();
-    let default_id = host.default_input_device().and_then(|d| d.id().ok()).map(|i| i.to_string());
+    let default_id = host
+        .default_input_device()
+        .and_then(|d| d.id().ok())
+        .map(|i| i.to_string());
     host.input_devices()
         .map(|it| {
             it.filter_map(|d| describe(&d, &default_id))
@@ -56,7 +66,10 @@ pub fn list_inputs() -> Vec<AudioDevice> {
 
 pub fn list_outputs() -> Vec<AudioDevice> {
     let host = cpal::default_host();
-    let default_id = host.default_output_device().and_then(|d| d.id().ok()).map(|i| i.to_string());
+    let default_id = host
+        .default_output_device()
+        .and_then(|d| d.id().ok())
+        .map(|i| i.to_string());
     host.output_devices()
         .map(|it| it.filter_map(|d| describe(&d, &default_id)).collect())
         .unwrap_or_default()
@@ -68,7 +81,10 @@ pub fn list_outputs() -> Vec<AudioDevice> {
 pub fn input_device(id: Option<&str>) -> AppResult<cpal::Device> {
     let host = cpal::default_host();
     let usable = |d: &cpal::Device| -> bool {
-        let name = d.description().map(|x| x.name().to_string()).unwrap_or_else(|_| d.to_string());
+        let name = d
+            .description()
+            .map(|x| x.name().to_string())
+            .unwrap_or_else(|_| d.to_string());
         !is_loopback_name(&name)
     };
     if let Some(id) = id {
@@ -80,7 +96,9 @@ pub fn input_device(id: Option<&str>) -> AppResult<cpal::Device> {
             if usable(&d) {
                 return Ok(d);
             }
-            tracing::warn!("configured microphone is a loopback device, using a microphone instead");
+            tracing::warn!(
+                "configured microphone is a loopback device, using a microphone instead"
+            );
         } else {
             tracing::warn!("configured microphone not found, using default");
         }
@@ -106,7 +124,8 @@ pub fn output_device(id: Option<&str>) -> AppResult<cpal::Device> {
         }
         tracing::warn!("configured audio output not found, using default");
     }
-    host.default_output_device().ok_or_else(|| AppError::Audio("no audio output device found".into()))
+    host.default_output_device()
+        .ok_or_else(|| AppError::Audio("no audio output device found".into()))
 }
 
 #[cfg(test)]
@@ -129,7 +148,12 @@ mod tests {
         ] {
             assert!(is_loopback_name(name), "{name}");
         }
-        for name in ["Microphone (Realtek High Definition Audio)", "Headset Microphone", "USB Audio Device", "Yeti Stereo Microphone"] {
+        for name in [
+            "Microphone (Realtek High Definition Audio)",
+            "Headset Microphone",
+            "USB Audio Device",
+            "Yeti Stereo Microphone",
+        ] {
             assert!(!is_loopback_name(name), "{name}");
         }
     }

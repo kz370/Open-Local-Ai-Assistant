@@ -50,26 +50,34 @@ pub const MIN_AUDIO_MS: u64 = 350;
 
 impl SttService {
     pub fn new(store: Arc<ModelStore>, hw: HardwareInfo) -> Self {
-        Self { store, hw, loaded: Mutex::new(None), loaded_id: Mutex::new(None) }
+        Self {
+            store,
+            hw,
+            loaded: Mutex::new(None),
+            loaded_id: Mutex::new(None),
+        }
     }
 
     /// Chooses the configured model, or the best installed one automatically.
     pub fn resolve_model(&self, settings: &SttSettings) -> Option<InstalledModel> {
-        let installed: Vec<InstalledModel> = self.store.installed().into_iter().filter(|m| m.kind == ModelKind::Stt).collect();
+        let installed: Vec<InstalledModel> = self
+            .store
+            .installed()
+            .into_iter()
+            .filter(|m| m.kind == ModelKind::Stt)
+            .collect();
         if settings.model != "auto" {
             if let Some(m) = installed.iter().find(|m| m.id == settings.model) {
                 return Some(m.clone());
             }
         }
         let ram_gb = self.hw.total_ram_bytes / (1024 * 1024 * 1024);
-        installed
-            .into_iter()
-            .max_by_key(|m| {
-                let c = catalog::find(&m.id);
-                let quality = c.map(|c| c.quality as i64).unwrap_or(4); // user-supplied models rank above the tiny defaults
-                let fits = c.map(|c| ram_gb >= c.min_ram_gb as u64).unwrap_or(true);
-                (fits, quality)
-            })
+        installed.into_iter().max_by_key(|m| {
+            let c = catalog::find(&m.id);
+            let quality = c.map(|c| c.quality as i64).unwrap_or(4); // user-supplied models rank above the tiny defaults
+            let fits = c.map(|c| ram_gb >= c.min_ram_gb as u64).unwrap_or(true);
+            (fits, quality)
+        })
     }
 
     pub fn vad_model_path(&self) -> Option<std::path::PathBuf> {
@@ -77,7 +85,12 @@ impl SttService {
             .installed()
             .into_iter()
             .find(|m| m.kind == ModelKind::Vad)
-            .and_then(|m| find_file(&m.path, |n| (n.starts_with("silero_vad") || n.starts_with("ten-vad")) && n.ends_with(".onnx")))
+            .and_then(|m| {
+                find_file(&m.path, |n| {
+                    (n.starts_with("silero_vad") || n.starts_with("ten-vad"))
+                        && n.ends_with(".onnx")
+                })
+            })
     }
 
     pub fn is_ready(&self, settings: &SttSettings) -> bool {
@@ -86,12 +99,17 @@ impl SttService {
 
     /// True when the selected model produces live text while speaking.
     pub fn is_streaming(&self, settings: &SttSettings) -> bool {
-        self.resolve_model(settings).map(|m| m.streaming).unwrap_or(false)
+        self.resolve_model(settings)
+            .map(|m| m.streaming)
+            .unwrap_or(false)
     }
 
     /// Id of the speech model in memory, if any.
     pub fn loaded_model(&self) -> Option<String> {
-        self.loaded_id.lock().unwrap_or_else(|p| p.into_inner()).clone()
+        self.loaded_id
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .clone()
     }
 
     /// Drops the loaded recognizer (e.g. after the model setting changed).
@@ -103,7 +121,9 @@ impl SttService {
     fn options(&self, settings: &SttSettings) -> EngineOptions {
         EngineOptions {
             threads: self.hw.inference_threads(),
-            language: Lang::from_code(&settings.language).map(|l| l.code().to_string()).unwrap_or_default(),
+            language: Lang::from_code(&settings.language)
+                .map(|l| l.code().to_string())
+                .unwrap_or_default(),
             endpoint_silence: settings.silence_ms as f32 / 1000.0,
             provider: crate::services::gpu::provider_for(&settings.hardware),
         }
@@ -111,19 +131,42 @@ impl SttService {
 
     /// Runs `f` with the loaded recognizer, loading it first if needed.
     /// The recognizer stays loaded for the next call.
-    pub fn with_recognizer<R>(&self, settings: &SttSettings, f: impl FnOnce(&Recognizer, &InstalledModel) -> R) -> AppResult<R> {
-        let model = self
-            .resolve_model(settings)
-            .ok_or_else(|| AppError::Stt("no local speech recognition model is installed".into()))?;
+    pub fn with_recognizer<R>(
+        &self,
+        settings: &SttSettings,
+        f: impl FnOnce(&Recognizer, &InstalledModel) -> R,
+    ) -> AppResult<R> {
+        let model = self.resolve_model(settings).ok_or_else(|| {
+            AppError::Stt("no local speech recognition model is installed".into())
+        })?;
         let opts = self.options(settings);
-        let files = engine::detect(&model.path).ok_or_else(|| AppError::Stt(format!("{} is not a recognizable speech model folder", model.path.display())))?;
+        let files = engine::detect(&model.path).ok_or_else(|| {
+            AppError::Stt(format!(
+                "{} is not a recognizable speech model folder",
+                model.path.display()
+            ))
+        })?;
         // Whisper changes language in place, so the language is not part of
         // what identifies a loaded model (chat and dictation often differ,
         // and reloading took seconds each time); endpointing is streaming-only.
         let switchable = files.family == SttFamily::Whisper;
-        let language = if switchable { "" } else { opts.language.as_str() };
-        let silence = if files.family.is_streaming() { opts.endpoint_silence } else { 0.0 };
-        let key = format!("{}|{}|{}|{}", model.path.display(), language, silence, opts.provider);
+        let language = if switchable {
+            ""
+        } else {
+            opts.language.as_str()
+        };
+        let silence = if files.family.is_streaming() {
+            opts.endpoint_silence
+        } else {
+            0.0
+        };
+        let key = format!(
+            "{}|{}|{}|{}",
+            model.path.display(),
+            language,
+            silence,
+            opts.provider
+        );
         let mut guard = self.loaded.lock().unwrap_or_else(|p| p.into_inner());
         if guard.as_ref().map(|l| l.key != key).unwrap_or(true) {
             *guard = None; // free the previous model before loading another
@@ -131,7 +174,11 @@ impl SttService {
             let started = Instant::now();
             let recognizer = engine::create(&files, &opts)?;
             tracing::info!(model = %model.id, family = files.family.label(), ms = started.elapsed().as_millis() as u64, "speech model loaded");
-            *guard = Some(Loaded { key, recognizer, language: opts.language.clone() });
+            *guard = Some(Loaded {
+                key,
+                recognizer,
+                language: opts.language.clone(),
+            });
             *self.loaded_id.lock().unwrap_or_else(|p| p.into_inner()) = Some(model.id.clone());
         }
         let loaded = guard.as_mut().expect("recognizer loaded");
@@ -148,8 +195,17 @@ impl SttService {
     pub fn transcribe(&self, samples: &[f32], settings: &SttSettings) -> AppResult<Transcription> {
         let audio_ms = samples.len() as u64 * 1000 / 16_000;
         if audio_ms < MIN_AUDIO_MS {
-            let model_id = self.resolve_model(settings).map(|m| m.id).unwrap_or_default();
-            return Ok(Transcription { text: String::new(), language: None, model_id, audio_ms, elapsed_ms: 0 });
+            let model_id = self
+                .resolve_model(settings)
+                .map(|m| m.id)
+                .unwrap_or_default();
+            return Ok(Transcription {
+                text: String::new(),
+                language: None,
+                model_id,
+                audio_ms,
+                elapsed_ms: 0,
+            });
         }
         let started = Instant::now();
         let (text, model_id) = self.with_recognizer(settings, |rec, model| {
@@ -173,8 +229,16 @@ impl SttService {
         })?;
         let text = clean_transcript(&text);
         let forced = Lang::from_code(&settings.language);
-        let language = forced.or_else(|| detect(&text).map(|d| d.lang)).map(|l| l.code().to_string());
-        Ok(Transcription { text, language, model_id, audio_ms, elapsed_ms: started.elapsed().as_millis() as u64 })
+        let language = forced
+            .or_else(|| detect(&text).map(|d| d.lang))
+            .map(|l| l.code().to_string());
+        Ok(Transcription {
+            text,
+            language,
+            model_id,
+            audio_ms,
+            elapsed_ms: started.elapsed().as_millis() as u64,
+        })
     }
 }
 
@@ -189,10 +253,20 @@ pub fn clean_transcript(text: &str) -> String {
     for p in [",", ".", "!", "?", ";", ":", "،", "؟"] {
         t = t.replace(&format!(" {p}"), p);
     }
-    let t = t.trim_start_matches([',', '.', ';', ':', '،']).trim().to_string();
+    let t = t
+        .trim_start_matches([',', '.', ';', ':', '،'])
+        .trim()
+        .to_string();
     const HALLUCINATIONS: &[&str] = &[
-        "thank you.", "thanks for watching!", "thank you for watching.", "you", ".", "untertitel der amara.org-community",
-        "untertitelung des zdf, 2020", "ترجمة نانسي قنقر", "اشتركوا في القناة",
+        "thank you.",
+        "thanks for watching!",
+        "thank you for watching.",
+        "you",
+        ".",
+        "untertitel der amara.org-community",
+        "untertitelung des zdf, 2020",
+        "ترجمة نانسي قنقر",
+        "اشتركوا في القناة",
     ];
     if HALLUCINATIONS.contains(&t.to_lowercase().as_str()) {
         return String::new();
@@ -260,8 +334,14 @@ mod tests {
     #[test]
     fn strips_every_bracketed_caption() {
         assert_eq!(clean_transcript("(crickets chirping)"), "");
-        assert_eq!(clean_transcript("Hello (coughs), world [laughs] {x} <|nospeech|> ♪"), "Hello, world");
-        assert_eq!(clean_transcript("(outer (inner) still) open the file"), "open the file");
+        assert_eq!(
+            clean_transcript("Hello (coughs), world [laughs] {x} <|nospeech|> ♪"),
+            "Hello, world"
+        );
+        assert_eq!(
+            clean_transcript("(outer (inner) still) open the file"),
+            "open the file"
+        );
         assert_eq!(clean_transcript("keep a < b as is"), "keep a < b as is");
         assert_eq!(clean_transcript("(applause) Thank you."), "");
     }
@@ -269,8 +349,13 @@ mod tests {
     #[test]
     fn no_model_installed_is_reported() {
         let dir = tempfile::tempdir().unwrap();
-        let svc = SttService::new(Arc::new(ModelStore::new(dir.path().into())), HardwareInfo::default());
-        let err = svc.transcribe(&vec![0.0; 16_000], &SttSettings::default()).unwrap_err();
+        let svc = SttService::new(
+            Arc::new(ModelStore::new(dir.path().into())),
+            HardwareInfo::default(),
+        );
+        let err = svc
+            .transcribe(&vec![0.0; 16_000], &SttSettings::default())
+            .unwrap_err();
         assert_eq!(err.code(), "stt_unavailable");
         assert!(!svc.is_ready(&SttSettings::default()));
         assert!(!svc.is_streaming(&SttSettings::default()));
@@ -283,17 +368,36 @@ mod tests {
         // A catalog model (quality 3) plus a user-provided streaming model.
         let base = app.path().join("whisper-small");
         std::fs::create_dir_all(&base).unwrap();
-        for f in ["encoder.int8.onnx", "decoder.int8.onnx", "tokens.txt", ".complete"] {
+        for f in [
+            "encoder.int8.onnx",
+            "decoder.int8.onnx",
+            "tokens.txt",
+            ".complete",
+        ] {
             std::fs::write(base.join(f), b"x").unwrap();
         }
         let custom = app.path().join("nemotron-3.5-asr-streaming-0.6b");
         std::fs::create_dir_all(&custom).unwrap();
-        for f in ["encoder.int8.onnx", "decoder.int8.onnx", "joiner.int8.onnx", "tokens.txt"] {
+        for f in [
+            "encoder.int8.onnx",
+            "decoder.int8.onnx",
+            "joiner.int8.onnx",
+            "tokens.txt",
+        ] {
             std::fs::write(custom.join(f), b"x").unwrap();
         }
-        let svc = SttService::new(store, HardwareInfo { total_ram_bytes: 16 << 30, ..Default::default() });
+        let svc = SttService::new(
+            store,
+            HardwareInfo {
+                total_ram_bytes: 16 << 30,
+                ..Default::default()
+            },
+        );
         let mut settings = SttSettings::default();
-        assert_eq!(svc.resolve_model(&settings).unwrap().id, "nemotron-3.5-asr-streaming-0.6b");
+        assert_eq!(
+            svc.resolve_model(&settings).unwrap().id,
+            "nemotron-3.5-asr-streaming-0.6b"
+        );
         assert!(svc.is_streaming(&settings));
         // Explicit choice wins.
         settings.model = "whisper-small".into();

@@ -35,15 +35,26 @@ pub fn attach_files(state: State<'_, AppState>, paths: Vec<String>) -> CmdResult
 /// Attaches bytes that never existed as a file, e.g. an image pasted from the
 /// clipboard. `data` is base64, optionally still wrapped in a `data:` URL.
 #[tauri::command]
-pub fn attach_bytes(state: State<'_, AppState>, name: String, mime: Option<String>, data: String) -> CmdResult<Attachment> {
+pub fn attach_bytes(
+    state: State<'_, AppState>,
+    name: String,
+    mime: Option<String>,
+    data: String,
+) -> CmdResult<Attachment> {
     let bytes = base64_decode(&data).map_err(AppError::Invalid)?;
-    state.attachments.ingest_bytes(&name, mime.as_deref(), bytes)
+    state
+        .attachments
+        .ingest_bytes(&name, mime.as_deref(), bytes)
 }
 
 /// Attaches a long block of text as a file, the way pasting a large document
 /// into the composer does.
 #[tauri::command]
-pub fn attach_text(state: State<'_, AppState>, name: String, text: String) -> CmdResult<Attachment> {
+pub fn attach_text(
+    state: State<'_, AppState>,
+    name: String,
+    text: String,
+) -> CmdResult<Attachment> {
     state.attachments.ingest_text(&name, &text)
 }
 
@@ -55,9 +66,17 @@ pub fn attach_remove(state: State<'_, AppState>, id: String) {
 /// `data:` URL for an attachment, used by the UI to show image previews for
 /// messages loaded back from history.
 #[tauri::command]
-pub fn attachment_data_url(state: State<'_, AppState>, id: String, mime: String) -> CmdResult<String> {
+pub fn attachment_data_url(
+    state: State<'_, AppState>,
+    id: String,
+    mime: String,
+) -> CmdResult<String> {
     let bytes = state.attachments.bytes(&id)?;
-    Ok(format!("data:{};base64,{}", mime, crate::services::attachments::base64_encode(&bytes)))
+    Ok(format!(
+        "data:{};base64,{}",
+        mime,
+        crate::services::attachments::base64_encode(&bytes)
+    ))
 }
 
 /// Extracted text of an attachment, for the "show contents" preview.

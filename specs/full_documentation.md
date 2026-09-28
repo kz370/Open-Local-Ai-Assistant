@@ -4324,7 +4324,9 @@ tests that run against an in-memory database and a scripted fake AI.
 ```rust
 pub struct SendInput { turn_id, conversation_id: Option<String>, text,
                        spoken_language: Option<String>, voice: bool,
-                       attachment_ids: Vec<String> }
+                       attachment_ids: Vec<String>,
+                       web_search_enabled: Option<bool>,
+                       mcp_enabled: Option<HashMap<String, bool>> }
 
 pub enum ChatEvent { Started, Delta, Reasoning, ToolStarted,
                      ToolAwaitingConfirmation, ToolFinished, Done, Error }

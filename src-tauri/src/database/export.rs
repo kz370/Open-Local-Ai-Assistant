@@ -32,15 +32,18 @@ pub struct ExportBundle {
 const BUNDLE_FORMAT: &str = "local-assistant-conversations";
 
 fn visible(messages: &[Message]) -> impl Iterator<Item = &Message> {
-    messages
-        .iter()
-        .filter(|m| (m.role == "user" || m.role == "assistant") && (!m.content.trim().is_empty() || m.attachments.is_some()))
+    messages.iter().filter(|m| {
+        (m.role == "user" || m.role == "assistant")
+            && (!m.content.trim().is_empty() || m.attachments.is_some())
+    })
 }
 
 /// "file.pdf, shot.png" for a message's attachments, if it has any. The files
 /// themselves stay on this computer and are not part of an export.
 fn attachment_names(m: &Message) -> Option<String> {
-    let Some(serde_json::Value::Array(items)) = &m.attachments else { return None };
+    let Some(serde_json::Value::Array(items)) = &m.attachments else {
+        return None;
+    };
     let names: Vec<&str> = items.iter().filter_map(|a| a["name"].as_str()).collect();
     if names.is_empty() {
         None
@@ -71,7 +74,10 @@ impl Db {
                     let mut s = format!("# {}\n\n", e.conversation.title);
                     for m in visible(&e.messages) {
                         let who = if m.role == "user" { "You" } else { "Assistant" };
-                        s.push_str(&format!("**{who}** — {}\n\n{}\n\n", m.created_at, m.content));
+                        s.push_str(&format!(
+                            "**{who}** — {}\n\n{}\n\n",
+                            m.created_at, m.content
+                        ));
                         if let Some(names) = attachment_names(m) {
                             s.push_str(&format!("Attachments: {names}\n\n"));
                         }
@@ -80,7 +86,8 @@ impl Db {
                                 s.push_str("Sources:\n");
                                 for src in srcs {
                                     let url = src.get("url").and_then(|v| v.as_str()).unwrap_or("");
-                                    let title = src.get("title").and_then(|v| v.as_str()).unwrap_or(url);
+                                    let title =
+                                        src.get("title").and_then(|v| v.as_str()).unwrap_or(url);
                                     s.push_str(&format!("- [{title}]({url})\n"));
                                 }
                                 s.push('\n');
@@ -94,7 +101,11 @@ impl Db {
             ExportFormat::Txt => items
                 .iter()
                 .map(|e| {
-                    let mut s = format!("{}\n{}\n\n", e.conversation.title, "=".repeat(e.conversation.title.chars().count().max(3)));
+                    let mut s = format!(
+                        "{}\n{}\n\n",
+                        e.conversation.title,
+                        "=".repeat(e.conversation.title.chars().count().max(3))
+                    );
                     for m in visible(&e.messages) {
                         let who = if m.role == "user" { "You" } else { "Assistant" };
                         s.push_str(&format!("[{}] {who}:\n{}\n\n", m.created_at, m.content));
@@ -134,7 +145,10 @@ impl Db {
                 ],
             )?;
             for m in item.messages {
-                if !matches!(m.role.as_str(), "user" | "assistant" | "assistant_tool_calls" | "tool") {
+                if !matches!(
+                    m.role.as_str(),
+                    "user" | "assistant" | "assistant_tool_calls" | "tool"
+                ) {
                     continue;
                 }
                 // `attachments_json` is deliberately not imported: the files it
@@ -163,7 +177,11 @@ mod tests {
 
     fn seed(db: &Db) -> String {
         let c = db.create_conversation("Deutsch Test", None).unwrap();
-        for (role, content) in [("user", "Wie geht es dir?"), ("assistant", "Gut, danke!"), ("tool", "{}")] {
+        for (role, content) in [
+            ("user", "Wie geht es dir?"),
+            ("assistant", "Gut, danke!"),
+            ("tool", "{}"),
+        ] {
             db.insert_message(&Message {
                 id: new_id(),
                 conversation_id: c.id.clone(),
@@ -192,10 +210,21 @@ mod tests {
     fn export_formats() {
         let db = Db::open_in_memory().unwrap();
         let id = seed(&db);
-        let md = db.export_conversations(&[id.clone()], ExportFormat::Markdown).unwrap();
-        assert!(md.contains("# Deutsch Test") && md.contains("Gut, danke!") && md.contains("[PHP](https://php.net)"));
-        assert!(!md.contains("{}"), "tool messages are not exported to markdown");
-        let txt = db.export_conversations(&[id.clone()], ExportFormat::Txt).unwrap();
+        let md = db
+            .export_conversations(&[id.clone()], ExportFormat::Markdown)
+            .unwrap();
+        assert!(
+            md.contains("# Deutsch Test")
+                && md.contains("Gut, danke!")
+                && md.contains("[PHP](https://php.net)")
+        );
+        assert!(
+            !md.contains("{}"),
+            "tool messages are not exported to markdown"
+        );
+        let txt = db
+            .export_conversations(&[id.clone()], ExportFormat::Txt)
+            .unwrap();
         assert!(txt.contains("You:\nWie geht es dir?"));
         let json = db.export_conversations(&[id], ExportFormat::Json).unwrap();
         assert!(json.contains(BUNDLE_FORMAT));
@@ -205,7 +234,9 @@ mod tests {
     fn import_roundtrip_creates_new_ids() {
         let db = Db::open_in_memory().unwrap();
         let id = seed(&db);
-        let json = db.export_conversations(&[id.clone()], ExportFormat::Json).unwrap();
+        let json = db
+            .export_conversations(&[id.clone()], ExportFormat::Json)
+            .unwrap();
         let ids = db.import_conversations(&json).unwrap();
         assert_eq!(ids.len(), 1);
         assert_ne!(ids[0], id);

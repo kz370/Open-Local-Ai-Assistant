@@ -29,7 +29,10 @@ pub enum ToolCategory {
 impl ToolCategory {
     /// Categories that may change state outside the app.
     pub fn is_sensitive(self) -> bool {
-        matches!(self, ToolCategory::Write | ToolCategory::Execute | ToolCategory::Other)
+        matches!(
+            self,
+            ToolCategory::Write | ToolCategory::Execute | ToolCategory::Other
+        )
     }
 }
 
@@ -91,11 +94,18 @@ impl ToolProvider for CombinedTools {
 
     async fn call_tool(&self, spec: &ToolSpec, args: serde_json::Value) -> AppResult<ToolOutput> {
         for p in &self.0 {
-            if p.available_tools().await.iter().any(|t| t.server_id == spec.server_id && t.llm_name == spec.llm_name) {
+            if p.available_tools()
+                .await
+                .iter()
+                .any(|t| t.server_id == spec.server_id && t.llm_name == spec.llm_name)
+            {
                 return p.call_tool(spec, args).await;
             }
         }
-        Err(crate::errors::AppError::Mcp(format!("tool {} unavailable", spec.llm_name)))
+        Err(crate::errors::AppError::Mcp(format!(
+            "tool {} unavailable",
+            spec.llm_name
+        )))
     }
 }
 
@@ -108,7 +118,10 @@ impl ToolProvider for NoTools {
         Vec::new()
     }
     async fn call_tool(&self, spec: &ToolSpec, _args: serde_json::Value) -> AppResult<ToolOutput> {
-        Err(crate::errors::AppError::Mcp(format!("tool {} unavailable", spec.llm_name)))
+        Err(crate::errors::AppError::Mcp(format!(
+            "tool {} unavailable",
+            spec.llm_name
+        )))
     }
 }
 

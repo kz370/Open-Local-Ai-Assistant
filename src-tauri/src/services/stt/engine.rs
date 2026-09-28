@@ -69,7 +69,10 @@ fn onnx_files(dir: &Path) -> Vec<String> {
 
 /// Prefers int8 quantized files (smaller, faster on CPU).
 fn pick(dir: &Path, names: &[String], keyword: &str) -> Option<PathBuf> {
-    let matching: Vec<&String> = names.iter().filter(|n| n.to_ascii_lowercase().contains(keyword)).collect();
+    let matching: Vec<&String> = names
+        .iter()
+        .filter(|n| n.to_ascii_lowercase().contains(keyword))
+        .collect();
     let best = matching
         .iter()
         .find(|n| n.contains(".int8."))
@@ -120,9 +123,15 @@ pub fn detect(dir: &Path) -> Option<SttModelFiles> {
     }
     if has("encoder") && has("decoder") && has("joiner") {
         // Streaming exports say so in their folder name or README.
-        let streaming = ["streaming", "online", "stream", "chunk size", "chunk_size"].iter().any(|k| text.contains(k));
+        let streaming = ["streaming", "online", "stream", "chunk size", "chunk_size"]
+            .iter()
+            .any(|k| text.contains(k));
         return Some(SttModelFiles {
-            family: if streaming { SttFamily::OnlineTransducer } else { SttFamily::OfflineTransducer },
+            family: if streaming {
+                SttFamily::OnlineTransducer
+            } else {
+                SttFamily::OfflineTransducer
+            },
             encoder: pick(dir, &names, "encoder"),
             decoder: pick(dir, &names, "decoder"),
             joiner: pick(dir, &names, "joiner"),
@@ -130,7 +139,12 @@ pub fn detect(dir: &Path) -> Option<SttModelFiles> {
         });
     }
     if has("encoder") && has("decoder") {
-        return Some(SttModelFiles { family: SttFamily::Whisper, encoder: pick(dir, &names, "encoder"), decoder: pick(dir, &names, "decoder"), ..base });
+        return Some(SttModelFiles {
+            family: SttFamily::Whisper,
+            encoder: pick(dir, &names, "encoder"),
+            decoder: pick(dir, &names, "decoder"),
+            ..base
+        });
     }
     // Single-file models: decide by name hints.
     let model = pick(dir, &names, ".onnx")?;
@@ -143,7 +157,11 @@ pub fn detect(dir: &Path) -> Option<SttModelFiles> {
     } else {
         SttFamily::SenseVoice
     };
-    Some(SttModelFiles { family, model: Some(model), ..base })
+    Some(SttModelFiles {
+        family,
+        model: Some(model),
+        ..base
+    })
 }
 
 fn s(p: &Option<PathBuf>) -> Option<String> {
@@ -172,7 +190,10 @@ impl StreamSession<'_> {
     }
 
     pub fn text(&self) -> String {
-        self.recognizer.get_result(&self.stream).map(|r| r.text).unwrap_or_default()
+        self.recognizer
+            .get_result(&self.stream)
+            .map(|r| r.text)
+            .unwrap_or_default()
     }
 
     /// True when the speaker paused long enough to end an utterance.
@@ -223,7 +244,10 @@ impl Recognizer {
 
     pub fn stream_session(&self) -> Option<StreamSession<'_>> {
         match self {
-            Recognizer::Online(r) => Some(StreamSession { recognizer: r, stream: r.create_stream() }),
+            Recognizer::Online(r) => Some(StreamSession {
+                recognizer: r,
+                stream: r.create_stream(),
+            }),
             Recognizer::Offline(_) => None,
         }
     }
@@ -231,19 +255,26 @@ impl Recognizer {
 
 extern "C" {
     // Exported by the sherpa-onnx C library but not bound by the Rust crates.
-    fn SherpaOnnxOfflineRecognizerSetConfig(recognizer: *const sherpa_onnx_sys::OfflineRecognizer, config: *const sherpa_onnx_sys::OfflineRecognizerConfig);
+    fn SherpaOnnxOfflineRecognizerSetConfig(
+        recognizer: *const sherpa_onnx_sys::OfflineRecognizer,
+        config: *const sherpa_onnx_sys::OfflineRecognizerConfig,
+    );
 }
 
 // `set_whisper_language` reads the wrapper's private C pointer, which is its
 // only field; fail the build if the wrapper ever grows.
-const _: () = assert!(std::mem::size_of::<sherpa_onnx::OfflineRecognizer>() == std::mem::size_of::<*const sherpa_onnx_sys::OfflineRecognizer>());
+const _: () = assert!(
+    std::mem::size_of::<sherpa_onnx::OfflineRecognizer>()
+        == std::mem::size_of::<*const sherpa_onnx_sys::OfflineRecognizer>()
+);
 
 /// Switches a loaded Whisper model to another language ("" = detect) in
 /// place, in well under a millisecond, instead of loading it again. The
 /// caller must make sure nothing decodes on `rec` meanwhile.
 pub fn set_whisper_language(rec: &Recognizer, files: &SttModelFiles, opts: &EngineOptions) {
     let Recognizer::Offline(r) = rec else { return };
-    let text = |v: Option<String>| std::ffi::CString::new(v.unwrap_or_default()).unwrap_or_default();
+    let text =
+        |v: Option<String>| std::ffi::CString::new(v.unwrap_or_default()).unwrap_or_default();
     let encoder = text(s(&files.encoder));
     let decoder = text(s(&files.decoder));
     let tokens = text(Some(files.tokens.to_string_lossy().to_string()));
@@ -329,17 +360,25 @@ pub fn create(files: &SttModelFiles, opts: &EngineOptions) -> AppResult<Recogniz
             };
         }
         SttFamily::NemoCtc => {
-            config.model_config.nemo_ctc = sherpa_onnx::OfflineNemoEncDecCtcModelConfig { model: s(&files.model) };
+            config.model_config.nemo_ctc = sherpa_onnx::OfflineNemoEncDecCtcModelConfig {
+                model: s(&files.model),
+            };
         }
         SttFamily::SenseVoice => {
             config.model_config.sense_voice = sherpa_onnx::OfflineSenseVoiceModelConfig {
                 model: s(&files.model),
-                language: Some(if opts.language.is_empty() { "auto".into() } else { opts.language.clone() }),
+                language: Some(if opts.language.is_empty() {
+                    "auto".into()
+                } else {
+                    opts.language.clone()
+                }),
                 use_itn: true,
             };
         }
         SttFamily::Paraformer => {
-            config.model_config.paraformer = sherpa_onnx::OfflineParaformerModelConfig { model: s(&files.model) };
+            config.model_config.paraformer = sherpa_onnx::OfflineParaformerModelConfig {
+                model: s(&files.model),
+            };
         }
         SttFamily::Moonshine => {
             config.model_config.moonshine = sherpa_onnx::OfflineMoonshineModelConfig {
@@ -357,9 +396,14 @@ pub fn create(files: &SttModelFiles, opts: &EngineOptions) -> AppResult<Recogniz
     }
     // A streaming export was mis-detected as offline: retry as streaming.
     if files.joiner.is_some() {
-        let streaming = SttModelFiles { family: SttFamily::OnlineTransducer, ..files.clone() };
+        let streaming = SttModelFiles {
+            family: SttFamily::OnlineTransducer,
+            ..files.clone()
+        };
         if let Ok(r) = create(&streaming, opts) {
-            tracing::info!("model loaded as a streaming transducer after the offline attempt failed");
+            tracing::info!(
+                "model loaded as a streaming transducer after the offline attempt failed"
+            );
             return Ok(r);
         }
     }
@@ -382,23 +426,60 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
 
         let whisper = root.path().join("sherpa-onnx-whisper-small");
-        write(&whisper, &["small-encoder.int8.onnx", "small-decoder.int8.onnx", "small-tokens.txt"]);
+        write(
+            &whisper,
+            &[
+                "small-encoder.int8.onnx",
+                "small-decoder.int8.onnx",
+                "small-tokens.txt",
+            ],
+        );
         let d = detect(&whisper).unwrap();
         assert_eq!(d.family, SttFamily::Whisper);
         assert!(d.encoder.unwrap().to_string_lossy().contains("encoder"));
 
         // The user's NVIDIA streaming model (README mentions streaming/chunk size).
         let stream = root.path().join("nemotron-3.5-asr-streaming-0.6b");
-        write(&stream, &["encoder.int8.onnx", "decoder.int8.onnx", "joiner.int8.onnx", "tokens.txt"]);
+        write(
+            &stream,
+            &[
+                "encoder.int8.onnx",
+                "decoder.int8.onnx",
+                "joiner.int8.onnx",
+                "tokens.txt",
+            ],
+        );
         assert_eq!(detect(&stream).unwrap().family, SttFamily::OnlineTransducer);
         assert!(detect(&stream).unwrap().family.is_streaming());
 
-        let offline_t = root.path().join("sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8");
-        write(&offline_t, &["encoder.int8.onnx", "decoder.int8.onnx", "joiner.int8.onnx", "tokens.txt"]);
-        assert_eq!(detect(&offline_t).unwrap().family, SttFamily::OfflineTransducer);
+        let offline_t = root
+            .path()
+            .join("sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8");
+        write(
+            &offline_t,
+            &[
+                "encoder.int8.onnx",
+                "decoder.int8.onnx",
+                "joiner.int8.onnx",
+                "tokens.txt",
+            ],
+        );
+        assert_eq!(
+            detect(&offline_t).unwrap().family,
+            SttFamily::OfflineTransducer
+        );
 
         let moonshine = root.path().join("sherpa-onnx-moonshine-tiny-en-int8");
-        write(&moonshine, &["preprocess.onnx", "encode.int8.onnx", "uncached_decode.int8.onnx", "cached_decode.int8.onnx", "tokens.txt"]);
+        write(
+            &moonshine,
+            &[
+                "preprocess.onnx",
+                "encode.int8.onnx",
+                "uncached_decode.int8.onnx",
+                "cached_decode.int8.onnx",
+                "tokens.txt",
+            ],
+        );
         assert_eq!(detect(&moonshine).unwrap().family, SttFamily::Moonshine);
 
         let sense = root.path().join("sherpa-onnx-sense-voice-zh-en-ja-ko-yue");
@@ -419,7 +500,16 @@ mod tests {
     fn prefers_int8_weights() {
         let root = tempfile::tempdir().unwrap();
         let dir = root.path().join("whisper");
-        write(&dir, &["encoder.onnx", "encoder.int8.onnx", "decoder.onnx", "decoder.int8.onnx", "tokens.txt"]);
+        write(
+            &dir,
+            &[
+                "encoder.onnx",
+                "encoder.int8.onnx",
+                "decoder.onnx",
+                "decoder.int8.onnx",
+                "tokens.txt",
+            ],
+        );
         let d = detect(&dir).unwrap();
         assert!(d.encoder.unwrap().to_string_lossy().contains("int8"));
         assert!(d.decoder.unwrap().to_string_lossy().contains("int8"));

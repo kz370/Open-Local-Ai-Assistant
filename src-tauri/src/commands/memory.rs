@@ -38,19 +38,35 @@ fn changed(app: &AppHandle) {
 }
 
 /// Marks `key` as loading while `f` runs.
-async fn tracked<T>(app: &AppHandle, key: &str, f: impl std::future::Future<Output = CmdResult<T>>) -> CmdResult<T> {
+async fn tracked<T>(
+    app: &AppHandle,
+    key: &str,
+    f: impl std::future::Future<Output = CmdResult<T>>,
+) -> CmdResult<T> {
     let state = app.state::<AppState>();
-    state.model_loading.lock().unwrap_or_else(|p| p.into_inner()).insert(key.to_string());
+    state
+        .model_loading
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .insert(key.to_string());
     changed(app);
     let result = f.await;
-    state.model_loading.lock().unwrap_or_else(|p| p.into_inner()).remove(key);
+    state
+        .model_loading
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .remove(key);
     changed(app);
     result
 }
 
 #[tauri::command]
 pub async fn memory_status(state: State<'_, AppState>) -> CmdResult<Vec<MemoryItem>> {
-    let loading = state.model_loading.lock().unwrap_or_else(|p| p.into_inner()).clone();
+    let loading = state
+        .model_loading
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .clone();
     let state_of = |key: &str, loaded: bool| {
         if loading.contains(key) {
             "loading"
@@ -64,7 +80,14 @@ pub async fn memory_status(state: State<'_, AppState>) -> CmdResult<Vec<MemoryIt
     let settings = state.settings.get();
     let mut items = Vec::new();
     // The ONNX speech models run wherever the GPU pack put this process.
-    let onnx_device = Some(if crate::services::gpu::is_active() { "GPU" } else { "CPU" }.to_string());
+    let onnx_device = Some(
+        if crate::services::gpu::is_active() {
+            "GPU"
+        } else {
+            "CPU"
+        }
+        .to_string(),
+    );
 
     // Speech recognition
     match state.stt.resolve_model(&settings.stt) {
@@ -72,10 +95,23 @@ pub async fn memory_status(state: State<'_, AppState>) -> CmdResult<Vec<MemoryIt
             key: "stt".into(),
             kind: "stt".into(),
             role: "stt".into(),
-            state: state_of("stt", state.stt.loaded_model().as_deref() == Some(m.id.as_str())),
+            state: state_of(
+                "stt",
+                state.stt.loaded_model().as_deref() == Some(m.id.as_str()),
+            ),
             model: m.name,
-            detail: onnx_device.clone(), ..Default::default() }),
-        None => items.push(MemoryItem { key: "stt".into(), kind: "stt".into(), role: "stt".into(), model: String::new(), state: "missing".into(), detail: None, ..Default::default() }),
+            detail: onnx_device.clone(),
+            ..Default::default()
+        }),
+        None => items.push(MemoryItem {
+            key: "stt".into(),
+            kind: "stt".into(),
+            role: "stt".into(),
+            model: String::new(),
+            state: "missing".into(),
+            detail: None,
+            ..Default::default()
+        }),
     }
 
     // One voice per language.
@@ -89,8 +125,18 @@ pub async fn memory_status(state: State<'_, AppState>) -> CmdResult<Vec<MemoryIt
                 kind: "voice".into(),
                 role: lang.code().into(),
                 model: v.name,
-                detail: onnx_device.clone(), ..Default::default() }),
-            None => items.push(MemoryItem { key, kind: "voice".into(), role: lang.code().into(), model: String::new(), state: "missing".into(), detail: None, ..Default::default() }),
+                detail: onnx_device.clone(),
+                ..Default::default()
+            }),
+            None => items.push(MemoryItem {
+                key,
+                kind: "voice".into(),
+                role: lang.code().into(),
+                model: String::new(),
+                state: "missing".into(),
+                detail: None,
+                ..Default::default()
+            }),
         }
     }
 
@@ -102,7 +148,13 @@ pub async fn memory_status(state: State<'_, AppState>) -> CmdResult<Vec<MemoryIt
                 let chat_id = if settings.ai.model_mode == "manual" {
                     settings.ai.model.clone().filter(|m| !m.is_empty())
                 } else {
-                    state.resolver.auto_selection().await.ok().flatten().map(|s| s.model_id)
+                    state
+                        .resolver
+                        .auto_selection()
+                        .await
+                        .ok()
+                        .flatten()
+                        .map(|s| s.model_id)
                 };
                 if let Some(id) = &chat_id {
                     let info = models.iter().find(|m| &m.id == id);
@@ -112,12 +164,27 @@ pub async fn memory_status(state: State<'_, AppState>) -> CmdResult<Vec<MemoryIt
                         key,
                         kind: "llm".into(),
                         role: "chat".into(),
-                        model: info.map(|m| m.display_name.clone()).unwrap_or_else(|| id.clone()),
-                        detail: Some("LM Studio".into()), ..Default::default() });
+                        model: info
+                            .map(|m| m.display_name.clone())
+                            .unwrap_or_else(|| id.clone()),
+                        detail: Some("LM Studio".into()),
+                        ..Default::default()
+                    });
                 }
-                for m in models.iter().filter(|m| m.loaded && Some(&m.id) != chat_id.as_ref()) {
+                for m in models
+                    .iter()
+                    .filter(|m| m.loaded && Some(&m.id) != chat_id.as_ref())
+                {
                     let key = format!("llm:{}", m.id);
-                    items.push(MemoryItem { state: state_of(&key, true), key, kind: "llm".into(), role: "other".into(), model: m.display_name.clone(), detail: Some("LM Studio".into()), ..Default::default() });
+                    items.push(MemoryItem {
+                        state: state_of(&key, true),
+                        key,
+                        kind: "llm".into(),
+                        role: "other".into(),
+                        model: m.display_name.clone(),
+                        detail: Some("LM Studio".into()),
+                        ..Default::default()
+                    });
                 }
             }
             Err(e) => items.push(MemoryItem {
@@ -126,7 +193,9 @@ pub async fn memory_status(state: State<'_, AppState>) -> CmdResult<Vec<MemoryIt
                 role: "chat".into(),
                 model: String::new(),
                 state: "failed".into(),
-                detail: Some(e.to_string()), ..Default::default() }),
+                detail: Some(e.to_string()),
+                ..Default::default()
+            }),
         }
     }
     for item in &mut items {
@@ -147,7 +216,9 @@ pub async fn load(app: &AppHandle, key: &str) -> CmdResult<()> {
         "stt" => {
             let (stt, settings) = (state.stt.clone(), state.settings.get().stt);
             tracked(app, key, async move {
-                tokio::task::spawn_blocking(move || stt.with_recognizer(&settings, |_, _| ())).await.map_err(|e| AppError::Stt(e.to_string()))?
+                tokio::task::spawn_blocking(move || stt.with_recognizer(&settings, |_, _| ()))
+                    .await
+                    .map_err(|e| AppError::Stt(e.to_string()))?
             })
             .await
         }
@@ -155,18 +226,29 @@ pub async fn load(app: &AppHandle, key: &str) -> CmdResult<()> {
             let lang = lang_from_key(k).ok_or_else(|| AppError::Invalid(k.into()))?;
             let (tts, threads) = (state.tts.clone(), state.hardware.inference_threads().min(4));
             tracked(app, key, async move {
-                tokio::task::spawn_blocking(move || tts.preload_lang(lang, threads)).await.map_err(|e| AppError::Tts(e.to_string()))?
+                tokio::task::spawn_blocking(move || tts.preload_lang(lang, threads))
+                    .await
+                    .map_err(|e| AppError::Tts(e.to_string()))?
             })
             .await
         }
         // The chat model as a chat would pick it (auto or manual).
         "llm" => {
             let (resolver, ai) = (state.resolver.clone(), state.settings.get().ai);
-            tracked(app, key, async move { resolver.resolve(&ai).await.map(|_| ()) }).await
+            tracked(
+                app,
+                key,
+                async move { resolver.resolve(&ai).await.map(|_| ()) },
+            )
+            .await
         }
         k if k.starts_with("llm:") => {
             use crate::services::ai::AiService;
-            let (lm, resolver, ctx) = (state.lmstudio.clone(), state.resolver.clone(), state.settings.get().ai.context_length);
+            let (lm, resolver, ctx) = (
+                state.lmstudio.clone(),
+                state.resolver.clone(),
+                state.settings.get().ai.context_length,
+            );
             let id = k["llm:".len()..].to_string();
             tracked(app, key, async move {
                 lm.load_model(&id, ctx).await?;
@@ -185,7 +267,10 @@ pub fn load_all(app: &AppHandle, only_autoload: bool) {
     let state = app.state::<AppState>();
     let general = state.settings.get().general;
     let wanted = move |key: &str| !only_autoload || general.autoloads(key);
-    let keys: Vec<&'static str> = ["stt", "voice:en", "voice:ar", "voice:de"].into_iter().filter(|k| wanted(k)).collect();
+    let keys: Vec<&'static str> = ["stt", "voice:en", "voice:ar", "voice:de"]
+        .into_iter()
+        .filter(|k| wanted(k))
+        .collect();
     let speech = app.clone();
     tauri::async_runtime::spawn(async move {
         let t0 = std::time::Instant::now();
@@ -194,7 +279,10 @@ pub fn load_all(app: &AppHandle, only_autoload: bool) {
                 tracing::info!(model = key, error = %e, "not preloaded");
             }
         }
-        tracing::info!(ms = t0.elapsed().as_millis() as u64, "speech and voice models loaded");
+        tracing::info!(
+            ms = t0.elapsed().as_millis() as u64,
+            "speech and voice models loaded"
+        );
     });
     if wanted("llm") {
         let chat = app.clone();
@@ -228,11 +316,17 @@ pub async fn memory_load(app: AppHandle, key: String) -> CmdResult<()> {
 }
 
 #[tauri::command]
-pub async fn memory_unload(app: AppHandle, state: State<'_, AppState>, key: String) -> CmdResult<()> {
+pub async fn memory_unload(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    key: String,
+) -> CmdResult<()> {
     match key.as_str() {
         "stt" => {
             if state.voice.active_mode().is_some() {
-                return Err(AppError::Invalid("speech recognition is in use; stop listening first".into()));
+                return Err(AppError::Invalid(
+                    "speech recognition is in use; stop listening first".into(),
+                ));
             }
             state.stt.unload();
         }

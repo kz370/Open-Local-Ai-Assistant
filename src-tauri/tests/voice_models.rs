@@ -36,38 +36,68 @@ async fn tts_stt_roundtrip_three_languages() {
         if !store.is_installed(id) {
             let m = catalog::find(id).unwrap();
             eprintln!("installing {id} ({} MB)…", m.download_size() / 1_000_000);
-            download::install(&store, m, CancellationToken::new(), &|_| {}).await.expect("install");
+            download::install(&store, m, CancellationToken::new(), &|_| {})
+                .await
+                .expect("install");
         }
     }
 
     let db = Arc::new(Db::open_in_memory().unwrap());
     let settings = Arc::new(SettingsStore::load(db).unwrap());
     let hw = hardware::detect();
-    let tts = TtsService::new(store.clone(), settings.clone(), hw.clone(), Arc::new(|_| {}));
+    let tts = TtsService::new(
+        store.clone(),
+        settings.clone(),
+        hw.clone(),
+        Arc::new(|_| {}),
+    );
     let stt = SttService::new(store.clone(), hw.clone());
     assert!(stt.vad_model_path().is_some());
 
     let cases = [
-        (Lang::En, "Hello, how are you today? I would like to organize my files.", vec!["organize", "files"]),
-        (Lang::De, "Guten Tag. Wie kann ich meine Dateien organisieren?", vec!["dateien", "organisieren"]),
+        (
+            Lang::En,
+            "Hello, how are you today? I would like to organize my files.",
+            vec!["organize", "files"],
+        ),
+        (
+            Lang::De,
+            "Guten Tag. Wie kann ich meine Dateien organisieren?",
+            vec!["dateien", "organisieren"],
+        ),
         (Lang::Ar, "مرحبا، كيف حالك اليوم؟", vec!["اليوم"]),
     ];
     for (lang, text, expect_words) in cases {
         assert!(tts.is_available(lang), "no voice for {lang}");
         let t0 = std::time::Instant::now();
-        let (samples, rate) = tts.synthesize(text, lang, hw.inference_threads()).expect("synthesize");
+        let (samples, rate) = tts
+            .synthesize(text, lang, hw.inference_threads())
+            .expect("synthesize");
         let synth_ms = t0.elapsed().as_millis();
         assert!(samples.len() > rate as usize / 2, "audio too short");
         let resampler = sherpa_onnx::LinearResampler::create(rate as i32, 16_000).unwrap();
         let mut pcm = resampler.resample(&samples, true);
         pcm.extend(std::iter::repeat(0.0).take(8_000));
 
-        let result = stt.transcribe(&pcm, &settings.get().stt).expect("transcribe");
-        eprintln!("[{lang}] tts {synth_ms} ms, stt {} ms: {:?} -> detected {:?}", result.elapsed_ms, result.text, result.language);
-        assert_eq!(result.language.as_deref(), Some(lang.code()), "language detection for {lang}");
+        let result = stt
+            .transcribe(&pcm, &settings.get().stt)
+            .expect("transcribe");
+        eprintln!(
+            "[{lang}] tts {synth_ms} ms, stt {} ms: {:?} -> detected {:?}",
+            result.elapsed_ms, result.text, result.language
+        );
+        assert_eq!(
+            result.language.as_deref(),
+            Some(lang.code()),
+            "language detection for {lang}"
+        );
         let got = words(&result.text);
         for w in expect_words {
-            assert!(got.iter().any(|g| g.contains(&w.to_lowercase())), "[{lang}] expected '{w}' in {:?}", result.text);
+            assert!(
+                got.iter().any(|g| g.contains(&w.to_lowercase())),
+                "[{lang}] expected '{w}' in {:?}",
+                result.text
+            );
         }
     }
 }
@@ -84,22 +114,46 @@ async fn whisper_switches_language_in_place() {
     let store = Arc::new(ModelStore::new(dir.into()));
     for id in MODELS {
         if !store.is_installed(id) {
-            download::install(&store, catalog::find(id).unwrap(), CancellationToken::new(), &|_| {}).await.expect("install");
+            download::install(
+                &store,
+                catalog::find(id).unwrap(),
+                CancellationToken::new(),
+                &|_| {},
+            )
+            .await
+            .expect("install");
         }
     }
     let settings = Arc::new(SettingsStore::load(Arc::new(Db::open_in_memory().unwrap())).unwrap());
     let hw = hardware::detect();
-    let tts = TtsService::new(store.clone(), settings.clone(), hw.clone(), Arc::new(|_| {}));
+    let tts = TtsService::new(
+        store.clone(),
+        settings.clone(),
+        hw.clone(),
+        Arc::new(|_| {}),
+    );
     let stt = SttService::new(store.clone(), hw.clone());
-    let (speech, rate) = tts.synthesize("Guten Morgen, wie ist das Wetter heute in Berlin?", Lang::De, hw.inference_threads()).unwrap();
-    let pcm = sherpa_onnx::LinearResampler::create(rate as i32, 16_000).unwrap().resample(&speech, true);
+    let (speech, rate) = tts
+        .synthesize(
+            "Guten Morgen, wie ist das Wetter heute in Berlin?",
+            Lang::De,
+            hw.inference_threads(),
+        )
+        .unwrap();
+    let pcm = sherpa_onnx::LinearResampler::create(rate as i32, 16_000)
+        .unwrap()
+        .resample(&speech, true);
 
     let mut stt_settings = settings.get().stt;
     stt_settings.model = "whisper-small".into();
     let mut english = 0;
     for language in ["en", "de", "auto", "en", "de"] {
         stt_settings.language = language.into();
-        let text = stt.transcribe(&pcm, &stt_settings).expect("transcribe").text.to_lowercase();
+        let text = stt
+            .transcribe(&pcm, &stt_settings)
+            .expect("transcribe")
+            .text
+            .to_lowercase();
         eprintln!("[{language}] {text}");
         if language == "en" {
             // Whisper usually translates when told the speech is English,
@@ -125,35 +179,74 @@ async fn multilingual_voice_speaks_three_languages() {
     let store = Arc::new(ModelStore::new(dir.into()));
     for id in ["whisper-small", "supertonic-3-int8"] {
         if !store.is_installed(id) {
-            download::install(&store, catalog::find(id).unwrap(), CancellationToken::new(), &|_| {}).await.expect("install");
+            download::install(
+                &store,
+                catalog::find(id).unwrap(),
+                CancellationToken::new(),
+                &|_| {},
+            )
+            .await
+            .expect("install");
         }
     }
     let db = Arc::new(Db::open_in_memory().unwrap());
     let settings = Arc::new(SettingsStore::load(db).unwrap());
     let hw = hardware::detect();
-    let tts = TtsService::new(store.clone(), settings.clone(), hw.clone(), Arc::new(|_| {}));
+    let tts = TtsService::new(
+        store.clone(),
+        settings.clone(),
+        hw.clone(),
+        Arc::new(|_| {}),
+    );
     let stt = SttService::new(store.clone(), hw.clone());
 
     let cases = [
-        (Lang::En, "Hello, how are you today? I would like to organize my files.", vec!["organize", "files"]),
-        (Lang::De, "Guten Tag. Wie kann ich meine Dateien organisieren?", vec!["dateien", "organisieren"]),
+        (
+            Lang::En,
+            "Hello, how are you today? I would like to organize my files.",
+            vec!["organize", "files"],
+        ),
+        (
+            Lang::De,
+            "Guten Tag. Wie kann ich meine Dateien organisieren?",
+            vec!["dateien", "organisieren"],
+        ),
         (Lang::Ar, "مرحبا، كيف حالك اليوم؟", vec!["اليوم"]),
     ];
     for (lang, text, expect_words) in cases {
         let voice = tts.selected_voice(lang).expect("voice");
         assert_eq!(voice.model_id, "supertonic-3-int8");
         let t0 = std::time::Instant::now();
-        let (samples, rate) = tts.synthesize(text, lang, hw.inference_threads()).expect("synthesize");
+        let (samples, rate) = tts
+            .synthesize(text, lang, hw.inference_threads())
+            .expect("synthesize");
         let synth_ms = t0.elapsed().as_millis();
         assert!(samples.len() > rate as usize / 2, "audio too short");
-        let mut pcm = sherpa_onnx::LinearResampler::create(rate as i32, 16_000).unwrap().resample(&samples, true);
+        let mut pcm = sherpa_onnx::LinearResampler::create(rate as i32, 16_000)
+            .unwrap()
+            .resample(&samples, true);
         pcm.extend(std::iter::repeat(0.0).take(8_000));
-        let result = stt.transcribe(&pcm, &settings.get().stt).expect("transcribe");
-        eprintln!("[{lang}] tts {synth_ms} ms ({} s audio): {:?} -> detected {:?}", samples.len() / rate as usize, result.text, result.language);
-        assert_eq!(result.language.as_deref(), Some(lang.code()), "language detection for {lang}");
+        let result = stt
+            .transcribe(&pcm, &settings.get().stt)
+            .expect("transcribe");
+        eprintln!(
+            "[{lang}] tts {synth_ms} ms ({} s audio): {:?} -> detected {:?}",
+            samples.len() / rate as usize,
+            result.text,
+            result.language
+        );
+        assert_eq!(
+            result.language.as_deref(),
+            Some(lang.code()),
+            "language detection for {lang}"
+        );
         let got = words(&result.text);
         for w in expect_words {
-            assert!(got.iter().any(|g| g.contains(&w.to_lowercase())), "[{lang}] expected '{w}' in {:?}", result.text);
+            assert!(
+                got.iter().any(|g| g.contains(&w.to_lowercase())),
+                "[{lang}] expected '{w}' in {:?}",
+                result.text
+            );
         }
     }
 }
@@ -162,23 +255,40 @@ async fn multilingual_voice_speaks_three_languages() {
 /// `LA_STREAM_MODEL='H:\Models\openwhispr\parakeet-models\nemotron-3.5-asr-streaming-0.6b'`.
 #[tokio::test]
 async fn custom_model_folder_transcribes() {
-    let (Ok(models_dir), Ok(model_path)) = (std::env::var("LA_MODELS_DIR"), std::env::var("LA_STREAM_MODEL")) else {
+    let (Ok(models_dir), Ok(model_path)) = (
+        std::env::var("LA_MODELS_DIR"),
+        std::env::var("LA_STREAM_MODEL"),
+    ) else {
         eprintln!("LA_MODELS_DIR/LA_STREAM_MODEL not set; skipping custom-model test");
         return;
     };
     let model_dir = std::path::PathBuf::from(&model_path);
-    let files = local_ai_assistant_lib::services::stt::engine::detect(&model_dir).expect("recognized model folder");
-    eprintln!("detected family: {} (streaming: {})", files.family.label(), files.family.is_streaming());
+    let files = local_ai_assistant_lib::services::stt::engine::detect(&model_dir)
+        .expect("recognized model folder");
+    eprintln!(
+        "detected family: {} (streaming: {})",
+        files.family.label(),
+        files.family.is_streaming()
+    );
 
     // Speak a sentence with the local TTS, then transcribe it with the user's model.
     let store = Arc::new(ModelStore::new(models_dir.into()));
     let db = Arc::new(Db::open_in_memory().unwrap());
     let settings = Arc::new(SettingsStore::load(db).unwrap());
     let hw = hardware::detect();
-    let tts = TtsService::new(store.clone(), settings.clone(), hw.clone(), Arc::new(|_| {}));
+    let tts = TtsService::new(
+        store.clone(),
+        settings.clone(),
+        hw.clone(),
+        Arc::new(|_| {}),
+    );
     let text = "The assistant can transcribe speech with a local model.";
-    let (samples, rate) = tts.synthesize(text, Lang::En, hw.inference_threads()).expect("synthesize");
-    let mut pcm = sherpa_onnx::LinearResampler::create(rate as i32, 16_000).unwrap().resample(&samples, true);
+    let (samples, rate) = tts
+        .synthesize(text, Lang::En, hw.inference_threads())
+        .expect("synthesize");
+    let mut pcm = sherpa_onnx::LinearResampler::create(rate as i32, 16_000)
+        .unwrap()
+        .resample(&samples, true);
     pcm.extend(std::iter::repeat(0.0).take(8_000));
 
     // The model lives outside the app folder: register it as an extra folder.
@@ -186,10 +296,16 @@ async fn custom_model_folder_transcribes() {
     let stt = SttService::new(store, hw);
     let mut stt_settings = settings.get().stt;
     stt_settings.model = model_dir.file_name().unwrap().to_string_lossy().to_string();
-    assert!(stt.is_ready(&stt_settings), "model not discovered in the extra folder");
+    assert!(
+        stt.is_ready(&stt_settings),
+        "model not discovered in the extra folder"
+    );
 
     let result = stt.transcribe(&pcm, &stt_settings).expect("transcribe");
-    eprintln!("[{}] {} ms -> {:?}", result.model_id, result.elapsed_ms, result.text);
+    eprintln!(
+        "[{}] {} ms -> {:?}",
+        result.model_id, result.elapsed_ms, result.text
+    );
     let got = result.text.to_lowercase();
     for word in ["transcribe", "local", "model"] {
         assert!(got.contains(word), "expected '{word}' in {:?}", result.text);
@@ -200,7 +316,9 @@ async fn custom_model_folder_transcribes() {
 /// recorded speech instead of a microphone.
 /// Feeds a synthesized sentence plus trailing silence through a listening
 /// session, like the microphone would, and returns every event it emitted.
-async fn run_pipeline(mode: local_ai_assistant_lib::services::stt::session::ListenMode) -> Option<Vec<local_ai_assistant_lib::services::stt::session::VoiceEvent>> {
+async fn run_pipeline(
+    mode: local_ai_assistant_lib::services::stt::session::ListenMode,
+) -> Option<Vec<local_ai_assistant_lib::services::stt::session::VoiceEvent>> {
     let Ok(dir) = std::env::var("LA_MODELS_DIR") else {
         eprintln!("LA_MODELS_DIR not set; skipping {mode:?} pipeline test");
         return None;
@@ -214,18 +332,33 @@ async fn run_pipeline(mode: local_ai_assistant_lib::services::stt::session::List
     for id in ["whisper-small", "silero-vad", "supertonic-3-int8"] {
         if !store.is_installed(id) {
             let m = catalog::find(id).unwrap();
-            download::install(&store, m, CancellationToken::new(), &|_| {}).await.expect("install");
+            download::install(&store, m, CancellationToken::new(), &|_| {})
+                .await
+                .expect("install");
         }
     }
     let db = Arc::new(Db::open_in_memory().unwrap());
     let settings = Arc::new(SettingsStore::load(db).unwrap());
     let hw = hardware::detect();
-    let tts = TtsService::new(store.clone(), settings.clone(), hw.clone(), Arc::new(|_| {}));
+    let tts = TtsService::new(
+        store.clone(),
+        settings.clone(),
+        hw.clone(),
+        Arc::new(|_| {}),
+    );
     let stt = SttService::new(store.clone(), hw.clone());
     let vad_path = stt.vad_model_path().expect("silero vad installed");
 
-    let (speech, rate) = tts.synthesize("Hello assistant, what is the weather today?", Lang::En, hw.inference_threads()).unwrap();
-    let pcm = sherpa_onnx::LinearResampler::create(rate as i32, 16_000).unwrap().resample(&speech, true);
+    let (speech, rate) = tts
+        .synthesize(
+            "Hello assistant, what is the weather today?",
+            Lang::En,
+            hw.inference_threads(),
+        )
+        .unwrap();
+    let pcm = sherpa_onnx::LinearResampler::create(rate as i32, 16_000)
+        .unwrap()
+        .resample(&speech, true);
 
     let (tx, rx) = std::sync::mpsc::channel();
     let stop = Arc::new(AtomicBool::new(false));
@@ -256,7 +389,8 @@ async fn run_pipeline(mode: local_ai_assistant_lib::services::stt::session::List
     let stt_settings = settings.get().stt;
     let stop_on_text = stop.clone();
     let emit = Arc::new(move |ev: VoiceEvent| {
-        if matches!(&ev, VoiceEvent::Partial { text, .. } | VoiceEvent::Transcript { text, .. } if !text.is_empty()) {
+        if matches!(&ev, VoiceEvent::Partial { text, .. } | VoiceEvent::Transcript { text, .. } if !text.is_empty())
+        {
             stop_on_text.store(true, Ordering::Relaxed);
         }
         sink.lock().unwrap().push(ev);
@@ -266,7 +400,9 @@ async fn run_pipeline(mode: local_ai_assistant_lib::services::stt::session::List
     Some(seen)
 }
 
-fn transcripts(events: &[local_ai_assistant_lib::services::stt::session::VoiceEvent]) -> Vec<String> {
+fn transcripts(
+    events: &[local_ai_assistant_lib::services::stt::session::VoiceEvent],
+) -> Vec<String> {
     use local_ai_assistant_lib::services::stt::session::VoiceEvent;
     events
         .iter()
@@ -280,25 +416,43 @@ fn transcripts(events: &[local_ai_assistant_lib::services::stt::session::VoiceEv
 #[tokio::test]
 async fn hands_free_pipeline_transcribes_utterances() {
     use local_ai_assistant_lib::services::stt::session::ListenMode;
-    let Some(seen) = run_pipeline(ListenMode::HandsFree).await else { return };
+    let Some(seen) = run_pipeline(ListenMode::HandsFree).await else {
+        return;
+    };
     let transcripts = transcripts(&seen);
     eprintln!("hands-free transcripts: {transcripts:?}");
-    assert!(!transcripts.is_empty(), "hands-free produced no transcript; events: {:?}", seen.len());
+    assert!(
+        !transcripts.is_empty(),
+        "hands-free produced no transcript; events: {:?}",
+        seen.len()
+    );
     let joined = transcripts.join(" ").to_lowercase();
-    assert!(joined.contains("weather"), "unexpected transcript: {joined}");
+    assert!(
+        joined.contains("weather"),
+        "unexpected transcript: {joined}"
+    );
 }
 
 #[tokio::test]
 async fn dictation_pipeline_shows_utterances_live_and_once() {
     use local_ai_assistant_lib::services::stt::session::{ListenMode, VoiceEvent};
-    let Some(seen) = run_pipeline(ListenMode::Dictation).await else { return };
+    let Some(seen) = run_pipeline(ListenMode::Dictation).await else {
+        return;
+    };
     let partial = seen.iter().any(|e| matches!(e, VoiceEvent::Partial { text, .. } if text.to_lowercase().contains("weather")));
-    assert!(partial, "the finished utterance was not shown while listening");
+    assert!(
+        partial,
+        "the finished utterance was not shown while listening"
+    );
     let transcripts = transcripts(&seen);
     eprintln!("dictation transcripts: {transcripts:?}");
     assert_eq!(transcripts.len(), 1, "{transcripts:?}");
     let text = transcripts[0].to_lowercase();
-    assert_eq!(text.matches("weather").count(), 1, "utterance transcribed twice or lost: {text}");
+    assert_eq!(
+        text.matches("weather").count(),
+        1,
+        "utterance transcribed twice or lost: {text}"
+    );
 }
 
 /// Checks that the default microphone actually delivers audio events.
@@ -329,7 +483,10 @@ fn microphone_delivers_audio_events() {
     }
     capture.stop();
     eprintln!("received {samples} samples and {levels} level updates in 2 s; peak level {peak:.3}");
-    assert!(samples > 16_000, "microphone delivered too little audio: {samples} samples");
+    assert!(
+        samples > 16_000,
+        "microphone delivered too little audio: {samples} samples"
+    );
     assert!(levels > 10, "no level updates");
 }
 
@@ -337,7 +494,10 @@ fn microphone_delivers_audio_events() {
 /// spoken reply. Needs LA_MODELS_DIR and a running LM Studio (LA_LIVE_LMSTUDIO=1).
 #[tokio::test(flavor = "multi_thread")]
 async fn hands_free_conversation_speaks_the_answer() {
-    let (Ok(models_dir), Some("1")) = (std::env::var("LA_MODELS_DIR"), std::env::var("LA_LIVE_LMSTUDIO").ok().as_deref()) else {
+    let (Ok(models_dir), Some("1")) = (
+        std::env::var("LA_MODELS_DIR"),
+        std::env::var("LA_LIVE_LMSTUDIO").ok().as_deref(),
+    ) else {
         eprintln!("LA_MODELS_DIR/LA_LIVE_LMSTUDIO not set; skipping hands-free conversation test");
         return;
     };
@@ -346,7 +506,9 @@ async fn hands_free_conversation_speaks_the_answer() {
     use local_ai_assistant_lib::services::chat::orchestrator::Emit;
     use local_ai_assistant_lib::services::chat::tools::NoTools;
     use local_ai_assistant_lib::services::chat::{ChatEngine, ChatEvent, ModelResolver, SendInput};
-    use local_ai_assistant_lib::services::stt::session::{run_session_for_test, ListenMode, VoiceEvent};
+    use local_ai_assistant_lib::services::stt::session::{
+        run_session_for_test, ListenMode, VoiceEvent,
+    };
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Mutex;
 
@@ -355,13 +517,26 @@ async fn hands_free_conversation_speaks_the_answer() {
     let settings = Arc::new(SettingsStore::load(db.clone()).unwrap());
     settings.update(|s| s.tts.speak_responses = false).unwrap(); // voice turns must speak on their own
     let hw = hardware::detect();
-    let tts = TtsService::new(store.clone(), settings.clone(), hw.clone(), Arc::new(|_| {}));
+    let tts = TtsService::new(
+        store.clone(),
+        settings.clone(),
+        hw.clone(),
+        Arc::new(|_| {}),
+    );
     let stt = Arc::new(SttService::new(store.clone(), hw.clone()));
     let vad = stt.vad_model_path().expect("vad installed");
 
     // Say something out loud (synthesised) and feed it to the session.
-    let (speech, rate) = tts.synthesize("Please answer in one short sentence: what is two plus two?", Lang::En, hw.inference_threads()).unwrap();
-    let pcm = sherpa_onnx::LinearResampler::create(rate as i32, 16_000).unwrap().resample(&speech, true);
+    let (speech, rate) = tts
+        .synthesize(
+            "Please answer in one short sentence: what is two plus two?",
+            Lang::En,
+            hw.inference_threads(),
+        )
+        .unwrap();
+    let pcm = sherpa_onnx::LinearResampler::create(rate as i32, 16_000)
+        .unwrap()
+        .resample(&speech, true);
     let (tx, rx) = std::sync::mpsc::channel();
     let stop = Arc::new(AtomicBool::new(false));
     let stop_feeder = stop.clone();
@@ -407,14 +582,35 @@ async fn hands_free_conversation_speaks_the_answer() {
     // The assistant answers that transcript as a voice turn.
     let ai = Arc::new(LmStudioService::new(&settings.get().ai.server_url, 300));
     let resolver = Arc::new(ModelResolver::with_hardware(ai.clone(), hw.clone()));
-    let attachments = Arc::new(local_ai_assistant_lib::services::attachments::AttachmentStore::new(std::env::temp_dir().join("local-assistant-test-attachments")));
-    let engine = ChatEngine::new(db, settings, ai, resolver, Arc::new(NoTools), tts.clone(), attachments);
+    let attachments = Arc::new(
+        local_ai_assistant_lib::services::attachments::AttachmentStore::new(
+            std::env::temp_dir().join("local-assistant-test-attachments"),
+        ),
+    );
+    let engine = ChatEngine::new(
+        db,
+        settings,
+        ai,
+        resolver,
+        Arc::new(NoTools),
+        tts.clone(),
+        attachments,
+    );
     let events: Arc<Mutex<Vec<ChatEvent>>> = Arc::new(Mutex::new(Vec::new()));
     let sink = events.clone();
     let emit: Emit = Arc::new(move |ev| sink.lock().unwrap().push(ev));
     engine
         .send(
-            SendInput { turn_id: "call-1".into(), conversation_id: None, text: spoken[0].clone(), spoken_language: Some("en".into()), voice: true, attachment_ids: vec![] },
+            SendInput {
+                turn_id: "call-1".into(),
+                conversation_id: None,
+                text: spoken[0].clone(),
+                spoken_language: Some("en".into()),
+                voice: true,
+                attachment_ids: vec![],
+                web_search_enabled: None,
+                mcp_enabled: None,
+            },
             emit,
         )
         .await
@@ -440,6 +636,9 @@ async fn hands_free_conversation_speaks_the_answer() {
         }
         tokio::time::sleep(std::time::Duration::from_millis(250)).await;
     }
-    assert!(audible, "the assistant's voice reply was never queued for playback");
+    assert!(
+        audible,
+        "the assistant's voice reply was never queued for playback"
+    );
     eprintln!("assistant is speaking: {}", tts.is_speaking());
 }

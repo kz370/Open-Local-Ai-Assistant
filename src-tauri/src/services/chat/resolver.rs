@@ -27,7 +27,11 @@ const CACHE_TTL: Duration = Duration::from_secs(20);
 
 impl ModelResolver {
     pub fn new(ai: Arc<dyn AiService>) -> Self {
-        Self { ai, hardware: OnceCell::new(), cache: Mutex::new(None) }
+        Self {
+            ai,
+            hardware: OnceCell::new(),
+            cache: Mutex::new(None),
+        }
     }
 
     pub fn with_hardware(ai: Arc<dyn AiService>, hw: HardwareInfo) -> Self {
@@ -38,7 +42,11 @@ impl ModelResolver {
 
     pub async fn hardware(&self) -> HardwareInfo {
         self.hardware
-            .get_or_init(|| async { tokio::task::spawn_blocking(hardware::detect).await.unwrap_or_default() })
+            .get_or_init(|| async {
+                tokio::task::spawn_blocking(hardware::detect)
+                    .await
+                    .unwrap_or_default()
+            })
             .await
             .clone()
     }
@@ -73,16 +81,26 @@ impl ModelResolver {
             if let Some(id) = ai.model.as_deref().filter(|s| !s.is_empty()) {
                 let info = models.iter().find(|m| m.id == id).cloned();
                 if info.is_none() && !models.is_empty() {
-                    return Err(AppError::LmStudio(format!("selected model '{id}' is not available in LM Studio")));
+                    return Err(AppError::LmStudio(format!(
+                        "selected model '{id}' is not available in LM Studio"
+                    )));
                 }
                 self.ensure_loaded(info.as_ref(), ai.context_length).await;
-                return Ok(ResolvedModel { id: id.to_string(), info, selection: None });
+                return Ok(ResolvedModel {
+                    id: id.to_string(),
+                    info,
+                    selection: None,
+                });
             }
         }
         let selection = select_model(&models, &self.hardware().await).ok_or(AppError::NoModel)?;
         let info = models.iter().find(|m| m.id == selection.model_id).cloned();
         self.ensure_loaded(info.as_ref(), ai.context_length).await;
-        Ok(ResolvedModel { id: selection.model_id.clone(), info, selection: Some(selection) })
+        Ok(ResolvedModel {
+            id: selection.model_id.clone(),
+            info,
+            selection: Some(selection),
+        })
     }
 
     async fn ensure_loaded(&self, info: Option<&ModelInfo>, ctx: Option<u32>) {
@@ -96,7 +114,9 @@ impl ModelResolver {
                 tracing::info!(model = %info.id, "model loaded");
                 self.invalidate().await;
             }
-            Err(e) => tracing::warn!(model = %info.id, error = %e, "explicit model load failed; relying on JIT load"),
+            Err(e) => {
+                tracing::warn!(model = %info.id, error = %e, "explicit model load failed; relying on JIT load")
+            }
         }
     }
 }

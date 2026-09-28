@@ -14,12 +14,20 @@ pub fn extract(ext: &str, bytes: &[u8]) -> Option<String> {
         _ => return None,
     };
     let mut zip = zip::ZipArchive::new(Cursor::new(bytes)).ok()?;
-    let mut names: Vec<String> = (0..zip.len()).filter_map(|i| zip.by_index(i).ok().map(|f| f.name().to_string())).collect();
+    let mut names: Vec<String> = (0..zip.len())
+        .filter_map(|i| zip.by_index(i).ok().map(|f| f.name().to_string()))
+        .collect();
     names.sort();
     let mut out = String::new();
     for name in names.iter().filter(|n| parts(n)) {
         let mut xml = String::new();
-        if zip.by_name(name).ok()?.take(8 * 1024 * 1024).read_to_string(&mut xml).is_err() {
+        if zip
+            .by_name(name)
+            .ok()?
+            .take(8 * 1024 * 1024)
+            .read_to_string(&mut xml)
+            .is_err()
+        {
             continue;
         }
         let text = strip_xml(&xml);
@@ -39,9 +47,15 @@ fn strip_xml(xml: &str) -> String {
     let mut rest = xml;
     while let Some(start) = rest.find('<') {
         out.push_str(&rest[..start]);
-        let Some(end) = rest[start..].find('>') else { break };
+        let Some(end) = rest[start..].find('>') else {
+            break;
+        };
         let tag = &rest[start + 1..start + end];
-        let name = tag.trim_start_matches('/').split([' ', '/']).next().unwrap_or("");
+        let name = tag
+            .trim_start_matches('/')
+            .split([' ', '/'])
+            .next()
+            .unwrap_or("");
         // Paragraphs, line breaks, tabs, table rows and shared-string items.
         if matches!(name, "w:p" | "a:p" | "w:br" | "w:tr" | "si" | "text:p") {
             out.push('\n');
@@ -73,7 +87,8 @@ mod tests {
         let mut buf = Cursor::new(Vec::new());
         {
             let mut w = zip::ZipWriter::new(&mut buf);
-            w.start_file("word/document.xml", SimpleFileOptions::default()).unwrap();
+            w.start_file("word/document.xml", SimpleFileOptions::default())
+                .unwrap();
             w.write_all(document_xml.as_bytes()).unwrap();
             w.finish().unwrap();
         }

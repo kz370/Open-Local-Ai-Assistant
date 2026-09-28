@@ -25,7 +25,9 @@ fn configured(app: &AppHandle) -> Vec<(Action, String)> {
     if s.dictation.enabled {
         v.push((Action::Dictation, s.dictation.shortcut.clone()));
     }
-    v.into_iter().filter(|(_, k)| !k.trim().is_empty()).collect()
+    v.into_iter()
+        .filter(|(_, k)| !k.trim().is_empty())
+        .collect()
 }
 
 fn is_modifier_only_shortcut(keys: &str) -> bool {
@@ -37,19 +39,25 @@ fn is_modifier_only_shortcut(keys: &str) -> bool {
     if tokens.is_empty() {
         return false;
     }
-    tokens.iter().all(|token| match token.to_ascii_uppercase().as_str() {
-        "ALT" | "OPTION" => true,
-        "CONTROL" | "CTRL" | "COMMANDORCONTROL" | "COMMANDORCTRL" | "CMDORCTRL" | "CMDORCONTROL" => true,
-        "SHIFT" => true,
-        "SUPER" | "META" | "COMMAND" | "CMD" | "WIN" => true,
-        _ => false,
-    })
+    tokens
+        .iter()
+        .all(|token| match token.to_ascii_uppercase().as_str() {
+            "ALT" | "OPTION" => true,
+            "CONTROL" | "CTRL" | "COMMANDORCONTROL" | "COMMANDORCTRL" | "CMDORCTRL"
+            | "CMDORCONTROL" => true,
+            "SHIFT" => true,
+            "SUPER" | "META" | "COMMAND" | "CMD" | "WIN" => true,
+            _ => false,
+        })
 }
 
 /// Single modifiers (e.g. "Alt") fire on every normal press of that key
 /// (Alt+Tab, Alt+F4, menu focus). Require 2+ modifiers for modifier-only.
 fn modifier_only_count(keys: &str) -> usize {
-    keys.split('+').map(str::trim).filter(|t| !t.is_empty()).count()
+    keys.split('+')
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+        .count()
 }
 
 fn is_supported_modifier_only(keys: &str) -> bool {
@@ -64,12 +72,21 @@ fn windows_modifier_pressed(token: &str) -> bool {
     };
     let pressed = |vk: i32| unsafe { (GetAsyncKeyState(vk) as i16) < 0 };
     match token.to_ascii_uppercase().as_str() {
-        "ALT" | "OPTION" => pressed(VK_MENU.0 as i32) || pressed(VK_LMENU.0 as i32) || pressed(VK_RMENU.0 as i32),
-        "CONTROL" | "CTRL" | "COMMANDORCONTROL" | "COMMANDORCTRL" | "CMDORCTRL" | "CMDORCONTROL" => {
-            pressed(VK_CONTROL.0 as i32) || pressed(VK_LCONTROL.0 as i32) || pressed(VK_RCONTROL.0 as i32)
+        "ALT" | "OPTION" => {
+            pressed(VK_MENU.0 as i32) || pressed(VK_LMENU.0 as i32) || pressed(VK_RMENU.0 as i32)
         }
-        "SHIFT" => pressed(VK_SHIFT.0 as i32) || pressed(VK_LSHIFT.0 as i32) || pressed(VK_RSHIFT.0 as i32),
-        "SUPER" | "META" | "COMMAND" | "CMD" | "WIN" => pressed(VK_LWIN.0 as i32) || pressed(VK_RWIN.0 as i32),
+        "CONTROL" | "CTRL" | "COMMANDORCONTROL" | "COMMANDORCTRL" | "CMDORCTRL"
+        | "CMDORCONTROL" => {
+            pressed(VK_CONTROL.0 as i32)
+                || pressed(VK_LCONTROL.0 as i32)
+                || pressed(VK_RCONTROL.0 as i32)
+        }
+        "SHIFT" => {
+            pressed(VK_SHIFT.0 as i32) || pressed(VK_LSHIFT.0 as i32) || pressed(VK_RSHIFT.0 as i32)
+        }
+        "SUPER" | "META" | "COMMAND" | "CMD" | "WIN" => {
+            pressed(VK_LWIN.0 as i32) || pressed(VK_RWIN.0 as i32)
+        }
         _ => false,
     }
 }
@@ -117,17 +134,25 @@ fn dispatch_shortcut_action(app: &AppHandle, action: Action, pressed: bool) {
 
 pub fn start_dictation(app: &AppHandle) {
     let state = app.state::<AppState>();
-    if state.dictation_busy.load(std::sync::atomic::Ordering::Relaxed) {
+    if state
+        .dictation_busy
+        .load(std::sync::atomic::Ordering::Relaxed)
+    {
         return;
     }
     // Fresh session owns the cancel flag (clears a stale Esc).
-    state.dictation_cancel.store(false, std::sync::atomic::Ordering::Relaxed);
+    state
+        .dictation_cancel
+        .store(false, std::sync::atomic::Ordering::Relaxed);
     window::remember_target(app);
     match state.voice.start(ListenMode::Dictation) {
         Ok(_) => window::show_overlay(app),
         Err(e) => {
             window::show_overlay(app);
-            let _ = app.emit("dictation://state", serde_json::json!({"state": "error", "error": e}));
+            let _ = app.emit(
+                "dictation://state",
+                serde_json::json!({"state": "error", "error": e}),
+            );
         }
     }
 }
@@ -155,7 +180,9 @@ fn trigger_modifier_watch(app: &AppHandle) {
     use std::sync::{Mutex, OnceLock};
     static COMBOS: OnceLock<std::sync::Arc<Mutex<(Vec<(Action, String)>, bool)>>> = OnceLock::new();
     static WATCHER: OnceLock<Mutex<Option<std::thread::JoinHandle<()>>>> = OnceLock::new();
-    let combos_shared = COMBOS.get_or_init(|| std::sync::Arc::new(Mutex::new((Vec::new(), false)))).clone();
+    let combos_shared = COMBOS
+        .get_or_init(|| std::sync::Arc::new(Mutex::new((Vec::new(), false))))
+        .clone();
 
     // Refresh the watched combos on every register_all (user may have changed them).
     *combos_shared.lock().unwrap_or_else(|p| p.into_inner()) = (
@@ -248,13 +275,22 @@ pub fn register_all(app: &AppHandle) {
         // Always refresh watcher combos (clears stale single-Alt, etc).
         trigger_modifier_watch(app);
     }
-    *app.state::<AppState>().shortcut_errors.lock().unwrap_or_else(|p| p.into_inner()) = errors;
+    *app.state::<AppState>()
+        .shortcut_errors
+        .lock()
+        .unwrap_or_else(|p| p.into_inner()) = errors;
 }
 
 pub fn handle(app: &AppHandle, shortcut: &Shortcut, event: ShortcutEvent) {
     let Some(action) = configured(app)
         .into_iter()
-        .find(|(_, keys)| !is_modifier_only_shortcut(keys) && keys.parse::<Shortcut>().map(|s| s.id() == shortcut.id()).unwrap_or(false))
+        .find(|(_, keys)| {
+            !is_modifier_only_shortcut(keys)
+                && keys
+                    .parse::<Shortcut>()
+                    .map(|s| s.id() == shortcut.id())
+                    .unwrap_or(false)
+        })
         .map(|(a, _)| a)
     else {
         return;

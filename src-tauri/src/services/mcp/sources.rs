@@ -5,34 +5,54 @@ use regex::Regex;
 use serde_json::Value;
 use std::sync::LazyLock;
 
-static MD_LINK: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\[([^\]\n]{1,200})\]\((https?://[^\s)]+)\)").unwrap());
-static TITLE_URL: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?im)^\s*(?:title|name)\s*:\s*(.+?)\s*$\s*^\s*(?:url|link|href)\s*:\s*(https?://\S+)").unwrap());
-static BARE_URL: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"https?://[^\s<>"'\])},]+"#).unwrap());
+static MD_LINK: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\[([^\]\n]{1,200})\]\((https?://[^\s)]+)\)").unwrap());
+static TITLE_URL: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"(?im)^\s*(?:title|name)\s*:\s*(.+?)\s*$\s*^\s*(?:url|link|href)\s*:\s*(https?://\S+)",
+    )
+    .unwrap()
+});
+static BARE_URL: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"https?://[^\s<>"'\])},]+"#).unwrap());
 
 const MAX_SOURCES: usize = 12;
 
 fn push(out: &mut Vec<Source>, url: &str, title: Option<&str>) {
-    let url = url.trim_end_matches(['.', ',', ';', ':', '!', '?', ')']).to_string();
+    let url = url
+        .trim_end_matches(['.', ',', ';', ':', '!', '?', ')'])
+        .to_string();
     if !(url.starts_with("http://") || url.starts_with("https://")) || url.len() > 2048 {
         return;
     }
     if let Some(existing) = out.iter_mut().find(|s| s.url == url) {
         if existing.title.is_none() {
-            existing.title = title.map(|t| t.trim().to_string()).filter(|t| !t.is_empty());
+            existing.title = title
+                .map(|t| t.trim().to_string())
+                .filter(|t| !t.is_empty());
         }
         return;
     }
     if out.len() < MAX_SOURCES {
-        out.push(Source { url, title: title.map(|t| t.trim().chars().take(200).collect()).filter(|t: &String| !t.is_empty()) });
+        out.push(Source {
+            url,
+            title: title
+                .map(|t| t.trim().chars().take(200).collect())
+                .filter(|t: &String| !t.is_empty()),
+        });
     }
 }
 
 fn walk_json(v: &Value, out: &mut Vec<Source>) {
     match v {
         Value::Object(map) => {
-            let url = ["url", "link", "href", "uri"].iter().find_map(|k| map.get(*k).and_then(Value::as_str));
+            let url = ["url", "link", "href", "uri"]
+                .iter()
+                .find_map(|k| map.get(*k).and_then(Value::as_str));
             if let Some(url) = url {
-                let title = ["title", "name", "headline"].iter().find_map(|k| map.get(*k).and_then(Value::as_str));
+                let title = ["title", "name", "headline"]
+                    .iter()
+                    .find_map(|k| map.get(*k).and_then(Value::as_str));
                 push(out, url, title);
             }
             for child in map.values() {
@@ -81,7 +101,11 @@ mod tests {
         let s = extract_sources(text, None);
         assert_eq!(s[0].url, "https://www.php.net/releases/8.5/");
         assert_eq!(s[0].title.as_deref(), Some("PHP 8.5 Released"));
-        assert!(s.iter().any(|x| x.url == "https://wiki.php.net/rfc" && x.title.as_deref() == Some("RFC list")));
+        assert!(
+            s.iter()
+                .any(|x| x.url == "https://wiki.php.net/rfc"
+                    && x.title.as_deref() == Some("RFC list"))
+        );
         assert!(s.iter().any(|x| x.url == "https://example.com/a"));
     }
 

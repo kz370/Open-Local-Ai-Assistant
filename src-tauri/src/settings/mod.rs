@@ -18,16 +18,30 @@ pub const DEFAULT_LMSTUDIO_URL: &str = "http://localhost:1234/v1";
 pub const PROVIDERS: &[(&str, &str, &str)] = &[
     ("lmstudio", "LM Studio", DEFAULT_LMSTUDIO_URL),
     ("openrouter", "OpenRouter", "https://openrouter.ai/api/v1"),
-    ("gemini", "Google Gemini API", "https://generativelanguage.googleapis.com/v1beta/openai"),
-    ("huggingface", "Hugging Face", "https://router.huggingface.co/v1"),
+    (
+        "gemini",
+        "Google Gemini API",
+        "https://generativelanguage.googleapis.com/v1beta/openai",
+    ),
+    (
+        "huggingface",
+        "Hugging Face",
+        "https://router.huggingface.co/v1",
+    ),
 ];
 
 pub fn provider_name(id: &str) -> &'static str {
-    PROVIDERS.iter().find(|p| p.0 == id).map_or("LM Studio", |p| p.1)
+    PROVIDERS
+        .iter()
+        .find(|p| p.0 == id)
+        .map_or("LM Studio", |p| p.1)
 }
 
 pub fn provider_default_url(id: &str) -> &'static str {
-    PROVIDERS.iter().find(|p| p.0 == id).map_or(DEFAULT_LMSTUDIO_URL, |p| p.2)
+    PROVIDERS
+        .iter()
+        .find(|p| p.0 == id)
+        .map_or(DEFAULT_LMSTUDIO_URL, |p| p.2)
 }
 const CURRENT_VERSION: u32 = 4;
 
@@ -42,7 +56,12 @@ pub struct WindowGeometry {
 
 impl Default for WindowGeometry {
     fn default() -> Self {
-        Self { x: 0, y: 0, width: 480, height: 640 }
+        Self {
+            x: 0,
+            y: 0,
+            width: 480,
+            height: 640,
+        }
     }
 }
 
@@ -222,9 +241,30 @@ pub struct LanguageEntry {
 impl LanguageEntry {
     fn builtins() -> Vec<LanguageEntry> {
         vec![
-            LanguageEntry { code: "en".into(), display_name: "English".into(), direction: "ltr".into(), stt_language: "en".into(), tts_voice: "auto".into(), built_in: true },
-            LanguageEntry { code: "ar".into(), display_name: "Arabic".into(), direction: "rtl".into(), stt_language: "ar".into(), tts_voice: "auto".into(), built_in: true },
-            LanguageEntry { code: "de".into(), display_name: "German".into(), direction: "ltr".into(), stt_language: "de".into(), tts_voice: "auto".into(), built_in: true },
+            LanguageEntry {
+                code: "en".into(),
+                display_name: "English".into(),
+                direction: "ltr".into(),
+                stt_language: "en".into(),
+                tts_voice: "auto".into(),
+                built_in: true,
+            },
+            LanguageEntry {
+                code: "ar".into(),
+                display_name: "Arabic".into(),
+                direction: "rtl".into(),
+                stt_language: "ar".into(),
+                tts_voice: "auto".into(),
+                built_in: true,
+            },
+            LanguageEntry {
+                code: "de".into(),
+                display_name: "German".into(),
+                direction: "ltr".into(),
+                stt_language: "de".into(),
+                tts_voice: "auto".into(),
+                built_in: true,
+            },
         ]
     }
 }
@@ -468,14 +508,28 @@ impl Settings {
         fn is_modifier_token(t: &str) -> bool {
             matches!(
                 t.trim().to_ascii_uppercase().as_str(),
-                "ALT" | "OPTION"
-                    | "CONTROL" | "CTRL" | "COMMANDORCONTROL" | "COMMANDORCTRL" | "CMDORCTRL" | "CMDORCONTROL"
+                "ALT"
+                    | "OPTION"
+                    | "CONTROL"
+                    | "CTRL"
+                    | "COMMANDORCONTROL"
+                    | "COMMANDORCTRL"
+                    | "CMDORCTRL"
+                    | "CMDORCONTROL"
                     | "SHIFT"
-                    | "SUPER" | "META" | "COMMAND" | "CMD" | "WIN"
+                    | "SUPER"
+                    | "META"
+                    | "COMMAND"
+                    | "CMD"
+                    | "WIN"
             )
         }
         fn is_single_modifier(keys: &str) -> bool {
-            let tokens: Vec<&str> = keys.split('+').map(str::trim).filter(|t| !t.is_empty()).collect();
+            let tokens: Vec<&str> = keys
+                .split('+')
+                .map(str::trim)
+                .filter(|t| !t.is_empty())
+                .collect();
             tokens.len() == 1 && tokens.iter().all(|t| is_modifier_token(t))
         }
         // Single Alt/Ctrl/Shift/Super alone fires on every normal press
@@ -525,31 +579,55 @@ impl Settings {
         if self.language.entries.is_empty() {
             self.language.entries = LanguageEntry::builtins();
         }
-        let lang_ok = |s: &str, entries: &[LanguageEntry]| s == "auto" || entries.iter().any(|e| e.code == s);
+        let lang_ok =
+            |s: &str, entries: &[LanguageEntry]| s == "auto" || entries.iter().any(|e| e.code == s);
         if !lang_ok(&self.language.response_language, &self.language.entries) {
             self.language.response_language = "auto".into();
         }
         if !lang_ok(&self.stt.language, &self.language.entries) {
             self.stt.language = "auto".into();
         }
-        if !self.dictation.language.is_empty() && !lang_ok(&self.dictation.language, &self.language.entries) {
+        if !self.dictation.language.is_empty()
+            && !lang_ok(&self.dictation.language, &self.language.entries)
+        {
             self.dictation.language = String::new();
         }
-        self.language.arabic_tashkeel_instruction = self.language.arabic_tashkeel_instruction.trim().chars().take(500).collect();
+        self.language.arabic_tashkeel_instruction = self
+            .language
+            .arabic_tashkeel_instruction
+            .trim()
+            .chars()
+            .take(500)
+            .collect();
         if !matches!(self.general.theme.as_str(), "system" | "light" | "dark") {
             self.general.theme = "system".into();
         }
-        if !matches!(self.general.accent.as_str(), "teal" | "blue" | "green" | "amber" | "rose" | "slate") {
+        if !matches!(
+            self.general.accent.as_str(),
+            "teal" | "blue" | "green" | "amber" | "rose" | "slate"
+        ) {
             self.general.accent = "teal".into();
         }
-        if !matches!(self.ai.user_gender.as_str(), "unspecified" | "male" | "female") {
+        if !matches!(
+            self.ai.user_gender.as_str(),
+            "unspecified" | "male" | "female"
+        ) {
             self.ai.user_gender = "unspecified".into();
         }
-        self.general.assistant_name = self.general.assistant_name.trim().chars().take(40).collect();
+        self.general.assistant_name = self
+            .general
+            .assistant_name
+            .trim()
+            .chars()
+            .take(40)
+            .collect();
         if self.general.assistant_name.is_empty() {
             self.general.assistant_name = "Local Assistant".into();
         }
-        if !matches!(self.general.window_position.as_str(), "bottom-right" | "bottom-left" | "center" | "custom") {
+        if !matches!(
+            self.general.window_position.as_str(),
+            "bottom-right" | "bottom-left" | "center" | "custom"
+        ) {
             self.general.window_position = "bottom-right".into();
         }
         self.general.font_scale = self.general.font_scale.clamp(0.8, 1.6);
@@ -563,13 +641,20 @@ impl Settings {
         if self.ai.server_url.is_empty() {
             self.ai.server_url = provider_default_url(&self.ai.provider).into();
         }
-        self.ai.provider_profiles.retain(|id, _| PROVIDERS.iter().any(|p| p.0 == id));
+        self.ai
+            .provider_profiles
+            .retain(|id, _| PROVIDERS.iter().any(|p| p.0 == id));
         // Hosted providers list hundreds of models, so there is nothing sensible
         // to auto-pick from: the user always chooses one.
         if self.ai.provider != "lmstudio" {
             self.ai.model_mode = "manual".into();
         }
-        self.ai.api_key = self.ai.api_key.take().map(|k| k.trim().to_string()).filter(|k| !k.is_empty());
+        self.ai.api_key = self
+            .ai
+            .api_key
+            .take()
+            .map(|k| k.trim().to_string())
+            .filter(|k| !k.is_empty());
         if !matches!(self.ai.model_mode.as_str(), "auto" | "manual") {
             self.ai.model_mode = "auto".into();
         }
@@ -597,7 +682,7 @@ impl Settings {
             .into_iter()
             .filter(|(k, v)| !k.is_empty() && matches!(v.as_str(), "auto" | "cpu"))
             .collect();
-            self.stt.vad_threshold = self.stt.vad_threshold.clamp(0.1, 0.95);
+        self.stt.vad_threshold = self.stt.vad_threshold.clamp(0.1, 0.95);
         self.stt.silence_ms = self.stt.silence_ms.clamp(200, 5000);
         self.stt.extra_model_dirs = std::mem::take(&mut self.stt.extra_model_dirs)
             .into_iter()
@@ -611,7 +696,10 @@ impl Settings {
         if self.stt.hands_free_timeout_secs != 0 {
             self.stt.hands_free_timeout_secs = self.stt.hands_free_timeout_secs.clamp(15, 3600);
         }
-        if !matches!(self.tts.preferred_gender.as_str(), "any" | "female" | "male") {
+        if !matches!(
+            self.tts.preferred_gender.as_str(),
+            "any" | "female" | "male"
+        ) {
             self.tts.preferred_gender = "any".into();
         }
         if !matches!(self.dictation.mode.as_str(), "hold" | "toggle") {
@@ -644,7 +732,10 @@ impl SettingsStore {
             None => Settings::default(),
         };
         s.sanitize();
-        let store = Self { db, current: RwLock::new(s) };
+        let store = Self {
+            db,
+            current: RwLock::new(s),
+        };
         store.migrate()?;
         Ok(store)
     }
@@ -684,7 +775,10 @@ impl SettingsStore {
     }
 
     pub fn get(&self) -> Settings {
-        self.current.read().unwrap_or_else(|p| p.into_inner()).clone()
+        self.current
+            .read()
+            .unwrap_or_else(|p| p.into_inner())
+            .clone()
     }
 
     pub fn set(&self, mut s: Settings) -> AppResult<Settings> {
@@ -719,7 +813,12 @@ mod tests {
             .update(|s| {
                 s.ai.server_url = "http://127.0.0.1:4321/v1/".into();
                 s.general.theme = "dark".into();
-                s.general.window = WindowGeometry { x: 10, y: 20, width: 500, height: 700 };
+                s.general.window = WindowGeometry {
+                    x: 10,
+                    y: 20,
+                    width: 500,
+                    height: 700,
+                };
             })
             .unwrap();
         let reloaded = SettingsStore::load(db).unwrap().get();
@@ -759,7 +858,8 @@ mod tests {
     #[test]
     fn migration_enables_dictation_once() {
         let db = Arc::new(Db::open_in_memory().unwrap());
-        db.set_kv(KEY, r#"{"dictation":{"enabled":false}}"#).unwrap();
+        db.set_kv(KEY, r#"{"dictation":{"enabled":false}}"#)
+            .unwrap();
         let store = SettingsStore::load(db.clone()).unwrap();
         assert!(store.get().dictation.enabled);
         assert_eq!(store.get().version, CURRENT_VERSION);
@@ -779,7 +879,10 @@ mod tests {
     fn retired_microphone_keys_are_ignored() {
         // Settings saved before "microphone only" and "isolate system audio"
         // were removed must still load, keeping everything else.
-        let s: Settings = serde_json::from_str(r#"{"stt":{"micOnly":false,"isolateSystemAudio":true,"language":"de"}}"#).unwrap();
+        let s: Settings = serde_json::from_str(
+            r#"{"stt":{"micOnly":false,"isolateSystemAudio":true,"language":"de"}}"#,
+        )
+        .unwrap();
         assert_eq!(s.stt.language, "de");
     }
 

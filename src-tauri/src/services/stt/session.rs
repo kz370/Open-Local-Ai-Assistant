@@ -32,17 +32,41 @@ pub enum ListenMode {
 }
 
 #[derive(Debug, Clone, Serialize)]
-#[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum VoiceEvent {
     /// "listening" | "transcribing" | "idle". `session` numbers the listening
     /// session, so a late "idle" of an old one cannot end the next one in the UI.
-    State { mode: ListenMode, session: u64, state: String, device: Option<String>, streaming: bool },
+    State {
+        mode: ListenMode,
+        session: u64,
+        state: String,
+        device: Option<String>,
+        streaming: bool,
+    },
     /// `bands` is the voice spectrum (see `audio::spectrum`), all zero when muted.
-    Level { mode: ListenMode, value: f32, bands: Vec<f32> },
+    Level {
+        mode: ListenMode,
+        value: f32,
+        bands: Vec<f32>,
+    },
     /// Live text while speaking (not final).
     Partial { mode: ListenMode, text: String },
-    Transcript { mode: ListenMode, text: String, language: Option<String>, audio_ms: u64, elapsed_ms: u64 },
-    Error { mode: ListenMode, code: String, detail: String },
+    Transcript {
+        mode: ListenMode,
+        text: String,
+        language: Option<String>,
+        audio_ms: u64,
+        elapsed_ms: u64,
+    },
+    Error {
+        mode: ListenMode,
+        code: String,
+        detail: String,
+    },
 }
 
 pub type VoiceEmit = Arc<dyn Fn(VoiceEvent) + Send + Sync>;
@@ -75,8 +99,22 @@ const MAX_RECORDING: Duration = Duration::from_secs(300);
 const VAD_WINDOW: usize = 512;
 
 impl VoiceSessions {
-    pub fn new(stt: Arc<SttService>, settings: Arc<SettingsStore>, emit: VoiceEmit, speaking: SpeakingProbe) -> Self {
-        Self { stt, settings, emit, speaking, muted: Arc::new(AtomicBool::new(false)), active: Mutex::new(None), previous: Mutex::new(None), sessions: AtomicU64::new(0) }
+    pub fn new(
+        stt: Arc<SttService>,
+        settings: Arc<SettingsStore>,
+        emit: VoiceEmit,
+        speaking: SpeakingProbe,
+    ) -> Self {
+        Self {
+            stt,
+            settings,
+            emit,
+            speaking,
+            muted: Arc::new(AtomicBool::new(false)),
+            active: Mutex::new(None),
+            previous: Mutex::new(None),
+            sessions: AtomicU64::new(0),
+        }
     }
 
     pub fn set_muted(&self, muted: bool) {
@@ -106,22 +144,40 @@ impl VoiceSessions {
         // user-added language differ) at this single choke point, which every
         // session-start path (push-to-talk, hands-free, dictation, test) goes
         // through — nothing downstream needs to know about `entries`.
-        let stt_lang = settings.language.entries.iter().find(|e| e.code == settings.stt.language).map(|e| e.stt_language.clone());
+        let stt_lang = settings
+            .language
+            .entries
+            .iter()
+            .find(|e| e.code == settings.stt.language)
+            .map(|e| e.stt_language.clone());
         if let Some(l) = stt_lang {
             settings.stt.language = l;
         }
         if mode != ListenMode::Test && !self.stt.is_ready(&settings.stt) {
-            return Err(AppError::Stt("no local speech recognition model is installed".into()));
+            return Err(AppError::Stt(
+                "no local speech recognition model is installed".into(),
+            ));
         }
         let streaming = mode != ListenMode::Test && self.stt.is_streaming(&settings.stt);
-        let vad_path = if mode != ListenMode::Test && !streaming { self.stt.vad_model_path() } else { None };
+        let vad_path = if mode != ListenMode::Test && !streaming {
+            self.stt.vad_model_path()
+        } else {
+            None
+        };
         if mode == ListenMode::HandsFree && !streaming && vad_path.is_none() {
-            return Err(AppError::Stt("hands-free needs the voice activity detection model".into()));
+            return Err(AppError::Stt(
+                "hands-free needs the voice activity detection model".into(),
+            ));
         }
         // Stop any running session first (discarding its audio) and wait for it
         // here, before opening the microphone again.
         self.stop(true);
-        if let Some(prev) = self.previous.lock().unwrap_or_else(|p| p.into_inner()).take() {
+        if let Some(prev) = self
+            .previous
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .take()
+        {
             let _ = prev.join();
         }
 
@@ -132,12 +188,23 @@ impl VoiceSessions {
         // A fresh session always starts listening: a mute belongs to the call
         // the user muted, not to the next one.
         self.muted.store(false, Ordering::Relaxed);
-        let (stt, emit, speaking, muted) = (self.stt.clone(), self.emit.clone(), self.speaking.clone(), self.muted.clone());
+        let (stt, emit, speaking, muted) = (
+            self.stt.clone(),
+            self.emit.clone(),
+            self.speaking.clone(),
+            self.muted.clone(),
+        );
         let stt_settings = settings.stt.clone();
         let (stop2, discard2) = (stop.clone(), discard.clone());
         let session = self.sessions.fetch_add(1, Ordering::SeqCst) + 1;
 
-        emit(VoiceEvent::State { mode, session, state: "listening".into(), device: Some(device), streaming });
+        emit(VoiceEvent::State {
+            mode,
+            session,
+            state: "listening".into(),
+            device: Some(device),
+            streaming,
+        });
 
         let thread = std::thread::Builder::new()
             .name("voice-session".into())
@@ -167,11 +234,22 @@ impl VoiceSessions {
                     discarded = ctx.discard.load(Ordering::Relaxed),
                     "listening session ended"
                 );
-                emit(VoiceEvent::State { mode, session, state: "idle".into(), device: None, streaming });
+                emit(VoiceEvent::State {
+                    mode,
+                    session,
+                    state: "idle".into(),
+                    device: None,
+                    streaming,
+                });
             })
             .map_err(|e| AppError::Audio(e.to_string()))?;
 
-        *self.active.lock().unwrap_or_else(|p| p.into_inner()) = Some(Active { mode, stop, discard, thread });
+        *self.active.lock().unwrap_or_else(|p| p.into_inner()) = Some(Active {
+            mode,
+            stop,
+            discard,
+            thread,
+        });
         Ok(session)
     }
 
@@ -179,7 +257,11 @@ impl VoiceSessions {
     /// instead of transcribed. Never blocks: the session thread finishes on its
     /// own and results arrive as events.
     pub fn stop(&self, discard: bool) -> Option<ListenMode> {
-        let active = self.active.lock().unwrap_or_else(|p| p.into_inner()).take()?;
+        let active = self
+            .active
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .take()?;
         active.discard.store(discard, Ordering::Relaxed);
         active.stop.store(true, Ordering::Relaxed);
         *self.previous.lock().unwrap_or_else(|p| p.into_inner()) = Some(active.thread);
@@ -189,7 +271,12 @@ impl VoiceSessions {
 
 /// Runs one listening session over an audio source. Shared by the microphone
 /// path and by tests that feed recorded audio.
-fn run_session(stt: &SttService, ctx: &SessionCtx, rx: &Receiver<CaptureEvent>, vad_path: Option<&std::path::Path>) {
+fn run_session(
+    stt: &SttService,
+    ctx: &SessionCtx,
+    rx: &Receiver<CaptureEvent>,
+    vad_path: Option<&std::path::Path>,
+) {
     if ctx.mode == ListenMode::Test {
         ctx.run_level_only(rx);
         return;
@@ -199,20 +286,30 @@ fn run_session(stt: &SttService, ctx: &SessionCtx, rx: &Receiver<CaptureEvent>, 
             Some(v) => Some(v),
             None => {
                 tracing::warn!(path = %p.display(), "voice activity detection model could not be loaded");
-                (ctx.emit)(VoiceEvent::Error { mode: ctx.mode, code: "stt_unavailable".into(), detail: "the voice activity detection model could not be loaded".into() });
+                (ctx.emit)(VoiceEvent::Error {
+                    mode: ctx.mode,
+                    code: "stt_unavailable".into(),
+                    detail: "the voice activity detection model could not be loaded".into(),
+                });
                 return;
             }
         },
         None => None,
     };
-    let Some(backlog) = ctx.warm_up(stt, rx) else { return };
+    let Some(backlog) = ctx.warm_up(stt, rx) else {
+        return;
+    };
     let result = stt.with_recognizer(&ctx.settings, |rec, model| {
         tracing::info!(mode = ?ctx.mode, model = %model.id, streaming = rec.is_streaming(), vad = vad.is_some(), "listening session started");
         ctx.run(rec, rx, vad, backlog)
     });
     if let Err(e) = result {
         tracing::warn!(error = %e, "speech session could not start");
-        (ctx.emit)(VoiceEvent::Error { mode: ctx.mode, code: e.code().into(), detail: e.to_string() });
+        (ctx.emit)(VoiceEvent::Error {
+            mode: ctx.mode,
+            code: e.code().into(),
+            detail: e.to_string(),
+        });
     }
 }
 
@@ -240,7 +337,10 @@ pub fn run_session_for_test(
     run_session(stt, &ctx, rx, vad_path);
 }
 
-fn create_vad(path: &std::path::Path, settings: &SttSettings) -> Option<sherpa_onnx::VoiceActivityDetector> {
+fn create_vad(
+    path: &std::path::Path,
+    settings: &SttSettings,
+) -> Option<sherpa_onnx::VoiceActivityDetector> {
     let config = sherpa_onnx::VadModelConfig {
         silero_vad: sherpa_onnx::SileroVadModelConfig {
             model: Some(path.to_string_lossy().to_string()),
@@ -285,8 +385,15 @@ struct SilenceGuard {
 
 impl SilenceGuard {
     fn new(mode: ListenMode, settings: &SttSettings) -> Self {
-        let secs = if mode == ListenMode::HandsFree { settings.hands_free_timeout_secs } else { settings.auto_stop_silence_secs };
-        Self { last_speech: Instant::now(), limit: (secs > 0).then(|| Duration::from_secs(secs as u64)) }
+        let secs = if mode == ListenMode::HandsFree {
+            settings.hands_free_timeout_secs
+        } else {
+            settings.auto_stop_silence_secs
+        };
+        Self {
+            last_speech: Instant::now(),
+            limit: (secs > 0).then(|| Duration::from_secs(secs as u64)),
+        }
     }
 
     fn heard_speech(&mut self) {
@@ -294,7 +401,9 @@ impl SilenceGuard {
     }
 
     fn expired(&self) -> bool {
-        self.limit.map(|l| self.last_speech.elapsed() > l).unwrap_or(false)
+        self.limit
+            .map(|l| self.last_speech.elapsed() > l)
+            .unwrap_or(false)
     }
 }
 
@@ -337,11 +446,20 @@ impl SessionCtx {
     }
 
     fn emit_state(&self, state: &str) {
-        (self.emit)(VoiceEvent::State { mode: self.mode, session: self.session, state: state.into(), device: None, streaming: false });
+        (self.emit)(VoiceEvent::State {
+            mode: self.mode,
+            session: self.session,
+            state: state.into(),
+            device: None,
+            streaming: false,
+        });
     }
 
     fn emit_partial(&self, text: &str) {
-        (self.emit)(VoiceEvent::Partial { mode: self.mode, text: super::clean_transcript(text) });
+        (self.emit)(VoiceEvent::Partial {
+            mode: self.mode,
+            text: super::clean_transcript(text),
+        });
     }
 
     fn emit_transcript(&self, text: &str, audio_ms: u64, elapsed_ms: u64) {
@@ -349,13 +467,23 @@ impl SessionCtx {
         let language = Lang::from_code(&self.settings.language)
             .or_else(|| detect(&text).map(|d| d.lang))
             .map(|l| l.code().to_string());
-        (self.emit)(VoiceEvent::Transcript { mode: self.mode, text, language, audio_ms, elapsed_ms });
+        (self.emit)(VoiceEvent::Transcript {
+            mode: self.mode,
+            text,
+            language,
+            audio_ms,
+            elapsed_ms,
+        });
     }
 
     /// Meter update; a muted microphone shows no level.
     fn emit_level(&self, v: f32, bands: Vec<f32>) {
         let muted = self.mic_muted();
-        (self.emit)(VoiceEvent::Level { mode: self.mode, value: if muted { 0.0 } else { v }, bands: if muted { vec![0.0; bands.len()] } else { bands } });
+        (self.emit)(VoiceEvent::Level {
+            mode: self.mode,
+            value: if muted { 0.0 } else { v },
+            bands: if muted { vec![0.0; bands.len()] } else { bands },
+        });
     }
 
     /// Loads the speech model on a helper thread while this one keeps the
@@ -378,7 +506,11 @@ impl SessionCtx {
                         }
                     }
                     Ok(CaptureEvent::Error(e)) => {
-                        (self.emit)(VoiceEvent::Error { mode: self.mode, code: "audio".into(), detail: e });
+                        (self.emit)(VoiceEvent::Error {
+                            mode: self.mode,
+                            code: "audio".into(),
+                            detail: e,
+                        });
                         failed = true;
                         break;
                     }
@@ -391,11 +523,19 @@ impl SessionCtx {
                 Ok(Ok(())) => None,
                 Ok(Err(e)) => {
                     tracing::warn!(error = %e, "speech session could not start");
-                    (self.emit)(VoiceEvent::Error { mode: self.mode, code: e.code().into(), detail: e.to_string() });
+                    (self.emit)(VoiceEvent::Error {
+                        mode: self.mode,
+                        code: e.code().into(),
+                        detail: e.to_string(),
+                    });
                     None
                 }
                 Err(_) => {
-                    (self.emit)(VoiceEvent::Error { mode: self.mode, code: "stt_unavailable".into(), detail: "the speech model could not be loaded".into() });
+                    (self.emit)(VoiceEvent::Error {
+                        mode: self.mode,
+                        code: "stt_unavailable".into(),
+                        detail: "the speech model could not be loaded".into(),
+                    });
                     None
                 }
             }
@@ -407,7 +547,11 @@ impl SessionCtx {
             match rx.recv_timeout(Duration::from_millis(100)) {
                 Ok(CaptureEvent::Level(v, bands)) => self.emit_level(v, bands),
                 Ok(CaptureEvent::Error(e)) => {
-                    (self.emit)(VoiceEvent::Error { mode: self.mode, code: "audio".into(), detail: e });
+                    (self.emit)(VoiceEvent::Error {
+                        mode: self.mode,
+                        code: "audio".into(),
+                        detail: e,
+                    });
                     return;
                 }
                 Ok(_) => {}
@@ -419,7 +563,13 @@ impl SessionCtx {
 
     /// `backlog` is the audio heard while the model was loading; it is
     /// processed first, even when the user already stopped.
-    fn run(&self, rec: &Recognizer, rx: &Receiver<CaptureEvent>, vad: Option<sherpa_onnx::VoiceActivityDetector>, backlog: Vec<f32>) {
+    fn run(
+        &self,
+        rec: &Recognizer,
+        rx: &Receiver<CaptureEvent>,
+        vad: Option<sherpa_onnx::VoiceActivityDetector>,
+        backlog: Vec<f32>,
+    ) {
         let backlog = (!backlog.is_empty()).then_some(CaptureEvent::Samples(backlog));
         if rec.is_streaming() {
             self.run_streaming(rec, rx, backlog);
@@ -429,8 +579,15 @@ impl SessionCtx {
     }
 
     /// Streaming recognizers: text appears while the user is still speaking.
-    fn run_streaming(&self, rec: &Recognizer, rx: &Receiver<CaptureEvent>, mut backlog: Option<CaptureEvent>) {
-        let Some(mut session) = rec.stream_session() else { return };
+    fn run_streaming(
+        &self,
+        rec: &Recognizer,
+        rx: &Receiver<CaptureEvent>,
+        mut backlog: Option<CaptureEvent>,
+    ) {
+        let Some(mut session) = rec.stream_session() else {
+            return;
+        };
         let started = Instant::now();
         let mut last_partial = String::new();
         let mut committed = String::new();
@@ -438,7 +595,9 @@ impl SessionCtx {
         let hands_free = self.mode == ListenMode::HandsFree;
         let mut silence = SilenceGuard::new(self.mode, &self.settings);
 
-        while backlog.is_some() || (!self.stopped() && started.elapsed() < MAX_RECORDING && !silence.expired()) {
+        while backlog.is_some()
+            || (!self.stopped() && started.elapsed() < MAX_RECORDING && !silence.expired())
+        {
             let event = match backlog.take() {
                 Some(e) => Ok(e),
                 None => rx.recv_timeout(Duration::from_millis(100)),
@@ -463,7 +622,11 @@ impl SessionCtx {
                     if text != last_partial {
                         silence.heard_speech();
                         last_partial = text.clone();
-                        let shown = if committed.is_empty() { text.clone() } else { format!("{committed} {text}") };
+                        let shown = if committed.is_empty() {
+                            text.clone()
+                        } else {
+                            format!("{committed} {text}")
+                        };
                         self.emit_partial(shown.trim());
                     }
                     if session.is_endpoint() {
@@ -475,7 +638,11 @@ impl SessionCtx {
                             continue;
                         }
                         if hands_free {
-                            self.emit_transcript(&utterance, samples_seen * 1000 / 16_000, started.elapsed().as_millis() as u64);
+                            self.emit_transcript(
+                                &utterance,
+                                samples_seen * 1000 / 16_000,
+                                started.elapsed().as_millis() as u64,
+                            );
                             samples_seen = 0;
                         } else {
                             if !committed.is_empty() {
@@ -487,7 +654,11 @@ impl SessionCtx {
                     }
                 }
                 Ok(CaptureEvent::Error(e)) => {
-                    (self.emit)(VoiceEvent::Error { mode: self.mode, code: "audio".into(), detail: e });
+                    (self.emit)(VoiceEvent::Error {
+                        mode: self.mode,
+                        code: "audio".into(),
+                        detail: e,
+                    });
                     break;
                 }
                 Err(RecvTimeoutError::Timeout) => {}
@@ -517,7 +688,13 @@ impl SessionCtx {
     }
 
     /// Non-streaming recognizers: the VAD splits speech into utterances.
-    fn run_buffered(&self, rec: &Recognizer, rx: &Receiver<CaptureEvent>, vad: Option<sherpa_onnx::VoiceActivityDetector>, mut backlog: Option<CaptureEvent>) {
+    fn run_buffered(
+        &self,
+        rec: &Recognizer,
+        rx: &Receiver<CaptureEvent>,
+        vad: Option<sherpa_onnx::VoiceActivityDetector>,
+        mut backlog: Option<CaptureEvent>,
+    ) {
         let started = Instant::now();
         let hands_free = self.mode == ListenMode::HandsFree;
         let mut buffer: Vec<f32> = Vec::new(); // audio not yet covered by a finished utterance
@@ -538,7 +715,10 @@ impl SessionCtx {
                 let (text_tx, text_rx) = std::sync::mpsc::channel::<String>();
                 scope.spawn(move || {
                     for segment in seg_rx {
-                        if text_tx.send(super::clean_transcript(&rec.transcribe(&segment))).is_err() {
+                        if text_tx
+                            .send(super::clean_transcript(&rec.transcribe(&segment)))
+                            .is_err()
+                        {
                             break;
                         }
                     }
@@ -546,7 +726,11 @@ impl SessionCtx {
                 (Some(seg_tx), Some(text_rx))
             };
 
-            while backlog.is_some() || (!self.stopped() && (hands_free || started.elapsed() < MAX_RECORDING) && !silence.expired()) {
+            while backlog.is_some()
+                || (!self.stopped()
+                    && (hands_free || started.elapsed() < MAX_RECORDING)
+                    && !silence.expired())
+            {
                 if let Some(results) = &results {
                     let before = committed.len();
                     for text in results.try_iter().filter(|t| !t.is_empty()) {
@@ -622,14 +806,26 @@ impl SessionCtx {
                             let text = super::clean_transcript(&rec.transcribe(&segment));
                             if !text.is_empty() {
                                 silence.heard_speech();
-                                tracing::info!(chars = text.chars().count(), audio_ms = seg_ms, "utterance transcribed");
-                                self.emit_transcript(&text, seg_ms, t0.elapsed().as_millis() as u64);
+                                tracing::info!(
+                                    chars = text.chars().count(),
+                                    audio_ms = seg_ms,
+                                    "utterance transcribed"
+                                );
+                                self.emit_transcript(
+                                    &text,
+                                    seg_ms,
+                                    t0.elapsed().as_millis() as u64,
+                                );
                             }
                             self.emit_state("listening");
                         }
                     }
                     Ok(CaptureEvent::Error(e)) => {
-                        (self.emit)(VoiceEvent::Error { mode: self.mode, code: "audio".into(), detail: e });
+                        (self.emit)(VoiceEvent::Error {
+                            mode: self.mode,
+                            code: "audio".into(),
+                            detail: e,
+                        });
                         break;
                     }
                     Err(RecvTimeoutError::Timeout) => {}
@@ -654,9 +850,16 @@ impl SessionCtx {
                 append(&mut committed, &text);
             }
             if buffer.len() as u64 * 1000 / 16_000 >= super::MIN_AUDIO_MS {
-                append(&mut committed, &super::clean_transcript(&rec.transcribe(&buffer)));
+                append(
+                    &mut committed,
+                    &super::clean_transcript(&rec.transcribe(&buffer)),
+                );
             }
-            self.emit_transcript(&committed, samples_seen * 1000 / 16_000, t0.elapsed().as_millis() as u64);
+            self.emit_transcript(
+                &committed,
+                samples_seen * 1000 / 16_000,
+                t0.elapsed().as_millis() as u64,
+            );
         });
     }
 }
@@ -718,7 +921,11 @@ mod tests {
         // The assistant just stopped: its last word is still in the pipeline.
         c.muted_until.set(Some(Instant::now() + AUDIO_TAIL));
         assert!(c.input_muted(true), "the tail must still be gated");
-        c.muted_until.set(Some(Instant::now() - Duration::from_millis(1)));
-        assert!(!c.input_muted(true), "gate must reopen once the tail has passed");
+        c.muted_until
+            .set(Some(Instant::now() - Duration::from_millis(1)));
+        assert!(
+            !c.input_muted(true),
+            "gate must reopen once the tail has passed"
+        );
     }
 }

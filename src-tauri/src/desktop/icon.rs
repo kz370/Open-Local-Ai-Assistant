@@ -19,7 +19,11 @@ fn accent_rgb(name: &str) -> (u8, u8, u8) {
 
 fn mix(c: (u8, u8, u8), white: bool, amt: f32) -> (u8, u8, u8) {
     let t = if white { 255.0 } else { 0.0 };
-    let m = |v: u8| ((v as f32) * (1.0 - amt) + t * amt).round().clamp(0.0, 255.0) as u8;
+    let m = |v: u8| {
+        ((v as f32) * (1.0 - amt) + t * amt)
+            .round()
+            .clamp(0.0, 255.0) as u8
+    };
     (m(c.0), m(c.1), m(c.2))
 }
 
@@ -42,9 +46,17 @@ fn render_accent_icon(accent: &str) -> Image<'static> {
             // Vertical gradient: lighten top, darken bottom.
             let t = y as f32 / S as f32; // 0 top -> 1 bottom
             let shade = 0.16 - t * 0.32; // +0.16 .. -0.16
-            let (rr, gg, bb) = if shade >= 0.0 { mix(base, true, shade) } else { mix(base, false, -shade) };
+            let (rr, gg, bb) = if shade >= 0.0 {
+                mix(base, true, shade)
+            } else {
+                mix(base, false, -shade)
+            };
             // Soft edge AA on outer 1px.
-            let alpha = if d > r - 1.0 { ((r - d) * 255.0).round().clamp(0.0, 255.0) as u8 } else { 255 };
+            let alpha = if d > r - 1.0 {
+                ((r - d) * 255.0).round().clamp(0.0, 255.0) as u8
+            } else {
+                255
+            };
             let i = ((y * S + x) * 4) as usize;
             rgba[i] = rr;
             rgba[i + 1] = gg;
@@ -53,7 +65,13 @@ fn render_accent_icon(accent: &str) -> Image<'static> {
         }
     }
     // White mini wave: 5 vertical bars centered.
-    let bars = [(-14.0, 6.0), (-7.0, 14.0), (0.0, 22.0), (7.0, 14.0), (14.0, 8.0)];
+    let bars = [
+        (-14.0, 6.0),
+        (-7.0, 14.0),
+        (0.0, 22.0),
+        (7.0, 14.0),
+        (14.0, 8.0),
+    ];
     for (bx, h) in bars {
         let x0 = (cx + bx - 2.0).round() as i32;
         let x1 = (cx + bx + 2.0).round() as i32;
@@ -89,7 +107,10 @@ fn set_taskbar_icon(window: &tauri::WebviewWindow, accent: &str) {
     static CACHE: OnceLock<Mutex<HashMap<String, isize>>> = OnceLock::new();
     let Ok(hwnd) = window.hwnd() else { return };
     let hicon = {
-        let mut cache = CACHE.get_or_init(Default::default).lock().unwrap_or_else(|e| e.into_inner());
+        let mut cache = CACHE
+            .get_or_init(Default::default)
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         match cache.get(accent) {
             Some(&h) => h,
             None => {
@@ -102,7 +123,17 @@ fn set_taskbar_icon(window: &tauri::WebviewWindow, accent: &str) {
                     px.swap(0, 2);
                 }
                 let and_mask = vec![0u8; (w.div_ceil(16) * 2 * h) as usize];
-                let Ok(icon) = (unsafe { CreateIcon(None, w as i32, h as i32, 1, 32, and_mask.as_ptr(), bgra.as_ptr()) }) else {
+                let Ok(icon) = (unsafe {
+                    CreateIcon(
+                        None,
+                        w as i32,
+                        h as i32,
+                        1,
+                        32,
+                        and_mask.as_ptr(),
+                        bgra.as_ptr(),
+                    )
+                }) else {
                     tracing::warn!("taskbar icon create failed");
                     return;
                 };
@@ -112,7 +143,14 @@ fn set_taskbar_icon(window: &tauri::WebviewWindow, accent: &str) {
         }
     };
     // Post, not send: callers may be off the UI thread while it is busy.
-    let _ = unsafe { PostMessageW(Some(HWND(hwnd.0 as _)), WM_SETICON, WPARAM(ICON_BIG as usize), LPARAM(hicon)) };
+    let _ = unsafe {
+        PostMessageW(
+            Some(HWND(hwnd.0 as _)),
+            WM_SETICON,
+            WPARAM(ICON_BIG as usize),
+            LPARAM(hicon),
+        )
+    };
 }
 
 #[cfg(not(windows))]

@@ -69,7 +69,12 @@ pub struct McpManager {
 
 impl McpManager {
     pub fn new(db: Arc<Db>, on_change: Arc<dyn Fn() + Send + Sync>) -> Self {
-        Self { db, inner: RwLock::new(Inner::default()), on_change, safe_mode: AtomicBool::new(true) }
+        Self {
+            db,
+            inner: RwLock::new(Inner::default()),
+            on_change,
+            safe_mode: AtomicBool::new(true),
+        }
     }
 
     pub fn safe_mode(&self) -> bool {
@@ -87,7 +92,11 @@ impl McpManager {
     /// The permission in force: the stored choice (or the default), capped by
     /// safe mode. Stored choices are kept as-is so turning safe mode off
     /// restores them.
-    fn effective_permission(&self, category: ToolCategory, stored: Option<Permission>) -> Permission {
+    fn effective_permission(
+        &self,
+        category: ToolCategory,
+        stored: Option<Permission>,
+    ) -> Permission {
         let p = stored.unwrap_or_else(|| default_permission(category));
         if self.safe_mode() {
             clamp_permission(category, p)
@@ -98,7 +107,9 @@ impl McpManager {
 
     /// Connects every enabled server (called at startup, in the background).
     pub async fn connect_enabled(self: &Arc<Self>) {
-        let Ok(servers) = self.db.list_mcp_servers() else { return };
+        let Ok(servers) = self.db.list_mcp_servers() else {
+            return;
+        };
         for s in servers.into_iter().filter(|s| s.enabled) {
             let me = self.clone();
             tokio::spawn(async move {
@@ -128,7 +139,12 @@ impl McpManager {
             Ok(Err(e)) => {
                 let offline = is_offline_error(&e);
                 tracing::warn!(server = %cfg.name, error = %e, "MCP connection failed");
-                self.set_state(id, if offline { "offline" } else { "error" }, Some(e.to_string())).await;
+                self.set_state(
+                    id,
+                    if offline { "offline" } else { "error" },
+                    Some(e.to_string()),
+                )
+                .await;
                 Err(e)
             }
             Err(_) => {
@@ -154,14 +170,25 @@ impl McpManager {
     }
 
     pub async fn shutdown(&self) {
-        let ids: Vec<String> = self.inner.read().await.connections.keys().cloned().collect();
+        let ids: Vec<String> = self
+            .inner
+            .read()
+            .await
+            .connections
+            .keys()
+            .cloned()
+            .collect();
         for id in ids {
             self.disconnect(&id).await;
         }
     }
 
     async fn set_state(&self, id: &str, state: &str, error: Option<String>) {
-        self.inner.write().await.states.insert(id.into(), (state.into(), error));
+        self.inner
+            .write()
+            .await
+            .states
+            .insert(id.into(), (state.into(), error));
         (self.on_change)();
     }
 
@@ -176,7 +203,12 @@ impl McpManager {
         Ok(())
     }
 
-    pub async fn set_permission(&self, server_id: &str, tool: &str, requested: Permission) -> AppResult<Permission> {
+    pub async fn set_permission(
+        &self,
+        server_id: &str,
+        tool: &str,
+        requested: Permission,
+    ) -> AppResult<Permission> {
         let conn = self.inner.read().await.connections.get(server_id).cloned();
         let category = conn
             .and_then(|c| c.tools.iter().find(|t| t.name == tool).map(tool_category))
@@ -188,7 +220,11 @@ impl McpManager {
 
     /// Sets every tool of a connected server to `permission`, or resets them
     /// all to their defaults when `None`.
-    pub async fn set_all_permissions(&self, server_id: &str, permission: Option<Permission>) -> AppResult<()> {
+    pub async fn set_all_permissions(
+        &self,
+        server_id: &str,
+        permission: Option<Permission>,
+    ) -> AppResult<()> {
         match permission {
             None => self.db.clear_tool_permissions(server_id)?,
             Some(p) => {
@@ -221,7 +257,10 @@ impl McpManager {
                                 name: t.name.to_string(),
                                 description: t.description.as_deref().unwrap_or("").to_string(),
                                 category,
-                                permission: self.effective_permission(category, perms.get(t.name.as_ref()).copied()),
+                                permission: self.effective_permission(
+                                    category,
+                                    perms.get(t.name.as_ref()).copied(),
+                                ),
                                 default_permission: default,
                             }
                         })
@@ -231,10 +270,23 @@ impl McpManager {
             let (state, error) = if !cfg.enabled {
                 ("disabled".to_string(), None)
             } else {
-                inner.states.get(&cfg.id).cloned().unwrap_or(("connecting".into(), None))
+                inner
+                    .states
+                    .get(&cfg.id)
+                    .cloned()
+                    .unwrap_or(("connecting".into(), None))
             };
-            let internet = cfg.transport == "http" || tools.iter().any(|t| matches!(t.category, ToolCategory::Search | ToolCategory::Fetch));
-            out.push(ServerStatus { config: cfg, state, error, tools, internet });
+            let internet = cfg.transport == "http"
+                || tools
+                    .iter()
+                    .any(|t| matches!(t.category, ToolCategory::Search | ToolCategory::Fetch));
+            out.push(ServerStatus {
+                config: cfg,
+                state,
+                error,
+                tools,
+                internet,
+            });
         }
         Ok(out)
     }
@@ -243,7 +295,15 @@ impl McpManager {
     pub async fn internet_available(&self) -> bool {
         self.statuses()
             .await
-            .map(|s| s.iter().any(|x| x.state == "connected" && x.tools.iter().any(|t| matches!(t.category, ToolCategory::Search | ToolCategory::Fetch) && t.permission != Permission::Deny)))
+            .map(|s| {
+                s.iter().any(|x| {
+                    x.state == "connected"
+                        && x.tools.iter().any(|t| {
+                            matches!(t.category, ToolCategory::Search | ToolCategory::Fetch)
+                                && t.permission != Permission::Deny
+                        })
+                })
+            })
             .unwrap_or(false)
     }
 }
@@ -260,16 +320,31 @@ fn tool_category(t: &rmcp::model::Tool) -> ToolCategory {
 
 fn is_offline_error(e: &AppError) -> bool {
     let s = e.to_string().to_lowercase();
-    ["dns", "resolve", "network is unreachable", "no route", "connection refused", "connect error", "timed out", "offline"]
-        .iter()
-        .any(|k| s.contains(k))
+    [
+        "dns",
+        "resolve",
+        "network is unreachable",
+        "no route",
+        "connection refused",
+        "connect error",
+        "timed out",
+        "offline",
+    ]
+    .iter()
+    .any(|k| s.contains(k))
 }
 
 /// Sanitized, unique tool name for the LLM: `<server>__<tool>` limited to 64 chars.
 pub fn llm_tool_name(server: &str, tool: &str, taken: &mut Vec<String>) -> String {
     let clean = |s: &str| -> String {
         s.chars()
-            .map(|c| if c.is_ascii_alphanumeric() || c == '_' || c == '-' { c } else { '_' })
+            .map(|c| {
+                if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
+                    c
+                } else {
+                    '_'
+                }
+            })
             .collect::<String>()
             .trim_matches('_')
             .to_ascii_lowercase()
@@ -291,7 +366,10 @@ fn command_for(cfg: &McpServerConfig) -> tokio::process::Command {
     // npx/npm/yarn/pnpm are .cmd shims on Windows and need cmd.exe.
     let program = cfg.command.clone().unwrap_or_default();
     let needs_shell = std::path::Path::new(&program).extension().is_none()
-        && matches!(program.to_ascii_lowercase().as_str(), "npx" | "npm" | "pnpm" | "yarn" | "bunx" | "corepack");
+        && matches!(
+            program.to_ascii_lowercase().as_str(),
+            "npx" | "npm" | "pnpm" | "yarn" | "bunx" | "corepack"
+        );
     let mut cmd = if needs_shell {
         let mut c = tokio::process::Command::new("cmd");
         c.arg("/C").arg(&program);
@@ -320,25 +398,46 @@ async fn open(cfg: &McpServerConfig) -> AppResult<Connection> {
             let (transport, _stderr) = rmcp::transport::TokioChildProcess::builder(cmd)
                 .stderr(std::process::Stdio::null())
                 .spawn()
-                .map_err(|e| AppError::Mcp(format!("could not start '{}': {e}", cfg.command.as_deref().unwrap_or(""))))?;
-            ().serve(transport).await.map_err(|e| AppError::Mcp(e.to_string()))?
+                .map_err(|e| {
+                    AppError::Mcp(format!(
+                        "could not start '{}': {e}",
+                        cfg.command.as_deref().unwrap_or("")
+                    ))
+                })?;
+            ().serve(transport)
+                .await
+                .map_err(|e| AppError::Mcp(e.to_string()))?
         }
         "http" => {
             use rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig;
             let mut headers = reqwest::header::HeaderMap::new();
             for (k, v) in &cfg.headers {
-                if let (Ok(name), Ok(value)) = (reqwest::header::HeaderName::from_bytes(k.as_bytes()), reqwest::header::HeaderValue::from_str(v)) {
+                if let (Ok(name), Ok(value)) = (
+                    reqwest::header::HeaderName::from_bytes(k.as_bytes()),
+                    reqwest::header::HeaderValue::from_str(v),
+                ) {
                     headers.insert(name, value);
                 }
             }
-            let client = reqwest::Client::builder().default_headers(headers).build().map_err(|e| AppError::Mcp(e.to_string()))?;
+            let client = reqwest::Client::builder()
+                .default_headers(headers)
+                .build()
+                .map_err(|e| AppError::Mcp(e.to_string()))?;
             let url = cfg.url.clone().unwrap_or_default();
-            let transport = rmcp::transport::StreamableHttpClientTransport::with_client(client, StreamableHttpClientTransportConfig::with_uri(url));
-            ().serve(transport).await.map_err(|e| AppError::Mcp(e.to_string()))?
+            let transport = rmcp::transport::StreamableHttpClientTransport::with_client(
+                client,
+                StreamableHttpClientTransportConfig::with_uri(url),
+            );
+            ().serve(transport)
+                .await
+                .map_err(|e| AppError::Mcp(e.to_string()))?
         }
         other => return Err(AppError::Invalid(format!("unknown transport {other}"))),
     };
-    let tools = service.list_all_tools().await.map_err(|e| AppError::Mcp(format!("tools/list failed: {e}")))?;
+    let tools = service
+        .list_all_tools()
+        .await
+        .map_err(|e| AppError::Mcp(format!("tools/list failed: {e}")))?;
     Ok(Connection { service, tools })
 }
 
@@ -357,7 +456,10 @@ fn result_to_text(result: &Value) -> String {
                 }
                 Some("resource_link") => parts.push(format!(
                     "Link: {} {}",
-                    item["name"].as_str().or(item["title"].as_str()).unwrap_or(""),
+                    item["name"]
+                        .as_str()
+                        .or(item["title"].as_str())
+                        .unwrap_or(""),
                     item["uri"].as_str().unwrap_or("")
                 )),
                 Some("image") => parts.push("[image omitted]".into()),
@@ -377,16 +479,21 @@ fn result_to_text(result: &Value) -> String {
 #[async_trait]
 impl ToolProvider for McpManager {
     async fn available_tools(&self) -> Vec<ToolSpec> {
-        let Ok(servers) = self.db.list_mcp_servers() else { return Vec::new() };
+        let Ok(servers) = self.db.list_mcp_servers() else {
+            return Vec::new();
+        };
         let inner = self.inner.read().await;
         let mut taken = Vec::new();
         let mut out = Vec::new();
         for cfg in servers.iter().filter(|s| s.enabled) {
-            let Some(conn) = inner.connections.get(&cfg.id) else { continue };
+            let Some(conn) = inner.connections.get(&cfg.id) else {
+                continue;
+            };
             let perms = self.db.tool_permissions(&cfg.id).unwrap_or_default();
             for t in &conn.tools {
                 let category = tool_category(t);
-                let permission = self.effective_permission(category, perms.get(t.name.as_ref()).copied());
+                let permission =
+                    self.effective_permission(category, perms.get(t.name.as_ref()).copied());
                 if permission == Permission::Deny {
                     continue;
                 }
@@ -438,7 +545,11 @@ impl ToolProvider for McpManager {
         } else {
             Vec::new()
         };
-        Ok(ToolOutput { text, is_error: result.is_error.unwrap_or(false), sources })
+        Ok(ToolOutput {
+            text,
+            is_error: result.is_error.unwrap_or(false),
+            sources,
+        })
     }
 }
 
@@ -449,14 +560,23 @@ mod tests {
     #[test]
     fn tool_names_are_sanitized_and_unique() {
         let mut taken = Vec::new();
-        assert_eq!(llm_tool_name("Web Search", "searxng_web_search", &mut taken), "web_search__searxng_web_search");
-        assert_eq!(llm_tool_name("Web Search", "searxng_web_search", &mut taken), "web_search__searxng_web_search2");
+        assert_eq!(
+            llm_tool_name("Web Search", "searxng_web_search", &mut taken),
+            "web_search__searxng_web_search"
+        );
+        assert_eq!(
+            llm_tool_name("Web Search", "searxng_web_search", &mut taken),
+            "web_search__searxng_web_search2"
+        );
         assert!(llm_tool_name(&"x".repeat(100), "y", &mut taken).len() <= 64);
     }
 
     #[test]
     fn content_flattening() {
         let v = serde_json::json!({"content":[{"type":"text","text":"a"},{"type":"image","data":"..."},{"type":"resource","resource":{"uri":"https://x","text":"b"}}]});
-        assert_eq!(result_to_text(&v), "a\n\n[image omitted]\n\nResource https://x:\nb");
+        assert_eq!(
+            result_to_text(&v),
+            "a\n\n[image omitted]\n\nResource https://x:\nb"
+        );
     }
 }

@@ -75,7 +75,8 @@ impl LocalCapabilityManager {
         match self.ai.test_connection().await {
             Ok(status) => {
                 let models = self.resolver.models(true).await.unwrap_or_default();
-                let selection = crate::services::ai::model_selector::select_model(&models, &self.hardware);
+                let selection =
+                    crate::services::ai::model_selector::select_model(&models, &self.hardware);
                 LmStudioCapability {
                     connected: true,
                     server_url: status.server_url,
@@ -84,7 +85,11 @@ impl LocalCapabilityManager {
                     error_code: None,
                     error_detail: None,
                     selection,
-                    loaded_models: models.iter().filter(|m| m.loaded).map(|m| m.id.clone()).collect(),
+                    loaded_models: models
+                        .iter()
+                        .filter(|m| m.loaded)
+                        .map(|m| m.id.clone())
+                        .collect(),
                 }
             }
             Err(e) => LmStudioCapability {
@@ -104,8 +109,18 @@ impl LocalCapabilityManager {
         let installed = self.store.installed();
         let voices = self.tts.voices();
         let gender = settings.tts.preferred_gender.clone();
-        let voice_name = |lang: Lang, pref: &str| crate::services::tts::voices::select_voice(&voices, lang, pref, &gender).map(|v| v.name);
-        let pref_for = |code: &str| settings.language.entries.iter().find(|e| e.code == code).map(|e| e.tts_voice.clone()).unwrap_or_else(|| "auto".into());
+        let voice_name = |lang: Lang, pref: &str| {
+            crate::services::tts::voices::select_voice(&voices, lang, pref, &gender).map(|v| v.name)
+        };
+        let pref_for = |code: &str| {
+            settings
+                .language
+                .entries
+                .iter()
+                .find(|e| e.code == code)
+                .map(|e| e.tts_voice.clone())
+                .unwrap_or_else(|| "auto".into())
+        };
         VoiceCapability {
             stt_model: self.stt.resolve_model(&settings.stt).map(|m| m.id),
             vad_ready: installed.iter().any(|m| m.kind == ModelKind::Vad),
@@ -120,9 +135,10 @@ impl LocalCapabilityManager {
 
     pub async fn scan(&self, settings: &Settings) -> CapabilityReport {
         let lm_studio = self.detect_lm_studio().await;
-        let (microphones, audio_outputs) = tokio::task::spawn_blocking(|| (devices::list_inputs(), devices::list_outputs()))
-            .await
-            .unwrap_or_default();
+        let (microphones, audio_outputs) =
+            tokio::task::spawn_blocking(|| (devices::list_inputs(), devices::list_outputs()))
+                .await
+                .unwrap_or_default();
         let statuses = self.mcp.statuses().await.unwrap_or_default();
         CapabilityReport {
             lm_studio,

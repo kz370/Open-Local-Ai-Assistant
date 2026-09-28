@@ -45,7 +45,17 @@ impl VoiceInfo {
 
 /// Speakers of kokoro-en-v0_19 in speaker-id order.
 const KOKORO_V019_SPEAKERS: &[&str] = &[
-    "af", "af_bella", "af_nicole", "af_sarah", "af_sky", "am_adam", "am_michael", "bf_emma", "bf_isabella", "bm_george", "bm_lewis",
+    "af",
+    "af_bella",
+    "af_nicole",
+    "af_sarah",
+    "af_sky",
+    "am_adam",
+    "am_michael",
+    "bf_emma",
+    "bf_isabella",
+    "bm_george",
+    "bm_lewis",
 ];
 /// Preferred default English speaker (warm, clear American English).
 const KOKORO_DEFAULT: &str = "af_bella";
@@ -86,7 +96,12 @@ pub fn list_voices(installed: &[InstalledModel]) -> Vec<VoiceInfo> {
             Engine::Kokoro if m.languages.first().map(|l| l != "en").unwrap_or(false) => {
                 // Kokoro "multi-lang" exports speak English and Chinese only,
                 // so they must not be offered as a voice for every language.
-                let lang = m.languages.first().filter(|l| *l != "*").cloned().unwrap_or_else(|| "en".into());
+                let lang = m
+                    .languages
+                    .first()
+                    .filter(|l| *l != "*")
+                    .cloned()
+                    .unwrap_or_else(|| "en".into());
                 for sid in 0..8 {
                     out.push(VoiceInfo {
                         id: format!("{}:{sid}", m.id),
@@ -110,7 +125,11 @@ pub fn list_voices(installed: &[InstalledModel]) -> Vec<VoiceInfo> {
                         speaker_id: sid as i32,
                         engine: m.engine,
                         // Rank the preferred default speaker first.
-                        quality: if *speaker == KOKORO_DEFAULT { quality + 1 } else { quality },
+                        quality: if *speaker == KOKORO_DEFAULT {
+                            quality + 1
+                        } else {
+                            quality
+                        },
                         gender: kokoro_gender(speaker).into(),
                     });
                 }
@@ -126,7 +145,11 @@ pub fn list_voices(installed: &[InstalledModel]) -> Vec<VoiceInfo> {
                         speaker_id: sid,
                         engine: m.engine,
                         quality: if sid == 0 { quality + 1 } else { quality },
-                        gender: if sid % 2 == 0 { "female".into() } else { "male".into() },
+                        gender: if sid % 2 == 0 {
+                            "female".into()
+                        } else {
+                            "male".into()
+                        },
                     });
                 }
             }
@@ -154,7 +177,13 @@ pub fn list_voices(installed: &[InstalledModel]) -> Vec<VoiceInfo> {
                     speaker_id: 0,
                     engine: m.engine,
                     quality,
-                    gender: if m.gender.is_empty() { catalog::find(&m.id).map(|c| c.gender.to_string()).unwrap_or_default() } else { m.gender.clone() },
+                    gender: if m.gender.is_empty() {
+                        catalog::find(&m.id)
+                            .map(|c| c.gender.to_string())
+                            .unwrap_or_default()
+                    } else {
+                        m.gender.clone()
+                    },
                 });
             }
             _ => {}
@@ -165,7 +194,12 @@ pub fn list_voices(installed: &[InstalledModel]) -> Vec<VoiceInfo> {
 
 /// `preference` is "auto" or a voice id from settings; `gender` is
 /// "any" | "female" | "male" and only steers the automatic choice.
-pub fn select_voice(voices: &[VoiceInfo], lang: Lang, preference: &str, gender: &str) -> Option<VoiceInfo> {
+pub fn select_voice(
+    voices: &[VoiceInfo],
+    lang: Lang,
+    preference: &str,
+    gender: &str,
+) -> Option<VoiceInfo> {
     if preference != "auto" {
         if let Some(v) = voices.iter().find(|v| v.id == preference && v.speaks(lang)) {
             return Some(v.clone());
@@ -221,18 +255,58 @@ mod tests {
             installed("piper-de_DE-thorsten-medium-int8", Engine::Piper, "de"),
             installed("piper-ar_JO-kareem-medium", Engine::Piper, "ar"),
         ]);
-        assert_eq!(select_voice(&voices, Lang::En, "auto", "any").unwrap().speaker_id, 1); // af_bella
-        assert_eq!(select_voice(&voices, Lang::De, "auto", "any").unwrap().model_id, "piper-de_DE-thorsten-high");
-        assert_eq!(select_voice(&voices, Lang::Ar, "auto", "any").unwrap().language, "ar");
+        assert_eq!(
+            select_voice(&voices, Lang::En, "auto", "any")
+                .unwrap()
+                .speaker_id,
+            1
+        ); // af_bella
+        assert_eq!(
+            select_voice(&voices, Lang::De, "auto", "any")
+                .unwrap()
+                .model_id,
+            "piper-de_DE-thorsten-high"
+        );
+        assert_eq!(
+            select_voice(&voices, Lang::Ar, "auto", "any")
+                .unwrap()
+                .language,
+            "ar"
+        );
         // Manual override
-        assert_eq!(select_voice(&voices, Lang::En, "kokoro-en-v0_19:9", "any").unwrap().speaker_id, 9);
+        assert_eq!(
+            select_voice(&voices, Lang::En, "kokoro-en-v0_19:9", "any")
+                .unwrap()
+                .speaker_id,
+            9
+        );
         // An override for another language is ignored (prevents wrong-language voice)
-        assert_eq!(select_voice(&voices, Lang::De, "kokoro-en-v0_19:9", "any").unwrap().language, "de");
+        assert_eq!(
+            select_voice(&voices, Lang::De, "kokoro-en-v0_19:9", "any")
+                .unwrap()
+                .language,
+            "de"
+        );
         // A gender preference steers the automatic choice
-        assert_eq!(select_voice(&voices, Lang::En, "auto", "male").unwrap().gender, "male");
-        assert_eq!(select_voice(&voices, Lang::En, "auto", "female").unwrap().gender, "female");
+        assert_eq!(
+            select_voice(&voices, Lang::En, "auto", "male")
+                .unwrap()
+                .gender,
+            "male"
+        );
+        assert_eq!(
+            select_voice(&voices, Lang::En, "auto", "female")
+                .unwrap()
+                .gender,
+            "female"
+        );
         // ...and falls back when that language has no such voice
-        assert_eq!(select_voice(&voices, Lang::De, "auto", "female").unwrap().language, "de");
+        assert_eq!(
+            select_voice(&voices, Lang::De, "auto", "female")
+                .unwrap()
+                .language,
+            "de"
+        );
     }
 
     #[test]
@@ -243,18 +317,45 @@ mod tests {
         assert_eq!(only[5].name, "Alex (male, lively)");
         assert_eq!(only[5].gender, "male");
         for lang in [Lang::En, Lang::Ar, Lang::De] {
-            assert_eq!(select_voice(&only, lang, "auto", "any").unwrap().engine, Engine::Supertonic);
+            assert_eq!(
+                select_voice(&only, lang, "auto", "any").unwrap().engine,
+                Engine::Supertonic
+            );
         }
-        assert_eq!(select_voice(&only, Lang::De, "auto", "male").unwrap().gender, "male");
+        assert_eq!(
+            select_voice(&only, Lang::De, "auto", "male")
+                .unwrap()
+                .gender,
+            "male"
+        );
         // A manual pick of a multilingual voice holds for any language.
-        assert_eq!(select_voice(&only, Lang::Ar, "supertonic-3-int8:7", "any").unwrap().speaker_id, 7);
+        assert_eq!(
+            select_voice(&only, Lang::Ar, "supertonic-3-int8:7", "any")
+                .unwrap()
+                .speaker_id,
+            7
+        );
 
         // A voice made for the language wins at equal quality...
-        let mut mixed = list_voices(&[installed("piper-de_DE-thorsten-medium-int8", Engine::Piper, "de")]);
+        let mut mixed = list_voices(&[installed(
+            "piper-de_DE-thorsten-medium-int8",
+            Engine::Piper,
+            "de",
+        )]);
         mixed.extend(only.clone());
-        assert_eq!(select_voice(&mixed, Lang::De, "auto", "any").unwrap().engine, Engine::Piper);
+        assert_eq!(
+            select_voice(&mixed, Lang::De, "auto", "any")
+                .unwrap()
+                .engine,
+            Engine::Piper
+        );
         // ...and the multilingual one fills the languages that have none.
-        assert_eq!(select_voice(&mixed, Lang::Ar, "auto", "any").unwrap().engine, Engine::Supertonic);
+        assert_eq!(
+            select_voice(&mixed, Lang::Ar, "auto", "any")
+                .unwrap()
+                .engine,
+            Engine::Supertonic
+        );
     }
 
     #[test]

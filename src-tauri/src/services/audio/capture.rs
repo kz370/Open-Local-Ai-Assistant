@@ -28,34 +28,42 @@ pub struct Capture {
 impl Capture {
     pub fn start(device_id: Option<&str>) -> AppResult<(Capture, Receiver<CaptureEvent>)> {
         let device = devices::input_device(device_id)?;
-        let device_name = device.description().map(|d| d.name().to_string()).unwrap_or_else(|_| device.to_string());
+        let device_name = device
+            .description()
+            .map(|d| d.name().to_string())
+            .unwrap_or_else(|_| device.to_string());
         let (tx, rx) = mpsc::channel();
         let stop = Arc::new(AtomicBool::new(false));
         let (ready_tx, ready_rx) = mpsc::channel::<Result<(), String>>();
         let stop2 = stop.clone();
         let thread = std::thread::Builder::new()
             .name("mic-capture".into())
-            .spawn(move || {
-                match build_stream(&device, tx.clone()) {
-                    Ok(stream) => {
-                        if let Err(e) = stream.play() {
-                            let _ = ready_tx.send(Err(e.to_string()));
-                            return;
-                        }
-                        let _ = ready_tx.send(Ok(()));
-                        while !stop2.load(Ordering::Relaxed) {
-                            std::thread::sleep(Duration::from_millis(20));
-                        }
-                        drop(stream);
+            .spawn(move || match build_stream(&device, tx.clone()) {
+                Ok(stream) => {
+                    if let Err(e) = stream.play() {
+                        let _ = ready_tx.send(Err(e.to_string()));
+                        return;
                     }
-                    Err(e) => {
-                        let _ = ready_tx.send(Err(e));
+                    let _ = ready_tx.send(Ok(()));
+                    while !stop2.load(Ordering::Relaxed) {
+                        std::thread::sleep(Duration::from_millis(20));
                     }
+                    drop(stream);
+                }
+                Err(e) => {
+                    let _ = ready_tx.send(Err(e));
                 }
             })
             .map_err(|e| AppError::Audio(e.to_string()))?;
         match ready_rx.recv_timeout(Duration::from_secs(5)) {
-            Ok(Ok(())) => Ok((Capture { stop, thread: Some(thread), device_name }, rx)),
+            Ok(Ok(())) => Ok((
+                Capture {
+                    stop,
+                    thread: Some(thread),
+                    device_name,
+                },
+                rx,
+            )),
             Ok(Err(e)) => Err(AppError::Audio(format!("could not open microphone: {e}"))),
             Err(_) => Err(AppError::Audio("microphone did not start in time".into())),
         }
@@ -95,7 +103,11 @@ fn build_stream(device: &cpal::Device, tx: Sender<CaptureEvent>) -> Result<cpal:
     }
 }
 
-fn build<T>(device: &cpal::Device, config: cpal::StreamConfig, tx: Sender<CaptureEvent>) -> Result<cpal::Stream, String>
+fn build<T>(
+    device: &cpal::Device,
+    config: cpal::StreamConfig,
+    tx: Sender<CaptureEvent>,
+) -> Result<cpal::Stream, String>
 where
     T: SizedSample + Send + 'static,
     f32: cpal::FromSample<T>,
@@ -103,7 +115,10 @@ where
     let channels = config.channels.max(1) as usize;
     let rate = config.sample_rate;
     let resampler = if rate != STT_SAMPLE_RATE {
-        Some(sherpa_onnx::LinearResampler::create(rate as i32, STT_SAMPLE_RATE as i32).ok_or("resampler")?)
+        Some(
+            sherpa_onnx::LinearResampler::create(rate as i32, STT_SAMPLE_RATE as i32)
+                .ok_or("resampler")?,
+        )
     } else {
         None
     };
@@ -121,7 +136,13 @@ where
             move |data: &[T], _| {
                 let mono: Vec<f32> = data
                     .chunks(channels)
-                    .map(|frame| frame.iter().map(|s| <f32 as cpal::FromSample<T>>::from_sample_(*s)).sum::<f32>() / channels as f32)
+                    .map(|frame| {
+                        frame
+                            .iter()
+                            .map(|s| <f32 as cpal::FromSample<T>>::from_sample_(*s))
+                            .sum::<f32>()
+                            / channels as f32
+                    })
                     .collect();
                 let mut out = match &resampler {
                     Some(r) => r.resample(&mono, false),

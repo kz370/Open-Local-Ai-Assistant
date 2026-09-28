@@ -12,11 +12,17 @@ async fn finds_results_for_a_real_query() {
     let db = Arc::new(Db::open_in_memory().unwrap());
     let settings = Arc::new(SettingsStore::load(db).unwrap());
     let search = WebSearch::new(settings);
-    let results = search.search("rust programming language", 5).await.expect("search failed");
+    let results = search
+        .search("rust programming language", 5)
+        .await
+        .expect("search failed");
     for r in &results {
         println!("{} -> {}\n   {}", r.title, r.url, r.snippet);
     }
-    assert!(!results.is_empty(), "DuckDuckGo returned no parsable results");
+    assert!(
+        !results.is_empty(),
+        "DuckDuckGo returned no parsable results"
+    );
     assert!(results.iter().all(|r| r.url.starts_with("http")));
 }
 
@@ -34,7 +40,10 @@ async fn searches_a_searxng_instance() {
         })
         .unwrap();
     let search = WebSearch::new(settings);
-    let (results, engine) = search.search_uncached("rust programming language").await.expect("search failed");
+    let (results, engine) = search
+        .search_uncached("rust programming language")
+        .await
+        .expect("search failed");
     println!("{engine}: {} results", results.len());
     assert!(engine.starts_with("SearXNG"), "fell back to {engine}");
     assert!(!results.is_empty());
@@ -46,11 +55,16 @@ async fn searches_a_searxng_instance() {
 async fn searches_a_public_instance_from_searx_space() {
     let db = Arc::new(Db::open_in_memory().unwrap());
     let settings = Arc::new(SettingsStore::load(db).unwrap());
-    settings.update(|s| s.search.searxng_source = "public".into()).unwrap();
+    settings
+        .update(|s| s.search.searxng_source = "public".into())
+        .unwrap();
     let search = WebSearch::new(settings);
     let list = search.public_instances(true).await.expect("list failed");
     println!("{} public instances, first {:?}", list.len(), list.first());
-    let (results, engine) = search.search_uncached("rust programming language").await.expect("search failed");
+    let (results, engine) = search
+        .search_uncached("rust programming language")
+        .await
+        .expect("search failed");
     println!("{engine}: {} results", results.len());
     assert!(!results.is_empty());
 }
@@ -69,7 +83,13 @@ async fn primary_engine_goes_first() {
         })
         .unwrap();
     let search = WebSearch::new(settings);
-    let (results, engine) = search.search_uncached("rust programming language").await.expect("search failed");
+    let (results, engine) = search
+        .search_uncached("rust programming language")
+        .await
+        .expect("search failed");
     println!("{engine}: {} results", results.len());
-    assert!(engine == "Built-in search (DuckDuckGo)", "answered by {engine}");
+    assert!(
+        engine == "Built-in search (DuckDuckGo)",
+        "answered by {engine}"
+    );
 }

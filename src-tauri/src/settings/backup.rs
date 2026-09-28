@@ -34,7 +34,9 @@ pub fn strip_keys(s: &mut Settings) {
 pub fn encrypt(settings: &Settings) -> AppResult<Vec<u8>> {
     let json = serde_json::to_vec(settings)?;
     let nonce = ChaCha20Poly1305::generate_nonce(&mut OsRng);
-    let sealed = cipher().encrypt(&nonce, json.as_slice()).map_err(|_| AppError::Other("could not encrypt the backup".into()))?;
+    let sealed = cipher()
+        .encrypt(&nonce, json.as_slice())
+        .map_err(|_| AppError::Other("could not encrypt the backup".into()))?;
     let mut out = Vec::with_capacity(MAGIC.len() + NONCE_LEN + sealed.len());
     out.extend_from_slice(MAGIC);
     out.extend_from_slice(&nonce);
@@ -43,13 +45,19 @@ pub fn encrypt(settings: &Settings) -> AppResult<Vec<u8>> {
 }
 
 pub fn decrypt(bytes: &[u8]) -> AppResult<Settings> {
-    let invalid = || AppError::Invalid("this is not an Open Local Assistant settings backup, or it was damaged".into());
+    let invalid = || {
+        AppError::Invalid(
+            "this is not an Open Local Assistant settings backup, or it was damaged".into(),
+        )
+    };
     let rest = bytes.strip_prefix(MAGIC).ok_or_else(invalid)?;
     if rest.len() <= NONCE_LEN {
         return Err(invalid());
     }
     let (nonce, sealed) = rest.split_at(NONCE_LEN);
-    let json = cipher().decrypt(Nonce::from_slice(nonce), sealed).map_err(|_| invalid())?;
+    let json = cipher()
+        .decrypt(Nonce::from_slice(nonce), sealed)
+        .map_err(|_| invalid())?;
     serde_json::from_slice(&json).map_err(|_| invalid())
 }
 
@@ -73,7 +81,9 @@ pub fn merge_import(current: &Settings, mut imported: Settings) -> Settings {
         if s.ai.provider == provider {
             s.ai.api_key.clone()
         } else {
-            s.ai.provider_profiles.get(provider).and_then(|p| p.api_key.clone())
+            s.ai.provider_profiles
+                .get(provider)
+                .and_then(|p| p.api_key.clone())
         }
     };
     if imported.ai.api_key.is_none() {
@@ -83,7 +93,12 @@ pub fn merge_import(current: &Settings, mut imported: Settings) -> Settings {
     for p in providers {
         if imported.ai.provider_profiles[&p].api_key.is_none() {
             let key = key_of(current, &p);
-            imported.ai.provider_profiles.get_mut(&p).expect("listed").api_key = key;
+            imported
+                .ai
+                .provider_profiles
+                .get_mut(&p)
+                .expect("listed")
+                .api_key = key;
         }
     }
     imported.sanitize();
@@ -101,7 +116,10 @@ mod tests {
         s.general.assistant_name = "Backup Test".into();
         let bytes = encrypt(&s).unwrap();
         let text = String::from_utf8_lossy(&bytes);
-        assert!(!text.contains("sk-secret-123") && !text.contains("Backup Test"), "backup must not be readable");
+        assert!(
+            !text.contains("sk-secret-123") && !text.contains("Backup Test"),
+            "backup must not be readable"
+        );
         assert_eq!(decrypt(&bytes).unwrap(), s);
     }
 
@@ -118,7 +136,13 @@ mod tests {
     fn strips_every_key() {
         let mut s = Settings::default();
         s.ai.api_key = Some("a".into());
-        s.ai.provider_profiles.insert("openrouter".into(), super::super::ProviderProfile { api_key: Some("b".into()), ..Default::default() });
+        s.ai.provider_profiles.insert(
+            "openrouter".into(),
+            super::super::ProviderProfile {
+                api_key: Some("b".into()),
+                ..Default::default()
+            },
+        );
         strip_keys(&mut s);
         assert!(s.ai.api_key.is_none() && s.ai.provider_profiles["openrouter"].api_key.is_none());
     }

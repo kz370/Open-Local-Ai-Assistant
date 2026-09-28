@@ -374,7 +374,8 @@ services::search::PublicInstance      — url, search_success: f64, search_time:
 services::dictation::DictationResult  — raw, inserted, corrected, correction_error: Option<String>
 services::dictation::ReviewPending    — raw, corrected, correction_error: Option<String>
 services::chat::orchestrator::SendInput  — turn_id, conversation_id: Option<String>, text,
-  spoken_language: Option<String>, voice, attachment_ids: Vec<String>
+  spoken_language: Option<String>, voice, attachment_ids: Vec<String>,
+  web_search_enabled: Option<bool>, mcp_enabled: Option<HashMap<String, bool>>
 services::chat::orchestrator::ChatEvent  — 8 variants, see IPC WIRE FORMAT
 
 ================================================================================

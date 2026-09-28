@@ -21,9 +21,12 @@ pub struct AudioDevices {
 
 #[tauri::command]
 pub async fn audio_devices() -> CmdResult<AudioDevices> {
-    tokio::task::spawn_blocking(|| AudioDevices { inputs: devices::list_inputs(), outputs: devices::list_outputs() })
-        .await
-        .map_err(|e| AppError::Audio(e.to_string()))
+    tokio::task::spawn_blocking(|| AudioDevices {
+        inputs: devices::list_inputs(),
+        outputs: devices::list_outputs(),
+    })
+    .await
+    .map_err(|e| AppError::Audio(e.to_string()))
 }
 
 #[tauri::command]
@@ -69,7 +72,11 @@ pub async fn dictation_retry(app: AppHandle) {
 
 /// Remembers the language chosen in the dictation overlay.
 #[tauri::command]
-pub fn dictation_set_language(app: AppHandle, state: State<'_, AppState>, language: String) -> CmdResult<()> {
+pub fn dictation_set_language(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    language: String,
+) -> CmdResult<()> {
     let saved = state.settings.update(|s| s.dictation.language = language)?;
     let _ = app.emit("settings://changed", &saved);
     Ok(())
@@ -128,7 +135,12 @@ pub fn tts_voices(state: State<'_, AppState>) -> Vec<VoiceInfo> {
 }
 
 #[tauri::command]
-pub fn tts_speak(state: State<'_, AppState>, text: String, language: Option<String>, tag: Option<String>) -> CmdResult<()> {
+pub fn tts_speak(
+    state: State<'_, AppState>,
+    text: String,
+    language: Option<String>,
+    tag: Option<String>,
+) -> CmdResult<()> {
     let lang = language.as_deref().and_then(Lang::from_code);
     if !state.tts.player.is_available() {
         return Err(AppError::Tts("audio output is not available".into()));
@@ -143,17 +155,28 @@ pub fn tts_speak(state: State<'_, AppState>, text: String, language: Option<Stri
 #[tauri::command]
 /// Speaks `text` with the voice chosen for `language`, or a sample sentence
 /// in that language when `text` is empty.
-pub fn tts_test(state: State<'_, AppState>, language: String, text: Option<String>) -> CmdResult<()> {
+pub fn tts_test(
+    state: State<'_, AppState>,
+    language: String,
+    text: Option<String>,
+) -> CmdResult<()> {
     let lang = Lang::from_code(&language).ok_or_else(|| AppError::Invalid("language".into()))?;
     if !state.tts.is_available(lang) {
-        return Err(AppError::Tts(format!("no local voice installed for {}", lang.english_name())));
+        return Err(AppError::Tts(format!(
+            "no local voice installed for {}",
+            lang.english_name()
+        )));
     }
     let sample = match lang {
         Lang::En => "Hello! This is your local assistant speaking. Everything you hear was generated on this computer.",
         Lang::De => "Hallo! Hier spricht dein lokaler Assistent. Alles, was du hörst, wurde auf diesem Computer erzeugt.",
         Lang::Ar => "مَرْحَبًا! أَنَا مُسَاعِدُكَ الْمَحَلِّيُّ، وَكُلُّ مَا تَسْمَعُهُ صَوْتٌ مُوَلَّدٌ عَلَى هَذَا الْحَاسُوبِ.",
     };
-    let text = text.as_deref().map(str::trim).filter(|t| !t.is_empty()).unwrap_or(sample);
+    let text = text
+        .as_deref()
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+        .unwrap_or(sample);
     state.tts.speak("test-voice", text, Some(lang));
     Ok(())
 }
@@ -173,12 +196,18 @@ pub struct TtsState {
 #[tauri::command]
 pub fn tts_set_paused(state: State<'_, AppState>, paused: bool) -> TtsState {
     state.tts.set_paused(paused);
-    TtsState { speaking: state.tts.has_audio(), paused: state.tts.is_paused() }
+    TtsState {
+        speaking: state.tts.has_audio(),
+        paused: state.tts.is_paused(),
+    }
 }
 
 #[tauri::command]
 pub fn tts_state(state: State<'_, AppState>) -> TtsState {
-    TtsState { speaking: state.tts.has_audio(), paused: state.tts.is_paused() }
+    TtsState {
+        speaking: state.tts.has_audio(),
+        paused: state.tts.is_paused(),
+    }
 }
 
 #[tauri::command]
@@ -218,21 +247,32 @@ pub fn models_catalog(state: State<'_, AppState>) -> Vec<CatalogEntry> {
 }
 
 #[tauri::command]
-pub fn models_installed(state: State<'_, AppState>) -> Vec<crate::services::models::InstalledModel> {
+pub fn models_installed(
+    state: State<'_, AppState>,
+) -> Vec<crate::services::models::InstalledModel> {
     state.models.installed()
 }
 
 /// Model folders the app found but cannot run (e.g. PyTorch-only exports).
 #[tauri::command]
-pub fn models_incompatible(state: State<'_, AppState>) -> Vec<crate::services::models::IncompatibleModel> {
+pub fn models_incompatible(
+    state: State<'_, AppState>,
+) -> Vec<crate::services::models::IncompatibleModel> {
     state.models.incompatible()
 }
 
 /// Downloads the given catalog models sequentially. Called only after the
 /// user explicitly confirmed the download in the UI.
 #[tauri::command]
-pub async fn models_download(app: AppHandle, state: State<'_, AppState>, ids: Vec<String>) -> CmdResult<()> {
-    let models: Vec<&'static CatalogModel> = ids.iter().filter_map(|id| crate::services::models::catalog::find(id)).collect();
+pub async fn models_download(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    ids: Vec<String>,
+) -> CmdResult<()> {
+    let models: Vec<&'static CatalogModel> = ids
+        .iter()
+        .filter_map(|id| crate::services::models::catalog::find(id))
+        .collect();
     if models.len() != ids.len() {
         return Err(AppError::Invalid("unknown model id".into()));
     }
@@ -244,7 +284,8 @@ pub async fn models_download(app: AppHandle, state: State<'_, AppState>, ids: Ve
         let mut d = state.downloads.lock().unwrap_or_else(|p| p.into_inner());
         for m in &models {
             if !store.is_installed(m.id) {
-                d.entry(m.id.to_string()).or_insert_with(CancellationToken::new);
+                d.entry(m.id.to_string())
+                    .or_insert_with(CancellationToken::new);
             }
         }
     }
@@ -253,7 +294,11 @@ pub async fn models_download(app: AppHandle, state: State<'_, AppState>, ids: Ve
         for m in models {
             let state = app2.state::<AppState>();
             if store.is_installed(m.id) {
-                state.downloads.lock().unwrap_or_else(|p| p.into_inner()).remove(m.id);
+                state
+                    .downloads
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner())
+                    .remove(m.id);
                 continue;
             }
             let token = {
@@ -268,7 +313,11 @@ pub async fn models_download(app: AppHandle, state: State<'_, AppState>, ids: Ve
                 let _ = emitter.emit("models://download", p);
             };
             let result = download::install(&store, m, token, &progress).await;
-            state.downloads.lock().unwrap_or_else(|p| p.into_inner()).remove(m.id);
+            state
+                .downloads
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .remove(m.id);
             // A new model may now be the automatic pick: swap it in.
             if result.is_ok() && state.stt.loaded_model().is_some() {
                 super::memory::reload_stt(&app2);
@@ -278,7 +327,6 @@ pub async fn models_download(app: AppHandle, state: State<'_, AppState>, ids: Ve
     });
     Ok(())
 }
-
 
 // ---------------------------------------------------------------------------
 // GPU pack: optional CUDA libraries for the local speech models.
@@ -313,7 +361,9 @@ pub async fn gpu_install(app: AppHandle, state: State<'_, AppState>) -> CmdResul
         if d.contains_key(GPU_DOWNLOAD) {
             return Ok(()); // already running
         }
-        d.entry(GPU_DOWNLOAD.to_string()).or_insert_with(CancellationToken::new).clone()
+        d.entry(GPU_DOWNLOAD.to_string())
+            .or_insert_with(CancellationToken::new)
+            .clone()
     };
     let data_dir = state.paths.data_dir.clone();
     let app2 = app.clone();
@@ -324,7 +374,11 @@ pub async fn gpu_install(app: AppHandle, state: State<'_, AppState>) -> CmdResul
         };
         let result = crate::services::gpu::install(&data_dir, token, &progress).await;
         let state = app2.state::<AppState>();
-        state.downloads.lock().unwrap_or_else(|p| p.into_inner()).remove(GPU_DOWNLOAD);
+        state
+            .downloads
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .remove(GPU_DOWNLOAD);
         if result.is_ok() {
             // Installing it is what the user asked for, so switch it on too.
             let _ = crate::services::gpu::set_enabled(&state.paths.data_dir, true);
@@ -336,7 +390,12 @@ pub async fn gpu_install(app: AppHandle, state: State<'_, AppState>) -> CmdResul
 
 #[tauri::command]
 pub fn gpu_cancel(state: State<'_, AppState>) {
-    if let Some(t) = state.downloads.lock().unwrap_or_else(|p| p.into_inner()).get(GPU_DOWNLOAD) {
+    if let Some(t) = state
+        .downloads
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .get(GPU_DOWNLOAD)
+    {
         t.cancel();
     }
 }
@@ -351,7 +410,12 @@ pub fn gpu_remove(app: AppHandle, state: State<'_, AppState>) -> CmdResult<()> {
 
 #[tauri::command]
 pub fn models_cancel(state: State<'_, AppState>, id: String) {
-    if let Some(t) = state.downloads.lock().unwrap_or_else(|p| p.into_inner()).get(&id) {
+    if let Some(t) = state
+        .downloads
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .get(&id)
+    {
         t.cancel();
     }
 }
@@ -359,7 +423,9 @@ pub fn models_cancel(state: State<'_, AppState>, id: String) {
 #[tauri::command]
 pub fn models_delete(app: AppHandle, state: State<'_, AppState>, id: String) -> CmdResult<()> {
     if crate::services::models::PROTECTED_MODELS.contains(&id.as_str()) {
-        return Err(AppError::Invalid("built-in models cannot be deleted".into()));
+        return Err(AppError::Invalid(
+            "built-in models cannot be deleted".into(),
+        ));
     }
     // Only the model in memory has to go first (its files are in use); then
     // the next pick is loaded so speech keeps working without a wait.

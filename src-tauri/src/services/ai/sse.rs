@@ -15,7 +15,9 @@ impl SseDecoder {
         let mut events = Vec::new();
         loop {
             // An event ends at a blank line; accept both \n\n and \r\n\r\n.
-            let Some((end, sep_len)) = find_event_end(&self.buf) else { break };
+            let Some((end, sep_len)) = find_event_end(&self.buf) else {
+                break;
+            };
             let raw: Vec<u8> = self.buf.drain(..end + sep_len).collect();
             let text = String::from_utf8_lossy(&raw[..end]);
             let data: Vec<&str> = text
@@ -91,9 +93,18 @@ pub struct ToolCallAccumulator {
 impl ToolCallAccumulator {
     pub fn push(&mut self, deltas: Vec<DeltaToolCall>) {
         for d in deltas {
-            let idx = d.index.unwrap_or(self.calls.len().saturating_sub(if d.id.is_some() { 0 } else { 1 }));
+            let idx = d
+                .index
+                .unwrap_or(
+                    self.calls
+                        .len()
+                        .saturating_sub(if d.id.is_some() { 0 } else { 1 }),
+                );
             while self.calls.len() <= idx {
-                self.calls.push(ToolCall { kind: "function".into(), ..Default::default() });
+                self.calls.push(ToolCall {
+                    kind: "function".into(),
+                    ..Default::default()
+                });
             }
             let call = &mut self.calls[idx];
             if let Some(id) = d.id {
@@ -169,10 +180,18 @@ mod tests {
     fn accumulates_tool_calls() {
         let mut acc = ToolCallAccumulator::default();
         let parse = |s: &str| serde_json::from_str::<Vec<DeltaToolCall>>(s).unwrap();
-        acc.push(parse(r#"[{"index":0,"id":"c1","function":{"name":"web_","arguments":""}}]"#));
-        acc.push(parse(r#"[{"index":0,"function":{"name":"search","arguments":"{\"q\":"}}]"#));
-        acc.push(parse(r#"[{"index":0,"function":{"arguments":"\"php\"}"}}]"#));
-        acc.push(parse(r#"[{"index":1,"id":"c2","function":{"name":"fetch"}}]"#));
+        acc.push(parse(
+            r#"[{"index":0,"id":"c1","function":{"name":"web_","arguments":""}}]"#,
+        ));
+        acc.push(parse(
+            r#"[{"index":0,"function":{"name":"search","arguments":"{\"q\":"}}]"#,
+        ));
+        acc.push(parse(
+            r#"[{"index":0,"function":{"arguments":"\"php\"}"}}]"#,
+        ));
+        acc.push(parse(
+            r#"[{"index":1,"id":"c2","function":{"name":"fetch"}}]"#,
+        ));
         let calls = acc.finish();
         assert_eq!(calls.len(), 2);
         assert_eq!(calls[0].id, "c1");

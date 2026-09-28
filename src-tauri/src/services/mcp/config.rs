@@ -48,13 +48,22 @@ impl McpServerConfig {
         }
         match self.transport.as_str() {
             "stdio" => {
-                if self.command.as_deref().map(str::trim).unwrap_or("").is_empty() {
-                    return Err(AppError::Invalid("command is required for local (stdio) servers".into()));
+                if self
+                    .command
+                    .as_deref()
+                    .map(str::trim)
+                    .unwrap_or("")
+                    .is_empty()
+                {
+                    return Err(AppError::Invalid(
+                        "command is required for local (stdio) servers".into(),
+                    ));
                 }
             }
             "http" => {
                 let url = self.url.as_deref().unwrap_or("");
-                let parsed = url::Url::parse(url).map_err(|_| AppError::Invalid("a valid URL is required".into()))?;
+                let parsed = url::Url::parse(url)
+                    .map_err(|_| AppError::Invalid("a valid URL is required".into()))?;
                 if !matches!(parsed.scheme(), "http" | "https") {
                     return Err(AppError::Invalid("URL must use http or https".into()));
                 }
@@ -66,14 +75,20 @@ impl McpServerConfig {
 }
 
 fn row_to_config(r: &rusqlite::Row) -> rusqlite::Result<McpServerConfig> {
-    let json_map = |s: Option<String>| -> BTreeMap<String, String> { s.and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default() };
+    let json_map = |s: Option<String>| -> BTreeMap<String, String> {
+        s.and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_default()
+    };
     Ok(McpServerConfig {
         id: r.get(0)?,
         name: r.get(1)?,
         description: r.get::<_, Option<String>>(2)?.unwrap_or_default(),
         transport: r.get(3)?,
         command: r.get(4)?,
-        args: r.get::<_, Option<String>>(5)?.and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default(),
+        args: r
+            .get::<_, Option<String>>(5)?
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_default(),
         env: json_map(r.get(6)?),
         url: r.get(7)?,
         headers: json_map(r.get(8)?),
@@ -88,14 +103,20 @@ const COLS: &str = "id, name, description, transport, command, args_json, env_js
 impl Db {
     pub fn list_mcp_servers(&self) -> AppResult<Vec<McpServerConfig>> {
         let conn = self.conn();
-        let mut stmt = conn.prepare(&format!("SELECT {COLS} FROM mcp_servers ORDER BY created_at"))?;
+        let mut stmt = conn.prepare(&format!(
+            "SELECT {COLS} FROM mcp_servers ORDER BY created_at"
+        ))?;
         let rows = stmt.query_map([], row_to_config)?;
         Ok(rows.collect::<Result<_, _>>()?)
     }
 
     pub fn get_mcp_server(&self, id: &str) -> AppResult<McpServerConfig> {
         self.conn()
-            .query_row(&format!("SELECT {COLS} FROM mcp_servers WHERE id = ?1"), [id], row_to_config)
+            .query_row(
+                &format!("SELECT {COLS} FROM mcp_servers WHERE id = ?1"),
+                [id],
+                row_to_config,
+            )
             .optional()?
             .ok_or_else(|| AppError::NotFound(format!("MCP server {id}")))
     }
@@ -135,19 +156,27 @@ impl Db {
     }
 
     pub fn set_mcp_enabled(&self, id: &str, enabled: bool) -> AppResult<()> {
-        self.conn().execute("UPDATE mcp_servers SET enabled = ?1 WHERE id = ?2", params![enabled as i64, id])?;
+        self.conn().execute(
+            "UPDATE mcp_servers SET enabled = ?1 WHERE id = ?2",
+            params![enabled as i64, id],
+        )?;
         Ok(())
     }
 
     pub fn delete_mcp_server(&self, id: &str) -> AppResult<()> {
-        self.conn().execute("DELETE FROM mcp_servers WHERE id = ?1", [id])?;
+        self.conn()
+            .execute("DELETE FROM mcp_servers WHERE id = ?1", [id])?;
         Ok(())
     }
 
     pub fn tool_permissions(&self, server_id: &str) -> AppResult<BTreeMap<String, Permission>> {
         let conn = self.conn();
-        let mut stmt = conn.prepare("SELECT tool_name, permission FROM mcp_tool_permissions WHERE server_id = ?1")?;
-        let rows = stmt.query_map([server_id], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
+        let mut stmt = conn.prepare(
+            "SELECT tool_name, permission FROM mcp_tool_permissions WHERE server_id = ?1",
+        )?;
+        let rows = stmt.query_map([server_id], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+        })?;
         let mut out = BTreeMap::new();
         for row in rows {
             let (tool, perm) = row?;
@@ -158,8 +187,16 @@ impl Db {
         Ok(out)
     }
 
-    pub fn set_tool_permission(&self, server_id: &str, tool: &str, permission: Permission) -> AppResult<()> {
-        let p = serde_json::to_value(permission)?.as_str().unwrap_or("ask").to_string();
+    pub fn set_tool_permission(
+        &self,
+        server_id: &str,
+        tool: &str,
+        permission: Permission,
+    ) -> AppResult<()> {
+        let p = serde_json::to_value(permission)?
+            .as_str()
+            .unwrap_or("ask")
+            .to_string();
         self.conn().execute(
             "INSERT INTO mcp_tool_permissions (server_id, tool_name, permission) VALUES (?1, ?2, ?3)
              ON CONFLICT(server_id, tool_name) DO UPDATE SET permission = excluded.permission",
@@ -169,7 +206,10 @@ impl Db {
     }
 
     pub fn clear_tool_permissions(&self, server_id: &str) -> AppResult<()> {
-        self.conn().execute("DELETE FROM mcp_tool_permissions WHERE server_id = ?1", [server_id])?;
+        self.conn().execute(
+            "DELETE FROM mcp_tool_permissions WHERE server_id = ?1",
+            [server_id],
+        )?;
         Ok(())
     }
 }
@@ -194,25 +234,52 @@ pub fn lmstudio_mcp_json_path() -> Option<PathBuf> {
 
 /// Parses `{"mcpServers": {name: {command, args, env} | {url, headers}}}`.
 pub fn parse_mcp_json(json: &str) -> AppResult<Vec<McpServerConfig>> {
-    let v: serde_json::Value = serde_json::from_str(json).map_err(|e| AppError::Invalid(format!("invalid mcp.json: {e}")))?;
-    let servers = v.get("mcpServers").and_then(|s| s.as_object()).ok_or_else(|| AppError::Invalid("mcp.json has no mcpServers".into()))?;
+    let v: serde_json::Value = serde_json::from_str(json)
+        .map_err(|e| AppError::Invalid(format!("invalid mcp.json: {e}")))?;
+    let servers = v
+        .get("mcpServers")
+        .and_then(|s| s.as_object())
+        .ok_or_else(|| AppError::Invalid("mcp.json has no mcpServers".into()))?;
     let str_map = |v: Option<&serde_json::Value>| -> BTreeMap<String, String> {
         v.and_then(|m| m.as_object())
-            .map(|m| m.iter().filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string()))).collect())
+            .map(|m| {
+                m.iter()
+                    .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                    .collect()
+            })
             .unwrap_or_default()
     };
     let mut out = Vec::new();
     for (name, cfg) in servers {
-        let url = cfg.get("url").or_else(|| cfg.get("serverUrl")).and_then(|u| u.as_str()).map(str::to_string);
-        let command = cfg.get("command").and_then(|c| c.as_str()).map(str::to_string);
-        let transport = if url.is_some() && command.is_none() { "http" } else { "stdio" };
+        let url = cfg
+            .get("url")
+            .or_else(|| cfg.get("serverUrl"))
+            .and_then(|u| u.as_str())
+            .map(str::to_string);
+        let command = cfg
+            .get("command")
+            .and_then(|c| c.as_str())
+            .map(str::to_string);
+        let transport = if url.is_some() && command.is_none() {
+            "http"
+        } else {
+            "stdio"
+        };
         out.push(McpServerConfig {
             id: String::new(),
             name: name.clone(),
             description: String::new(),
             transport: transport.into(),
             command,
-            args: cfg.get("args").and_then(|a| a.as_array()).map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect()).unwrap_or_default(),
+            args: cfg
+                .get("args")
+                .and_then(|a| a.as_array())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|x| x.as_str().map(str::to_string))
+                        .collect()
+                })
+                .unwrap_or_default(),
             env: str_map(cfg.get("env")),
             url,
             headers: str_map(cfg.get("headers")),
@@ -244,19 +311,32 @@ mod tests {
         assert!(!s.enabled, "imported servers must start disabled");
         let n = servers.iter().find(|s| s.name == "notion").unwrap();
         assert_eq!(n.transport, "http");
-        assert!(servers.iter().find(|s| s.name == "bad").unwrap().validate().is_err());
+        assert!(servers
+            .iter()
+            .find(|s| s.name == "bad")
+            .unwrap()
+            .validate()
+            .is_err());
     }
 
     #[test]
     fn crud_and_permissions() {
         let db = Db::open_in_memory().unwrap();
-        let mut cfg = parse_mcp_json(SAMPLE).unwrap().into_iter().find(|s| s.name == "searxng").unwrap();
+        let mut cfg = parse_mcp_json(SAMPLE)
+            .unwrap()
+            .into_iter()
+            .find(|s| s.name == "searxng")
+            .unwrap();
         cfg = db.save_mcp_server(&cfg).unwrap();
         assert_eq!(db.list_mcp_servers().unwrap().len(), 1);
         db.set_mcp_enabled(&cfg.id, true).unwrap();
         assert!(db.get_mcp_server(&cfg.id).unwrap().enabled);
-        db.set_tool_permission(&cfg.id, "search", Permission::Deny).unwrap();
-        assert_eq!(db.tool_permissions(&cfg.id).unwrap()["search"], Permission::Deny);
+        db.set_tool_permission(&cfg.id, "search", Permission::Deny)
+            .unwrap();
+        assert_eq!(
+            db.tool_permissions(&cfg.id).unwrap()["search"],
+            Permission::Deny
+        );
         db.delete_mcp_server(&cfg.id).unwrap();
         assert!(db.tool_permissions(&cfg.id).unwrap().is_empty());
     }

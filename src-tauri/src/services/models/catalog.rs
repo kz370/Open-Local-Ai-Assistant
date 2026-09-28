@@ -110,9 +110,36 @@ pub static CATALOG: &[CatalogModel] = &[
         name: "Whisper large-v3 turbo (int8)",
         languages: &["*"],
         files: &[
-            RemoteFile { url: url!(HF, "/sherpa-onnx-whisper-turbo/resolve/main/turbo-encoder.int8.onnx"), sha256: Some("b02dcdf54f348741e93fe732b67d933c8dcb6735655f710640143081db38878b"), dest: "encoder.int8.onnx", archive: false, size_bytes: 674_700_000 },
-            RemoteFile { url: url!(HF, "/sherpa-onnx-whisper-turbo/resolve/main/turbo-decoder.int8.onnx"), sha256: Some("20accd02388482eb3a46bd615631adfdc85e1eb2c7db9ea3f02a40ffe6b81547"), dest: "decoder.int8.onnx", archive: false, size_bytes: 361_100_000 },
-            RemoteFile { url: url!(HF, "/sherpa-onnx-whisper-turbo/resolve/main/turbo-tokens.txt"), sha256: Some(WHISPER_TOKENS_SHA), dest: "tokens.txt", archive: false, size_bytes: 816_730 },
+            RemoteFile {
+                url: url!(
+                    HF,
+                    "/sherpa-onnx-whisper-turbo/resolve/main/turbo-encoder.int8.onnx"
+                ),
+                sha256: Some("b02dcdf54f348741e93fe732b67d933c8dcb6735655f710640143081db38878b"),
+                dest: "encoder.int8.onnx",
+                archive: false,
+                size_bytes: 674_700_000,
+            },
+            RemoteFile {
+                url: url!(
+                    HF,
+                    "/sherpa-onnx-whisper-turbo/resolve/main/turbo-decoder.int8.onnx"
+                ),
+                sha256: Some("20accd02388482eb3a46bd615631adfdc85e1eb2c7db9ea3f02a40ffe6b81547"),
+                dest: "decoder.int8.onnx",
+                archive: false,
+                size_bytes: 361_100_000,
+            },
+            RemoteFile {
+                url: url!(
+                    HF,
+                    "/sherpa-onnx-whisper-turbo/resolve/main/turbo-tokens.txt"
+                ),
+                sha256: Some(WHISPER_TOKENS_SHA),
+                dest: "tokens.txt",
+                archive: false,
+                size_bytes: 816_730,
+            },
         ],
         quality: 5,
         min_ram_gb: 12,
@@ -126,9 +153,36 @@ pub static CATALOG: &[CatalogModel] = &[
         name: "Whisper small (int8)",
         languages: &["*"],
         files: &[
-            RemoteFile { url: url!(HF, "/sherpa-onnx-whisper-small/resolve/main/small-encoder.int8.onnx"), sha256: Some("4cbe7b22fa9026b843b60a68640c747de05bafb1a11b57edc0e66c232d9f33a9"), dest: "encoder.int8.onnx", archive: false, size_bytes: 112_400_000 },
-            RemoteFile { url: url!(HF, "/sherpa-onnx-whisper-small/resolve/main/small-decoder.int8.onnx"), sha256: Some("acad50b5c782696e91b55914cc5ab4f756f1532f76e22aa6fc615f39fb69a8ee"), dest: "decoder.int8.onnx", archive: false, size_bytes: 262_200_000 },
-            RemoteFile { url: url!(HF, "/sherpa-onnx-whisper-small/resolve/main/small-tokens.txt"), sha256: Some(WHISPER_TOKENS_SHA), dest: "tokens.txt", archive: false, size_bytes: 816_730 },
+            RemoteFile {
+                url: url!(
+                    HF,
+                    "/sherpa-onnx-whisper-small/resolve/main/small-encoder.int8.onnx"
+                ),
+                sha256: Some("4cbe7b22fa9026b843b60a68640c747de05bafb1a11b57edc0e66c232d9f33a9"),
+                dest: "encoder.int8.onnx",
+                archive: false,
+                size_bytes: 112_400_000,
+            },
+            RemoteFile {
+                url: url!(
+                    HF,
+                    "/sherpa-onnx-whisper-small/resolve/main/small-decoder.int8.onnx"
+                ),
+                sha256: Some("acad50b5c782696e91b55914cc5ab4f756f1532f76e22aa6fc615f39fb69a8ee"),
+                dest: "decoder.int8.onnx",
+                archive: false,
+                size_bytes: 262_200_000,
+            },
+            RemoteFile {
+                url: url!(
+                    HF,
+                    "/sherpa-onnx-whisper-small/resolve/main/small-tokens.txt"
+                ),
+                sha256: Some(WHISPER_TOKENS_SHA),
+                dest: "tokens.txt",
+                archive: false,
+                size_bytes: 816_730,
+            },
         ],
         quality: 3,
         min_ram_gb: 4,
@@ -142,7 +196,13 @@ pub static CATALOG: &[CatalogModel] = &[
         engine: Engine::SileroVad,
         name: "Silero VAD",
         languages: &["*"],
-        files: &[RemoteFile { url: url!(GH_ASR, "/silero_vad.onnx"), sha256: Some("9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6"), dest: "silero_vad.onnx", archive: false, size_bytes: 629_000 }],
+        files: &[RemoteFile {
+            url: url!(GH_ASR, "/silero_vad.onnx"),
+            sha256: Some("9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6"),
+            dest: "silero_vad.onnx",
+            archive: false,
+            size_bytes: 629_000,
+        }],
         quality: 5,
         min_ram_gb: 1,
         license: "MIT",
@@ -155,7 +215,16 @@ pub static CATALOG: &[CatalogModel] = &[
         engine: Engine::Supertonic,
         name: "Supertonic 3 multilingual - small (31 languages)",
         languages: &["*"],
-        files: &[RemoteFile { url: url!(GH_TTS, "/sherpa-onnx-supertonic-3-tts-int8-2026-05-11.tar.bz2"), sha256: Some("82fa96f91c4ef8abaae3a14a3f4153facf88bed821d1f7331cec2700f432c427"), dest: "", archive: true, size_bytes: 128_774_318 }],
+        files: &[RemoteFile {
+            url: url!(
+                GH_TTS,
+                "/sherpa-onnx-supertonic-3-tts-int8-2026-05-11.tar.bz2"
+            ),
+            sha256: Some("82fa96f91c4ef8abaae3a14a3f4153facf88bed821d1f7331cec2700f432c427"),
+            dest: "",
+            archive: true,
+            size_bytes: 128_774_318,
+        }],
         quality: 3,
         min_ram_gb: 2,
         license: "OpenRAIL-M",
@@ -185,7 +254,11 @@ mod tests {
             }
         }
         for lang in ["en", "ar", "de"] {
-            assert!(CATALOG.iter().any(|m| m.kind == ModelKind::Tts && (m.languages.contains(&lang) || m.languages.contains(&"*"))), "no TTS voice for {lang}");
+            assert!(
+                CATALOG.iter().any(|m| m.kind == ModelKind::Tts
+                    && (m.languages.contains(&lang) || m.languages.contains(&"*"))),
+                "no TTS voice for {lang}"
+            );
         }
         assert!(find("silero-vad").is_some());
         assert_eq!(find("whisper-small").unwrap().files[0].url, "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-small/resolve/main/small-encoder.int8.onnx");

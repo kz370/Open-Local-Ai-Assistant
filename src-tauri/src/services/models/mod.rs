@@ -100,7 +100,10 @@ fn dir_size(dir: &Path) -> u64 {
 impl ModelStore {
     pub fn new(dir: PathBuf) -> Self {
         let _ = std::fs::create_dir_all(&dir);
-        Self { dir, extra_dirs: std::sync::RwLock::new(Vec::new()) }
+        Self {
+            dir,
+            extra_dirs: std::sync::RwLock::new(Vec::new()),
+        }
     }
 
     pub fn set_extra_dirs(&self, dirs: Vec<PathBuf>) {
@@ -108,7 +111,10 @@ impl ModelStore {
     }
 
     pub fn extra_dirs(&self) -> Vec<PathBuf> {
-        self.extra_dirs.read().unwrap_or_else(|p| p.into_inner()).clone()
+        self.extra_dirs
+            .read()
+            .unwrap_or_else(|p| p.into_inner())
+            .clone()
     }
 
     pub fn model_dir(&self, id: &str) -> PathBuf {
@@ -139,7 +145,13 @@ impl ModelStore {
     /// (`models--org--name/snapshots/<hash>/`).
     fn scan_dir(&self, root: &Path, skip_catalog: bool, out: &mut Vec<InstalledModel>) {
         const MAX_DEPTH: usize = 4;
-        fn walk(store: &ModelStore, dir: &Path, depth: usize, skip_catalog: bool, out: &mut Vec<InstalledModel>) {
+        fn walk(
+            store: &ModelStore,
+            dir: &Path,
+            depth: usize,
+            skip_catalog: bool,
+            out: &mut Vec<InstalledModel>,
+        ) {
             let name = folder_name(dir);
             if let Some(m) = detect_custom(dir, &name) {
                 if !out.iter().any(|x| x.path == m.path) {
@@ -150,7 +162,9 @@ impl ModelStore {
             if depth >= MAX_DEPTH {
                 return;
             }
-            let Ok(entries) = std::fs::read_dir(dir) else { return };
+            let Ok(entries) = std::fs::read_dir(dir) else {
+                return;
+            };
             for e in entries.flatten() {
                 let path = e.path();
                 let child = e.file_name().to_string_lossy().to_string();
@@ -201,7 +215,10 @@ impl ModelStore {
         // Guard against path traversal through crafted ids; only models inside
         // the app's own folder can be deleted.
         if id.contains(['/', '\\']) || id.contains("..") || !dir.starts_with(&self.dir) {
-            return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "invalid model id"));
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "invalid model id",
+            ));
         }
         if dir.exists() {
             std::fs::remove_dir_all(dir)?;
@@ -211,7 +228,15 @@ impl ModelStore {
 }
 
 /// Folders that never contain a usable model on their own.
-const SKIP_DIRS: &[&str] = &["espeak-ng-data", "test_wavs", "blobs", "refs", ".git", "dict", "node_modules"];
+const SKIP_DIRS: &[&str] = &[
+    "espeak-ng-data",
+    "test_wavs",
+    "blobs",
+    "refs",
+    ".git",
+    "dict",
+    "node_modules",
+];
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -226,7 +251,9 @@ fn scan_incompatible(dir: &Path, depth: usize, out: &mut Vec<IncompatibleModel>)
     if depth > 4 || out.len() > 50 {
         return;
     }
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     let mut files = Vec::new();
     let mut subdirs = Vec::new();
     for e in entries.flatten() {
@@ -240,7 +267,13 @@ fn scan_incompatible(dir: &Path, depth: usize, out: &mut Vec<IncompatibleModel>)
         }
     }
     let has_onnx = files.iter().any(|f| f.ends_with(".onnx"));
-    let torch = files.iter().any(|f| f.ends_with(".safetensors") || f.ends_with(".pt") || f.ends_with(".pth") || f.ends_with(".ckpt") || f == "pytorch_model.bin");
+    let torch = files.iter().any(|f| {
+        f.ends_with(".safetensors")
+            || f.ends_with(".pt")
+            || f.ends_with(".pth")
+            || f.ends_with(".ckpt")
+            || f == "pytorch_model.bin"
+    });
     let gguf = files.iter().any(|f| f.ends_with(".gguf"));
     if !has_onnx && (torch || gguf) {
         out.push(IncompatibleModel {
@@ -263,7 +296,9 @@ fn scan_incompatible(dir: &Path, depth: usize, out: &mut Vec<IncompatibleModel>)
 }
 
 fn folder_name(p: &Path) -> String {
-    p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default()
+    p.file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_default()
 }
 
 fn from_catalog(m: &CatalogModel, path: PathBuf) -> InstalledModel {
@@ -284,14 +319,32 @@ fn from_catalog(m: &CatalogModel, path: PathBuf) -> InstalledModel {
 
 fn files_with(dir: &Path, pred: impl Fn(&str) -> bool) -> Vec<String> {
     std::fs::read_dir(dir)
-        .map(|it| it.flatten().map(|e| e.file_name().to_string_lossy().to_string()).filter(|n| pred(n)).collect())
+        .map(|it| {
+            it.flatten()
+                .map(|e| e.file_name().to_string_lossy().to_string())
+                .filter(|n| pred(n))
+                .collect()
+        })
         .unwrap_or_default()
 }
 
 /// Guesses the voice gender from a Piper voice folder/file name.
 fn piper_gender(name: &str) -> &'static str {
-    const FEMALE: &[&str] = &["eva", "kerstin", "ramona", "amy", "jenny", "female", "lessac", "dii", "hfc_female", "ljspeech"];
-    const MALE: &[&str] = &["thorsten", "kareem", "karlsson", "pavoque", "miro", "ryan", "joe", "male", "alan", "danny"];
+    const FEMALE: &[&str] = &[
+        "eva",
+        "kerstin",
+        "ramona",
+        "amy",
+        "jenny",
+        "female",
+        "lessac",
+        "dii",
+        "hfc_female",
+        "ljspeech",
+    ];
+    const MALE: &[&str] = &[
+        "thorsten", "kareem", "karlsson", "pavoque", "miro", "ryan", "joe", "male", "alan", "danny",
+    ];
     let n = name.to_ascii_lowercase();
     if FEMALE.iter().any(|k| n.contains(k)) {
         "female"
@@ -305,7 +358,10 @@ fn piper_gender(name: &str) -> &'static str {
 /// Friendly name for a folder, resolving Hugging Face cache layouts
 /// (`models--org--name/snapshots/<hash>` -> `org/name`).
 pub fn display_name(dir: &Path, fallback: &str) -> String {
-    let is_snapshot = dir.parent().map(|p| folder_name(p) == "snapshots").unwrap_or(false);
+    let is_snapshot = dir
+        .parent()
+        .map(|p| folder_name(p) == "snapshots")
+        .unwrap_or(false);
     if is_snapshot {
         if let Some(repo) = dir.parent().and_then(|p| p.parent()).map(folder_name) {
             if let Some(rest) = repo.strip_prefix("models--") {
@@ -327,37 +383,71 @@ pub fn detect_custom(dir: &Path, name: &str) -> Option<InstalledModel> {
     if onnx.is_empty() {
         return None;
     }
-    let base = |kind, eng, langs: Vec<String>, family: Option<String>, streaming: bool, gender: &str| InstalledModel {
-        id: name.to_string(),
-        name: name.to_string(),
-        kind,
-        engine: eng,
-        languages: langs,
-        path: dir.to_path_buf(),
-        source: "custom".into(),
-        family,
-        streaming,
-        gender: gender.to_string(),
-        size_bytes: dir_size(dir),
-    };
+    let base =
+        |kind, eng, langs: Vec<String>, family: Option<String>, streaming: bool, gender: &str| {
+            InstalledModel {
+                id: name.to_string(),
+                name: name.to_string(),
+                kind,
+                engine: eng,
+                languages: langs,
+                path: dir.to_path_buf(),
+                source: "custom".into(),
+                family,
+                streaming,
+                gender: gender.to_string(),
+                size_bytes: dir_size(dir),
+            }
+        };
 
-    if onnx.iter().any(|n| n.starts_with("silero_vad") || n.starts_with("ten-vad")) {
-        return Some(base(ModelKind::Vad, Engine::SileroVad, vec!["*".into()], None, false, ""));
+    if onnx
+        .iter()
+        .any(|n| n.starts_with("silero_vad") || n.starts_with("ten-vad"))
+    {
+        return Some(base(
+            ModelKind::Vad,
+            Engine::SileroVad,
+            vec!["*".into()],
+            None,
+            false,
+            "",
+        ));
     }
     if has("tts.json") && has("unicode_indexer.bin") && has("voice.bin") {
-        return Some(base(ModelKind::Tts, Engine::Supertonic, vec!["*".into()], None, false, "mixed"));
+        return Some(base(
+            ModelKind::Tts,
+            Engine::Supertonic,
+            vec!["*".into()],
+            None,
+            false,
+            "mixed",
+        ));
     }
     if has("voices.bin") && !tokens.is_empty() {
         // Kitten and Kokoro both ship a voices.bin; the folder name tells them apart.
-        let engine = if path_hint.contains("kitten") { Engine::Kitten } else { Engine::Kokoro };
-        let lang = if path_hint.contains("arab") || path_hint.contains("nabra") || path_hint.contains("-ar") {
+        let engine = if path_hint.contains("kitten") {
+            Engine::Kitten
+        } else {
+            Engine::Kokoro
+        };
+        let lang = if path_hint.contains("arab")
+            || path_hint.contains("nabra")
+            || path_hint.contains("-ar")
+        {
             "ar"
         } else if path_hint.contains("multi-lang") || path_hint.contains("multilang") {
             "*"
         } else {
             "en"
         };
-        return Some(base(ModelKind::Tts, engine, vec![lang.into()], None, false, "mixed"));
+        return Some(base(
+            ModelKind::Tts,
+            engine,
+            vec![lang.into()],
+            None,
+            false,
+            "mixed",
+        ));
     }
     if !tokens.is_empty() && (has("espeak-ng-data") || has("lexicon.txt")) {
         // Piper voices are named like "de_DE-thorsten-high.onnx".
@@ -368,7 +458,14 @@ pub fn detect_custom(dir: &Path, name: &str) -> Option<InstalledModel> {
             .map(|p| p.to_ascii_lowercase())
             .unwrap_or_else(|| "*".into());
         let gender = piper_gender(&format!("{name} {file}"));
-        return Some(base(ModelKind::Tts, Engine::Piper, vec![lang], None, false, gender));
+        return Some(base(
+            ModelKind::Tts,
+            Engine::Piper,
+            vec![lang],
+            None,
+            false,
+            gender,
+        ));
     }
     // Speech recognition: Whisper, transducers, CTC, SenseVoice, Moonshine…
     if let Some(files) = engine::detect(dir) {
@@ -399,8 +496,16 @@ mod tests {
     fn recommends_the_small_starter_set() {
         let rec = recommend(&HardwareInfo::default());
         assert_eq!(rec.stt, "whisper-small");
-        let total: u64 = rec.ids().iter().filter_map(|id| catalog::find(id)).map(|m| m.download_size()).sum();
-        assert!(total < 550_000_000, "starter download should stay small, got {total}");
+        let total: u64 = rec
+            .ids()
+            .iter()
+            .filter_map(|id| catalog::find(id))
+            .map(|m| m.download_size())
+            .sum();
+        assert!(
+            total < 550_000_000,
+            "starter download should stay small, got {total}"
+        );
         for id in rec.ids() {
             assert!(catalog::find(id).is_some(), "{id}");
         }
@@ -413,7 +518,11 @@ mod tests {
 
         let w = root.path().join("my-whisper");
         std::fs::create_dir_all(&w).unwrap();
-        for f in ["medium-encoder.onnx", "medium-decoder.onnx", "medium-tokens.txt"] {
+        for f in [
+            "medium-encoder.onnx",
+            "medium-decoder.onnx",
+            "medium-tokens.txt",
+        ] {
             std::fs::write(w.join(f), b"x").unwrap();
         }
         let p = root.path().join("vits-piper-de_DE-eva_k-x_low");
@@ -426,7 +535,10 @@ mod tests {
 
         let installed = store.installed();
         assert_eq!(installed.len(), 2, "{installed:?}");
-        let piper = installed.iter().find(|m| m.engine == Engine::Piper).unwrap();
+        let piper = installed
+            .iter()
+            .find(|m| m.engine == Engine::Piper)
+            .unwrap();
         assert_eq!(piper.languages, vec!["de"]);
         assert_eq!(piper.gender, "female");
         let whisper = installed.iter().find(|m| m.kind == ModelKind::Stt).unwrap();
@@ -434,7 +546,11 @@ mod tests {
         assert!(!whisper.streaming);
         assert!(whisper.size_bytes > 0);
 
-        std::fs::write(root.path().join("whisper-small").join(COMPLETE_MARKER), b"{}").unwrap();
+        std::fs::write(
+            root.path().join("whisper-small").join(COMPLETE_MARKER),
+            b"{}",
+        )
+        .unwrap();
         assert!(store.is_installed("whisper-small"));
         assert!(store.delete("../evil").is_err());
         store.delete("whisper-small").unwrap();
@@ -444,7 +560,9 @@ mod tests {
     #[test]
     fn bundled_vad_matches_catalog_and_restores_itself() {
         use sha2::{Digest, Sha256};
-        let expected = catalog::find(BUILT_IN_VAD).unwrap().files[0].sha256.unwrap();
+        let expected = catalog::find(BUILT_IN_VAD).unwrap().files[0]
+            .sha256
+            .unwrap();
         assert_eq!(hex::encode(Sha256::digest(BUNDLED_VAD)), expected);
 
         let root = tempfile::tempdir().unwrap();
@@ -463,13 +581,21 @@ mod tests {
         let store = ModelStore::new(app_dir.path().to_path_buf());
 
         // A usable ONNX voice inside a Hugging Face cache snapshot folder.
-        let snap = cache.path().join("models--k2-fsa--kitten-nano").join("snapshots").join("abc123");
+        let snap = cache
+            .path()
+            .join("models--k2-fsa--kitten-nano")
+            .join("snapshots")
+            .join("abc123");
         std::fs::create_dir_all(snap.join("espeak-ng-data")).unwrap();
         for f in ["model.int8.onnx", "voices.bin", "tokens.txt"] {
             std::fs::write(snap.join(f), b"x").unwrap();
         }
         // PyTorch-only models cannot run in the local ONNX engine.
-        let torch = cache.path().join("models--Qwen--Qwen3-TTS-12Hz-0.6B-Base").join("snapshots").join("def456");
+        let torch = cache
+            .path()
+            .join("models--Qwen--Qwen3-TTS-12Hz-0.6B-Base")
+            .join("snapshots")
+            .join("def456");
         std::fs::create_dir_all(&torch).unwrap();
         for f in ["config.json", "model.safetensors"] {
             std::fs::write(torch.join(f), b"x").unwrap();
@@ -480,7 +606,10 @@ mod tests {
         assert_eq!(installed.len(), 1, "{installed:?}");
         assert_eq!(installed[0].engine, Engine::Kitten);
         assert_eq!(installed[0].kind, ModelKind::Tts);
-        assert_eq!(installed[0].name, "k2-fsa/kitten-nano", "Hugging Face folders show the repo name");
+        assert_eq!(
+            installed[0].name, "k2-fsa/kitten-nano",
+            "Hugging Face folders show the repo name"
+        );
 
         let bad = store.incompatible();
         assert_eq!(bad.len(), 1, "{bad:?}");
@@ -495,9 +624,17 @@ mod tests {
         let store = ModelStore::new(app_dir.path().to_path_buf());
 
         // Mirrors the user's layout: <extra>/parakeet-models/<model>/
-        let nested = other.path().join("parakeet-models").join("nemotron-3.5-asr-streaming-0.6b");
+        let nested = other
+            .path()
+            .join("parakeet-models")
+            .join("nemotron-3.5-asr-streaming-0.6b");
         std::fs::create_dir_all(&nested).unwrap();
-        for f in ["encoder.int8.onnx", "decoder.int8.onnx", "joiner.int8.onnx", "tokens.txt"] {
+        for f in [
+            "encoder.int8.onnx",
+            "decoder.int8.onnx",
+            "joiner.int8.onnx",
+            "tokens.txt",
+        ] {
             std::fs::write(nested.join(f), b"x").unwrap();
         }
         assert!(store.installed().is_empty());

@@ -16,7 +16,10 @@ enum Sink {
     Drop,
 }
 
-const SPANS: &[(&str, &str, Sink)] = &[("<think>", "</think>", Sink::Reasoning), ("<tool_call>", "</tool_call>", Sink::Drop)];
+const SPANS: &[(&str, &str, Sink)] = &[
+    ("<think>", "</think>", Sink::Reasoning),
+    ("<tool_call>", "</tool_call>", Sink::Drop),
+];
 
 impl ThinkFilter {
     /// Returns (visible, reasoning) text for this chunk.
@@ -26,11 +29,16 @@ impl ThinkFilter {
         let mut reasoning = String::new();
         loop {
             let found = match self.open {
-                Some(i) => self.pending.find(SPANS[i].1).map(|pos| (pos, SPANS[i].1.len(), None)),
+                Some(i) => self
+                    .pending
+                    .find(SPANS[i].1)
+                    .map(|pos| (pos, SPANS[i].1.len(), None)),
                 None => SPANS
                     .iter()
                     .enumerate()
-                    .filter_map(|(i, s)| self.pending.find(s.0).map(|pos| (pos, s.0.len(), Some(i))))
+                    .filter_map(|(i, s)| {
+                        self.pending.find(s.0).map(|pos| (pos, s.0.len(), Some(i)))
+                    })
                     .min_by_key(|x| x.0),
             };
             if let Some((pos, tag_len, next)) = found {
@@ -43,7 +51,11 @@ impl ThinkFilter {
             // Keep a possible partial tag at the end for the next chunk.
             let keep = match self.open {
                 Some(i) => partial_suffix_len(&self.pending, SPANS[i].1),
-                None => SPANS.iter().map(|s| partial_suffix_len(&self.pending, s.0)).max().unwrap_or(0),
+                None => SPANS
+                    .iter()
+                    .map(|s| partial_suffix_len(&self.pending, s.0))
+                    .max()
+                    .unwrap_or(0),
             };
             let emit_len = self.pending.len() - keep;
             let out: String = self.pending.drain(..emit_len).collect();
@@ -72,7 +84,9 @@ impl ThinkFilter {
 fn partial_suffix_len(s: &str, tag: &str) -> usize {
     (1..tag.len())
         .rev()
-        .find(|&n| s.len() >= n && s.is_char_boundary(s.len() - n) && tag.starts_with(&s[s.len() - n..]))
+        .find(|&n| {
+            s.len() >= n && s.is_char_boundary(s.len() - n) && tag.starts_with(&s[s.len() - n..])
+        })
         .unwrap_or(0)
 }
 
@@ -108,7 +122,12 @@ mod tests {
     fn drops_leaked_tool_calls() {
         let mut f = ThinkFilter::default();
         let mut vis = String::new();
-        for c in ["Opening it. <tool_", "call> <function=run> <parameter=command> x", " </tool_call> Done", " <tool_call> unclosed"] {
+        for c in [
+            "Opening it. <tool_",
+            "call> <function=run> <parameter=command> x",
+            " </tool_call> Done",
+            " <tool_call> unclosed",
+        ] {
             vis.push_str(&f.push(c).0);
         }
         vis.push_str(&f.finish().0);

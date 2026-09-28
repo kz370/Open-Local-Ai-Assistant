@@ -5,8 +5,8 @@
 const TERMINATORS: &[char] = &['.', '!', '?', '…', '؟', '。'];
 const CLOSERS: &[char] = &['"', '\'', ')', ']', '»', '”', '’'];
 const ABBREVIATIONS: &[&str] = &[
-    "e.g", "i.e", "etc", "vs", "mr", "mrs", "ms", "dr", "prof", "st", "no", "fig", "approx", "z.b", "bzw",
-    "usw", "ca", "nr", "dh", "d.h", "u.a", "inkl", "evtl", "ggf", "vgl",
+    "e.g", "i.e", "etc", "vs", "mr", "mrs", "ms", "dr", "prof", "st", "no", "fig", "approx", "z.b",
+    "bzw", "usw", "ca", "nr", "dh", "d.h", "u.a", "inkl", "evtl", "ggf", "vgl",
 ];
 const MIN_CHARS: usize = 16;
 /// The opening sentence is allowed to be short so the reply starts sooner.
@@ -48,8 +48,16 @@ impl SentenceBuffer {
         if cleaned.is_empty() {
             return;
         }
-        let combined = if self.carry.is_empty() { cleaned } else { format!("{} {}", std::mem::take(&mut self.carry), cleaned) };
-        let min = if self.spoke_once { MIN_CHARS } else { FIRST_MIN_CHARS };
+        let combined = if self.carry.is_empty() {
+            cleaned
+        } else {
+            format!("{} {}", std::mem::take(&mut self.carry), cleaned)
+        };
+        let min = if self.spoke_once {
+            MIN_CHARS
+        } else {
+            FIRST_MIN_CHARS
+        };
         if combined.chars().count() < min && !force {
             self.carry = combined;
         } else if combined.chars().any(char::is_alphanumeric) {
@@ -140,7 +148,10 @@ fn next_boundary(s: &str, at_end: bool) -> Option<usize> {
             continue;
         }
         // Collapse runs like "?!" or "..."
-        if chars.get(i + 1).is_some_and(|(_, n)| TERMINATORS.contains(n)) {
+        if chars
+            .get(i + 1)
+            .is_some_and(|(_, n)| TERMINATORS.contains(n))
+        {
             continue;
         }
         let mut j = i + 1;
@@ -159,7 +170,14 @@ fn next_boundary(s: &str, at_end: bool) -> Option<usize> {
         if c == '.' && is_abbreviation(&s[..pos]) {
             continue;
         }
-        if c == '.' && chars[..i].last().is_some_and(|(_, p)| p.is_ascii_digit()) && s[..pos].split_whitespace().last().is_some_and(|w| w.chars().all(|ch| ch.is_ascii_digit())) && s[..pos].split_whitespace().count() <= 1 {
+        if c == '.'
+            && chars[..i].last().is_some_and(|(_, p)| p.is_ascii_digit())
+            && s[..pos]
+                .split_whitespace()
+                .last()
+                .is_some_and(|w| w.chars().all(|ch| ch.is_ascii_digit()))
+            && s[..pos].split_whitespace().count() <= 1
+        {
             continue; // "1. item" list numbering at line start
         }
         let mut end = chars.get(j).map(|(p, _)| *p).unwrap_or(s.len());
@@ -182,11 +200,16 @@ fn is_abbreviation(before: &str) -> bool {
         .unwrap_or("")
         .to_lowercase();
     // Single letters ("J. Smith") are initials.
-    (word.chars().count() == 1 && word.chars().all(char::is_alphabetic)) || ABBREVIATIONS.contains(&word.as_str())
+    (word.chars().count() == 1 && word.chars().all(char::is_alphabetic))
+        || ABBREVIATIONS.contains(&word.as_str())
 }
 
 fn soft_cut(s: &str) -> usize {
-    let limit = s.char_indices().nth(MAX_CHARS - 40).map(|(i, _)| i).unwrap_or(s.len());
+    let limit = s
+        .char_indices()
+        .nth(MAX_CHARS - 40)
+        .map(|(i, _)| i)
+        .unwrap_or(s.len());
     let region = &s[..limit];
     region
         .rfind([',', '،', ';', ':'])
@@ -215,20 +238,36 @@ mod tests {
         let mut b = SentenceBuffer::default();
         // "Hello!" is spoken as soon as it arrives, the rest follows sentence by sentence.
         assert_eq!(b.push("Hello! I can help"), vec!["Hello!"]);
-        assert_eq!(b.push(" you with that. Let me"), vec!["I can help you with that."]);
+        assert_eq!(
+            b.push(" you with that. Let me"),
+            vec!["I can help you with that."]
+        );
         assert!(b.push(" explain...").is_empty());
         assert_eq!(b.flush(), vec!["Let me explain..."]);
     }
 
     #[test]
     fn decimals_urls_abbreviations() {
-        let out = feed(&["PHP 8.4 was released on php.net today. ", "It adds e.g. property hooks, z.B. neue Features. Done now, really."]);
-        assert_eq!(out, vec!["PHP 8.4 was released on php.net today.", "It adds e.g. property hooks, z.B. neue Features.", "Done now, really."]);
+        let out = feed(&[
+            "PHP 8.4 was released on php.net today. ",
+            "It adds e.g. property hooks, z.B. neue Features. Done now, really.",
+        ]);
+        assert_eq!(
+            out,
+            vec![
+                "PHP 8.4 was released on php.net today.",
+                "It adds e.g. property hooks, z.B. neue Features.",
+                "Done now, really."
+            ]
+        );
     }
 
     #[test]
     fn skips_code_blocks() {
-        let out = feed(&["Here is the code:\n```php\necho 'Hi. There!';\n", "```\nThat prints a greeting."]);
+        let out = feed(&[
+            "Here is the code:\n```php\necho 'Hi. There!';\n",
+            "```\nThat prints a greeting.",
+        ]);
         assert_eq!(out, vec!["Here is the code:", "That prints a greeting."]);
     }
 
@@ -244,14 +283,21 @@ mod tests {
     fn short_fragments_are_merged_after_the_first_one() {
         // The opening fragment is spoken immediately, later short ones are merged.
         let out = feed(&["Yes. Sure. That works perfectly for your case."]);
-        assert_eq!(out, vec!["Yes.", "Sure. That works perfectly for your case."]);
+        assert_eq!(
+            out,
+            vec!["Yes.", "Sure. That works perfectly for your case."]
+        );
     }
 
     #[test]
     fn speech_starts_before_the_answer_is_finished() {
         let mut b = SentenceBuffer::default();
         let first = b.push("Sure! ");
-        assert_eq!(first, vec!["Sure!"], "the first words are released immediately");
+        assert_eq!(
+            first,
+            vec!["Sure!"],
+            "the first words are released immediately"
+        );
         assert!(b.push("Let me check that for ").is_empty());
         assert_eq!(b.push("you. "), vec!["Let me check that for you."]);
     }
@@ -266,7 +312,10 @@ mod tests {
 
     #[test]
     fn markdown_is_cleaned_and_lists_split() {
-        let out = feed(&["## Steps\n", "1. **Open** the [settings](https://x.y/z) page\n2. Click save\n"]);
+        let out = feed(&[
+            "## Steps\n",
+            "1. **Open** the [settings](https://x.y/z) page\n2. Click save\n",
+        ]);
         assert_eq!(out, vec!["Steps", "Open the settings page", "Click save"]);
     }
 }
