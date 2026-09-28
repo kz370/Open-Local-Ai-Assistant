@@ -660,6 +660,13 @@ html[data-route="chat"] #root {
 .composer-spacer {
   flex: 1;
 }
+.composer-sep {
+  width: 1px;
+  height: 18px;
+  background: var(--hairline);
+  border-radius: 1px;
+  flex: none;
+}
 .chip {
   display: inline-flex;
   align-items: center;
@@ -690,6 +697,29 @@ html[data-route="chat"] #root {
   text-overflow: ellipsis;
   white-space: nowrap;
   max-width: 150px;
+}
+.mcp-indicator {
+  display: inline-flex;
+  color: var(--text-muted);
+}
+.chip.on .mcp-indicator {
+  color: var(--accent-soft-text);
+}
+.mcp-count {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-faint);
+  background: var(--card-hover);
+  border-radius: 999px;
+  padding: 1px 6px;
+  line-height: 1.2;
+}
+.chip.mcp-chip {
+  width: auto;
+  min-width: 34px;
+  padding: 0 10px;
+  gap: 6px;
+  justify-content: center;
 }
 .icon-chip {
   width: 30px;
@@ -762,6 +792,9 @@ html[data-route="chat"] #root {
   padding: 6px;
   z-index: 30;
   animation: pop-in 160ms var(--ease);
+}
+.picker-menu.narrow {
+  width: min(220px, calc(100vw - 32px));
 }
 @keyframes pop-in {
   from {

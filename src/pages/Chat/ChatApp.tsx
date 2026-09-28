@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { History, Maximize2, Minimize2, Minus, Pin, PinOff, Plug, Settings, SquarePen, Upload, X, Globe, ChevronDown } from "lucide-react";
+import { History, Maximize2, Minimize2, Minus, Pin, PinOff, Settings, SquarePen, Upload, X } from "lucide-react";
 import { attachPaths } from "../../app/attach";
 import { useChat } from "../../app/chatStore";
 import { ipc, on } from "../../app/ipc";
 import { providerLabel } from "../../app/providers";
 import { useSettings } from "../../app/settingsStore";
 import { modelLabel, t } from "../../app/strings";
-import type { DictationStateEvent, ServerStatus } from "../../app/types";
+import type { DictationStateEvent } from "../../app/types";
 import { useVoice } from "../../app/voiceStore";
 import { Composer, type ComposerHandle } from "../../components/chat/Composer";
 import { MessageBubble } from "../../components/chat/MessageBubble";
@@ -34,17 +34,9 @@ export function ChatApp() {
   const newConversation = useChat((s) => s.newConversation);
   const retryLast = useChat((s) => s.retryLast);
   const send = useChat((s) => s.send);
-  const sessionWebSearch = useChat((s) => s.sessionWebSearch);
-  const sessionMcpEnabled = useChat((s) => s.sessionMcpEnabled);
-  const setSessionWebSearch = useChat((s) => s.setSessionWebSearch);
-  const setSessionMcpEnabled = useChat((s) => s.setSessionMcpEnabled);
-  const resetSessionTools = useChat((s) => s.resetSessionTools);
   const [showHistory, setShowHistory] = useState(false);
   const [lm, setLm] = useState<LmState>("checking");
   const [autoModel, setAutoModel] = useState<string | null>(null);
-  const [mcpServers, setMcpServers] = useState<ServerStatus[]>([]);
-  const [mcpOpen, setMcpOpen] = useState(false);
-  const mcpRootRef = useRef<HTMLDivElement>(null);
   // Morph veil: bubble <-> chat continuity. Starts closed (veiled) so first
   // paint never flashes content before window-shown event.
   const [morph, setMorph] = useState<{ phase: "closed" | "opening" | "idle" | "closing"; fx: number; fy: number }>({ phase: "closed", fx: 396, fy: 616 });
@@ -102,41 +94,6 @@ export function ChatApp() {
   useEffect(() => {
     if (connectionError) setLm("unavailable");
   }, [connectionError]);
-
-  useEffect(() => {
-    if (lm !== "connected") return;
-    let cancelled = false;
-    void ipc.mcpList().then((servers) => {
-      if (cancelled) return;
-      setMcpServers(servers);
-      const mcpDefaults: Record<string, boolean> = {};
-      servers.forEach((s) => { mcpDefaults[s.config.id] = s.config.enabled; });
-      resetSessionTools({
-        webSearch: settings?.search.enabled ?? false,
-        mcp: mcpDefaults,
-      });
-    }).catch(() => setMcpServers([]));
-    return () => { cancelled = true; };
-  }, [lm, settings?.search.enabled, resetSessionTools]);
-
-  useEffect(() => {
-    if (!mcpOpen) return;
-    const onDown = (e: MouseEvent) => {
-      if (mcpRootRef.current && !mcpRootRef.current.contains(e.target as Node)) setMcpOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.stopPropagation();
-        setMcpOpen(false);
-      }
-    };
-    window.addEventListener("mousedown", onDown);
-    window.addEventListener("keydown", onKey, true);
-    return () => {
-      window.removeEventListener("mousedown", onDown);
-      window.removeEventListener("keydown", onKey, true);
-    };
-  }, [mcpOpen]);
 
   // A preset window position is locked; only "custom" can be dragged. Tauri
   // starts a window drag from a document-level mousedown on any
@@ -341,53 +298,6 @@ export function ChatApp() {
           <button className="icon-btn" aria-label={t("app.settings")} title={`${t("app.settings")} (Ctrl+,)`} onClick={() => void ipc.openSettings().catch((err) => console.error("open settings failed", err))}>
             <Settings size={16} />
           </button>
-          {lm === "connected" && (
-            <>
-              <button
-                className={`icon-btn${sessionWebSearch ? " active" : ""}`}
-                aria-label={t("chat.webSearch")}
-                aria-pressed={sessionWebSearch}
-                title={sessionWebSearch ? t("chat.webSearchOn") : t("chat.webSearchOff")}
-                onClick={() => setSessionWebSearch(!sessionWebSearch)}
-              >
-                <Globe size={16} />
-              </button>
-              <span className="header-sep" aria-hidden />
-              <div className="picker" ref={mcpRootRef}>
-                <button type="button" className={`icon-btn${mcpOpen ? " active" : ""}`} aria-haspopup="menu" aria-expanded={mcpOpen} aria-label={t("chat.mcpTools")} title={t("chat.mcpTools")} onClick={() => setMcpOpen((v) => !v)}>
-                  <Plug size={16} />
-                  <ChevronDown size={12} aria-hidden className={mcpOpen ? "flip" : ""} />
-                </button>
-                {mcpOpen && (
-                  <div className="picker-menu" role="menu" aria-label={t("chat.mcpTools")}>
-                    <div className="picker-head">
-                      <span>{t("chat.mcpTools")}</span>
-                    </div>
-                    {mcpServers.length === 0 && <div className="picker-empty">{t("status.notInstalled")}</div>}
-                    {mcpServers.map((s) => {
-                      const on = sessionMcpEnabled[s.config.id] ?? s.config.enabled;
-                      return (
-                        <button
-                          type="button"
-                          key={s.config.id}
-                          role="menuitemcheckbox"
-                          aria-checked={on}
-                          className="picker-item"
-                          onClick={() => setSessionMcpEnabled(s.config.id, !on)}
-                        >
-                          <span className={`picker-dot${on ? " on" : ""}`} aria-hidden />
-                          <span className="picker-text">
-                            <span className="picker-name">{s.config.name}</span>
-                            <span className="picker-sub">{s.state}</span>
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            </>
-          )}
           <span className="header-sep" aria-hidden />
           <button
             className={`icon-btn${pinned ? " active" : ""}`}

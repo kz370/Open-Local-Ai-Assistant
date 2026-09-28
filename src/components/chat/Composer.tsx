@@ -1,11 +1,12 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
-import { ArrowUp, AudioLines, Clock, Mic, Paperclip, Square, Volume2, VolumeX, X } from "lucide-react";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { ArrowUp, AudioLines, ChevronDown, Clock, Globe, Mic, Paperclip, Plus, Square, Volume2, VolumeX, X } from "lucide-react";
 import { attachFromPaste, pickFiles } from "../../app/attach";
 import { useChat } from "../../app/chatStore";
 import { ipc } from "../../app/ipc";
 import { useSettings } from "../../app/settingsStore";
 import { errorMessage, t } from "../../app/strings";
 import { useVoice } from "../../app/voiceStore";
+import type { ServerStatus } from "../../app/types";
 import { textDir } from "../common/controls";
 import { LevelMeter } from "../voice/LevelMeter";
 import { VoiceBars } from "../voice/VoiceBars";
@@ -30,15 +31,57 @@ export const Composer = forwardRef<ComposerHandle, { onVoiceSetup: () => void; a
   const attachmentErrors = useChat((s) => s.attachmentErrors);
   const removeAttachment = useChat((s) => s.removeAttachment);
   const dismissAttachmentErrors = useChat((s) => s.dismissAttachmentErrors);
+  const sessionWebSearch = useChat((s) => s.sessionWebSearch);
+  const setSessionWebSearch = useChat((s) => s.setSessionWebSearch);
+  const sessionMcpEnabled = useChat((s) => s.sessionMcpEnabled);
+  const setSessionMcpEnabled = useChat((s) => s.setSessionMcpEnabled);
+  const resetSessionTools = useChat((s) => s.resetSessionTools);
   const voice = useVoice();
   const speak = useSettings((s) => s.settings?.tts.speakResponses ?? false);
   const pasteAsFileChars = useSettings((s) => s.settings?.ai.pasteAsFileChars ?? 0);
   const updateSettings = useSettings((s) => s.update);
   const taRef = useRef<HTMLTextAreaElement>(null);
+  const [mcpServers, setMcpServers] = useState<ServerStatus[]>([]);
+  const [mcpOpen, setMcpOpen] = useState(false);
+  const mcpRootRef = useRef<HTMLDivElement>(null);
 
   useImperativeHandle(ref, () => ({ focus: () => taRef.current?.focus() }));
 
   const recording = voice.mode === "pushToTalk" && voice.phase !== "idle";
+
+  useEffect(() => {
+    let cancelled = false;
+    void ipc.mcpList().then((servers) => {
+      if (cancelled) return;
+      setMcpServers(servers);
+      const mcpDefaults: Record<string, boolean> = {};
+      servers.forEach((s) => { mcpDefaults[s.config.id] = s.config.enabled; });
+      resetSessionTools({
+        webSearch: true,
+        mcp: mcpDefaults,
+      });
+    }).catch(() => setMcpServers([]));
+    return () => { cancelled = true; };
+  }, [resetSessionTools]);
+
+  useEffect(() => {
+    if (!mcpOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (mcpRootRef.current && !mcpRootRef.current.contains(e.target as Node)) setMcpOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        setMcpOpen(false);
+      }
+    };
+    window.addEventListener("mousedown", onDown);
+    window.addEventListener("keydown", onKey, true);
+    return () => {
+      window.removeEventListener("mousedown", onDown);
+      window.removeEventListener("keydown", onKey, true);
+    };
+  }, [mcpOpen]);
 
   // Also re-measure when recording ends: an empty textarea is hidden while
   // recording, so a transcript lands in the draft while it has no height.
@@ -202,6 +245,55 @@ export const Composer = forwardRef<ComposerHandle, { onVoiceSetup: () => void; a
           >
             <AudioLines size={14} />
           </button>
+          <button
+            type="button"
+            className={`chip icon-chip${sessionWebSearch ? " on" : ""}`}
+            aria-pressed={sessionWebSearch}
+            aria-label={t("chat.webSearch")}
+            title={sessionWebSearch ? t("chat.webSearchOn") : t("chat.webSearchOff")}
+            onClick={() => setSessionWebSearch(!sessionWebSearch)}
+          >
+            <Globe size={14} />
+          </button>
+          <span className="composer-sep" aria-hidden />
+          <div className="picker" ref={mcpRootRef}>
+            <button type="button" className={`chip icon-chip mcp-chip${mcpOpen ? " on" : ""}`} aria-haspopup="menu" aria-expanded={mcpOpen} aria-label={t("chat.mcpTools")} title={t("chat.mcpTools")} onClick={() => setMcpOpen((v) => !v)}>
+              <Plus size={14} />
+              {(() => {
+                const total = mcpServers.length;
+                const on = mcpServers.filter((s) => sessionMcpEnabled[s.config.id] ?? s.config.enabled).length;
+                return on > 0 && total > 1 ? <span className="mcp-count">{on}/{total}</span> : null;
+              })()}
+              <ChevronDown size={10} aria-hidden className={mcpOpen ? "flip" : ""} />
+            </button>
+            {mcpOpen && (
+              <div className="picker-menu narrow" role="menu" aria-label={t("chat.mcpTools")}>
+                <div className="picker-head">
+                  <span>{t("chat.mcpTools")}</span>
+                </div>
+                {mcpServers.length === 0 && <div className="picker-empty">{t("status.notInstalled")}</div>}
+                {mcpServers.map((s) => {
+                  const on = sessionMcpEnabled[s.config.id] ?? s.config.enabled;
+                  return (
+                    <button
+                      type="button"
+                      key={s.config.id}
+                      role="menuitemcheckbox"
+                      aria-checked={on}
+                      className="picker-item"
+                      onClick={() => setSessionMcpEnabled(s.config.id, !on)}
+                    >
+                      <span className={`picker-dot${on ? " on" : ""}`} aria-hidden />
+                      <span className="picker-text">
+                        <span className="picker-name">{s.config.name}</span>
+                        <span className="picker-sub">{s.state}</span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
           <span className="composer-spacer" />
           {!recording && (
             <button className="round-btn mic" aria-label={t("chat.microphone")} title={t("chat.microphone")} onClick={() => void voice.startPushToTalk()} disabled={voice.handsFree}>

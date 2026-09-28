@@ -59,8 +59,8 @@ impl Default for WindowGeometry {
         Self {
             x: 0,
             y: 0,
-            width: 480,
-            height: 640,
+            width: 640,
+            height: 720,
         }
     }
 }
