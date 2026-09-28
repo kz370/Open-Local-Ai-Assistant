@@ -215,7 +215,7 @@ When the build finishes, it asks whether to upload it as GitHub release `v<versi
 
 1. Write the release notes in `release-notes\v<version>.md`.
 2. Write the commit message in `commit-message.txt` (git-ignored).
-3. Run `upload-release.bat`. It commits and pushes this repo, creates or updates the GitHub release `v<version>`, and uploads the setup exe and a zip of the portable version from `release\`.
+3. Run `upload-release.bat`. It commits and pushes this repo, updates the release tag to that commit (so GitHub's source-code archives are current), creates or updates the GitHub release `v<version>`, and uploads the setup exe and a zip of the portable version from `release\`.
 
 ## Architecture
 

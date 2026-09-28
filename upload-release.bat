@@ -50,8 +50,8 @@ for %%f in (%PORTABLE_FILES%) do (
   if not exist "%DIST%\%%~f" (echo Missing %DIST%\%%~f - run build-installer.bat first. & exit /b 1)
 )
 
-rem Commit and push first, so a new release tag points at the commit these
-rem builds came from.
+rem Commit and push first, then move the release tag to this commit so GitHub's
+rem source-code archives contain the same source as the uploaded build.
 set "MSGFILE=commit-message.txt"
 set "DIRTY="
 for /f "delims=" %%L in ('git status --porcelain') do set "DIRTY=1"
@@ -65,6 +65,8 @@ if defined DIRTY (
 )
 echo Pushing...
 git push origin HEAD || (echo Push failed. & exit /b 1)
+echo Updating tag %TAG% to the published commit...
+git push origin --force "HEAD:refs/tags/%TAG%" || (echo Tag update failed. & exit /b 1)
 
 rem Only the portable files go in the zip, not the setup exe next to them.
 echo Zipping portable version...

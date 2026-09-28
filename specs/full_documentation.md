@@ -3905,9 +3905,10 @@ newest setup exe and the tag becomes `v<version>`. Requires `gh` and `git`.
 ### Business Logic
 The sequence is deliberate:
 1. Existence checks on the setup exe and every portable file.
-2. **Commit and push first** — "so a new release tag points at the commit these
-   builds came from". `git status --porcelain`; if dirty, require
-   `commit-message.txt`, then `git add -A` and `git commit -F`.
+2. **Commit and push first**, then force-update `refs/tags/<tag>` to the pushed
+  `HEAD`, so GitHub's source-code archives (including for existing releases)
+  contain the published source. `git status --porcelain`; if dirty, require
+  `commit-message.txt`, then `git add -A` and `git commit -F`.
 3. Zip the portable files into `%TEMP%`, staging them in a temporary directory
    first — "Only the portable files go in the zip, not the setup exe next to them".
 4. `gh release create` with `--notes-file release-notes\<tag>.md` when present,

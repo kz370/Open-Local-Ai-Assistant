@@ -1270,9 +1270,10 @@ Sequence:
 
 1. Verify `gh` and `git` are on `PATH`; verify the setup exe and **all five** portable
    files exist.
-2. **Commit and push first**, so a new release tag points at the commit these builds
-   came from. If the working tree is dirty, `commit-message.txt` is **required**;
-   otherwise `git add -A` + `git commit -F commit-message.txt` + `git push`.
+2. **Commit and push first**, then force-update `refs/tags/<tag>` to the pushed
+  `HEAD`. This also refreshes GitHub's source-code archives for an existing
+  release. If the working tree is dirty, `commit-message.txt` is **required**;
+  otherwise `git add -A` + `git commit -F commit-message.txt` + `git push`.
 3. Zip the five portable files (staged in a temp directory first — "only the portable
    files go in the zip, not the setup exe next to them") into
    `%TEMP%\Open-Local-Assistant-<version>-portable-win-x64.zip`.

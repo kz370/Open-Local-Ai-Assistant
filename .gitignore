@@ -34,3 +34,6 @@ commit-message.txt
 
 # build-installer.bat download cache (sherpa-onnx archive), survives cargo clean
 .build-cache/
+
+.vscode
+.kilo
