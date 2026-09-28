@@ -362,6 +362,17 @@ drop veil, level meter, voice bars, and the call screen.
   `width: min(320px, calc(100vw - 32px))`, `z-index: 30`. `.ctx-menu` is
   `position: fixed; z-index: 60; min-width: 168px`. `.explain-pop` is
   `z-index: 55; width: min(380px, calc(100vw - 16px))`.
+- **Explain action pills:** `.explain-actions` is a tinted footer
+  (`--surface-2` at 45%, rounded with the popover). Its buttons are `.xact`
+  pills — 28px tall, `border-radius: 999px`, `--text-xs`, muted label, icon in
+  `.xact-icon` (`--text-faint`, → `--text` on hover), `translateY(-1px)` +
+  `--shadow-sm` on hover and `scale(0.97)` on press. `.xact.primary` ("Ask in
+  chat") is accent-tinted and pinned to the end with `margin-inline-start: auto`.
+  `.xact.speak` has a `min-width: 92px` so the label does not make the footer
+  jump while the state changes. State classes: `.done` (copy confirmed),
+  `.preparing` (spinner + "Preparing…") and `.speaking` (accent fill + 3px
+  accent ring). `.xact-wave` is four 2px bars animated by `@keyframes xact-wave`
+  (`scaleY(0.3 → 1)`, 0.9s, 0.12s stagger) — the speak indicator.
 - **Masked scroll:** `.spoken` fades its edges with
   `mask-image: linear-gradient(transparent, #000 18%, #000 82%, transparent)` and
   hides its scrollbar.
@@ -4907,6 +4918,14 @@ const MAX_PASSAGE_CHARS:  usize = 12_000;
 - The UI decides where the answer appears: `settings.ai.explain_mode` is
   `"chat"` (send a follow-up message) or `"popup"` (show the popover beside the
   selection). `SelectionMenu` reads that setting — see §4.10.
+- **Reading the popup aloud is tagged with the explanation's own id**
+  (`tts_speak(text, null, explain.id)`), so the popup follows *its* speech
+  through `useVoice.speaking` / `speakingTag` and ignores speech started
+  elsewhere. The button moves Speak → "Preparing…" (spinner) → "Speaking…"
+  (animated bars) → Speak again when TTS emits `idle`; clicking it while
+  preparing or speaking calls `tts_stop`. `PREPARE_TIMEOUT_MS` (90s) drops the
+  spinner when the voice never becomes available — the same guard
+  `MessageBubble` uses for "Read aloud".
 
 ### Dependencies
 `services::ai::{ChatMessage, ChatRequest}`, `serde::Serialize`.

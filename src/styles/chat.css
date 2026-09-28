@@ -1736,7 +1736,132 @@ html.launcher-window #root {
 }
 .explain-actions {
   display: flex;
+  align-items: center;
   gap: 6px;
-  padding: 8px 12px 10px;
+  padding: 9px 12px 11px;
   border-top: 1px solid var(--hairline);
+  background: color-mix(in srgb, var(--surface-2) 45%, transparent);
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+}
+
+/* Action pills: Copy / Speak / Ask in chat. */
+.xact {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 11px 0 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--text-xs);
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease),
+    box-shadow var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
+}
+.xact:hover {
+  color: var(--text);
+  background: var(--card-hover, var(--surface-2));
+  border-color: var(--border-strong);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
+}
+.xact:active {
+  transform: translateY(0) scale(0.97);
+}
+.xact:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.xact-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  flex: none;
+  color: var(--text-faint);
+  transition: color var(--dur-fast) var(--ease);
+}
+.xact:hover .xact-icon {
+  color: var(--text);
+}
+.xact.primary {
+  margin-inline-start: auto;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+.xact.primary .xact-icon,
+.xact.primary:hover .xact-icon {
+  color: currentcolor;
+}
+.xact.primary:hover {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.xact.done {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+  background: var(--accent-soft);
+}
+.xact.done .xact-icon {
+  color: currentcolor;
+}
+
+/* Speak: preparing (spinner) and speaking (animated bars) states. */
+.xact.speak {
+  min-width: 92px;
+}
+.xact.preparing,
+.xact.speaking {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+  cursor: pointer;
+}
+.xact.speaking {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.xact .spinner {
+  width: 13px;
+  height: 13px;
+  border-width: 2px;
+}
+.xact-wave {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 13px;
+}
+.xact-wave > span {
+  width: 2px;
+  height: 100%;
+  border-radius: 2px;
+  background: currentcolor;
+  transform: scaleY(0.3);
+  animation: xact-wave 0.9s var(--ease) infinite;
+}
+.xact-wave > span:nth-child(2) {
+  animation-delay: 0.12s;
+}
+.xact-wave > span:nth-child(3) {
+  animation-delay: 0.24s;
+}
+.xact-wave > span:nth-child(4) {
+  animation-delay: 0.36s;
+}
+@keyframes xact-wave {
+  0%,
+  100% {
+    transform: scaleY(0.3);
+  }
+  50% {
+    transform: scaleY(1);
+  }
 }

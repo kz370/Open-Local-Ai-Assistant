@@ -1,9 +1,10 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { useChat } from "../app/chatStore";
 import { useSettings } from "../app/settingsStore";
 import type { ExplainEvent, Settings } from "../app/types";
+import { useVoice } from "../app/voiceStore";
 import { SelectionMenu } from "../components/chat/SelectionMenu";
 
 // jsdom has no layout; a selection still needs a rectangle to anchor to.
@@ -113,5 +114,37 @@ describe("selected text menu", () => {
     const id = (vi.mocked(invoke).mock.calls.find(([c]) => c === "chat_explain")![1] as { id: string }).id;
     fireEvent.keyDown(document, { key: "Escape" });
     expect(invoke).toHaveBeenCalledWith("chat_stop", { turnId: id });
+  });
+
+  it("shows the explanation is being spoken, and stops it on click", async () => {
+    useExplainMode("popup");
+    useVoice.setState({ speaking: false, speakingTag: null });
+    let onEvent: ((e: ExplainEvent) => void) | undefined;
+    vi.mocked(invoke).mockImplementation(async (cmd: string, args?: unknown) => {
+      if (cmd === "chat_explain") onEvent = (args as { onEvent: { onmessage: (e: ExplainEvent) => void } }).onEvent.onmessage;
+      return undefined;
+    });
+    renderReply();
+    selectWord("Photosynthese");
+    fireEvent.click(screen.getByRole("menuitem", { name: "Explain" }));
+    const id = (vi.mocked(invoke).mock.calls.find(([c]) => c === "chat_explain")![1] as { id: string }).id;
+    act(() => {
+      onEvent!({ type: "delta", text: "Plants turn light into energy." });
+      onEvent!({ type: "done" });
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Speak" }));
+    expect(invoke).toHaveBeenCalledWith("tts_speak", { text: "Plants turn light into energy.", language: null, tag: id });
+    expect(screen.getByRole("button", { name: /Preparing/ })).toBeInTheDocument();
+
+    // Synthesis finishes and the audio starts: the button follows the speech.
+    act(() => useVoice.setState({ speaking: true, speakingTag: id }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Stop speaking" })).toHaveTextContent("Speaking…"));
+
+    // Playing: clicking stops the speech instead of queueing it again.
+    fireEvent.click(screen.getByRole("button", { name: "Stop speaking" }));
+    expect(invoke).toHaveBeenCalledWith("tts_stop");
+    act(() => useVoice.setState({ speaking: false, speakingTag: null }));
+    expect(screen.getByRole("button", { name: "Speak" })).toBeInTheDocument();
   });
 });

@@ -693,6 +693,7 @@ src/components/chat/SelectionMenu | uses | src/app/chatStore
 src/components/chat/SelectionMenu | uses | src/app/ipc
 src/components/chat/SelectionMenu | uses | src/app/settingsStore
 src/components/chat/SelectionMenu | uses | src/app/strings
+src/components/chat/SelectionMenu | uses | src/app/voiceStore
 src/components/chat/SelectionMenu | uses | src/components/chat/Markdown
 src/components/chat/SelectionMenu | uses | src/components/common/controls
 src/components/chat/SelectionMenu | uses | react-dom (createPortal)
@@ -830,7 +831,7 @@ src/test/ui.test.tsx | uses | components/chat/Composer, chat/MessageBubble, comm
 src/test/ui.test.tsx | reads | src-tauri/capabilities/default.json (asserts global-shortcut:default)
 src/test/settings.test.tsx | uses | src/app/settingsStore, src/app/types
 src/test/settings.test.tsx | uses | components/chat/ModelPicker, pages/Bubble/Bubble, pages/Settings/SettingsApp
-src/test/selection.test.tsx | uses | src/app/chatStore, settingsStore, types, components/chat/SelectionMenu
+src/test/selection.test.tsx | uses | src/app/chatStore, settingsStore, types, voiceStore, components/chat/SelectionMenu
 src/test/history.test.tsx | uses | src/app/ipc, src/app/strings, src/app/types, components/history/HistoryPanel
 src/test/shortcutinput.test.tsx | uses | src/components/settings/ShortcutInput
 src/test/soundTags.test.ts | uses | src/app/soundTags, src/app/strings

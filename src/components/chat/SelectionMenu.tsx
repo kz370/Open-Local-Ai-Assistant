@@ -5,8 +5,12 @@ import { useChat } from "../../app/chatStore";
 import { ipc, newId } from "../../app/ipc";
 import { useSettings } from "../../app/settingsStore";
 import { errorMessage, t } from "../../app/strings";
+import { useVoice } from "../../app/voiceStore";
 import { textDir } from "../common/controls";
 import { Markdown } from "./Markdown";
+
+/** Gives up on the "preparing speech" spinner if playback never starts. */
+const PREPARE_TIMEOUT_MS = 90_000;
 
 /** Text selected inside one assistant reply. */
 interface Picked {
@@ -135,7 +139,7 @@ export function SelectionMenu() {
       {explain && (
         <ExplainPopover
           explanation={explain}
-          onSpeak={() => speak(explain.content, null)}
+          onSpeak={() => speak(explain.content, null, explain.id)}
           onAskInChat={() => {
             askInChat(explain);
             setExplain(null);
@@ -248,6 +252,24 @@ function ExplainPopover({ explanation: x, onSpeak, onAskInChat, onClose }: { exp
     window.setTimeout(() => setCopied(false), 1500);
   };
 
+  // The explanation is read aloud under its own tag, so this popup knows when
+  // its own speech starts and when it ends (TTS emits idle when it is done).
+  const speaking = useVoice((s) => s.speaking);
+  const speakingTag = useVoice((s) => s.speakingTag);
+  const isSpeaking = speaking && speakingTag === x.id;
+  // Synthesis takes a moment (longer when the voice model still has to load),
+  // so the button says so until the audio actually starts.
+  const [preparing, setPreparing] = useState(false);
+  useEffect(() => {
+    if (!preparing) return;
+    if (isSpeaking) {
+      setPreparing(false);
+      return;
+    }
+    const id = window.setTimeout(() => setPreparing(false), PREPARE_TIMEOUT_MS);
+    return () => window.clearTimeout(id);
+  }, [preparing, isSpeaking]);
+
   const done = x.status === "done" && x.content.trim().length > 0;
   return (
     <div
@@ -281,17 +303,66 @@ function ExplainPopover({ explanation: x, onSpeak, onAskInChat, onClose }: { exp
       </div>
       {done && (
         <div className="explain-actions">
-          <button className="btn btn-sm" onClick={copy}>
-            {copied ? <Check size={12} /> : <Copy size={12} />} {copied ? t("app.copied") : t("chat.selection.copy")}
+          <button
+            className={`xact${copied ? " done" : ""}`}
+            aria-label={copied ? t("app.copied") : t("chat.selection.copy")}
+            onClick={copy}
+          >
+            <span className="xact-icon">{copied ? <Check size={13} /> : <Copy size={13} />}</span>
+            {copied ? t("app.copied") : t("chat.selection.copy")}
           </button>
-          <button className="btn btn-sm" onClick={onSpeak}>
-            <Volume2 size={12} /> {t("chat.selection.speak")}
-          </button>
-          <button className="btn btn-sm" onClick={onAskInChat}>
-            <MessageSquare size={12} /> {t("chat.selection.askInChat")}
+          {isSpeaking || preparing ? (
+            <button
+              className={`xact speak${isSpeaking ? " speaking" : " preparing"}`}
+              aria-label={isSpeaking ? t("chat.stopSpeaking") : t("chat.preparingSpeech")}
+              title={isSpeaking ? t("chat.stopSpeaking") : t("chat.preparingSpeech")}
+              aria-pressed={isSpeaking}
+              onClick={() => {
+                setPreparing(false);
+                void ipc.ttsStop();
+              }}
+            >
+              {isSpeaking ? <SpeakingGlyph /> : <span className="spinner" aria-hidden />}
+              {isSpeaking ? t("chat.selection.speaking") : t("chat.selection.preparingSpeech")}
+            </button>
+          ) : (
+            <button
+              className="xact speak"
+              aria-label={t("chat.selection.speak")}
+              title={t("chat.selection.speak")}
+              onClick={() => {
+                setPreparing(true);
+                onSpeak();
+              }}
+            >
+              <span className="xact-icon">
+                <Volume2 size={13} />
+              </span>
+              {t("chat.selection.speak")}
+            </button>
+          )}
+          <button className="xact primary" aria-label={t("chat.selection.askInChat")} onClick={onAskInChat}>
+            <span className="xact-icon">
+              <MessageSquare size={13} />
+            </span>
+            {t("chat.selection.askInChat")}
           </button>
         </div>
       )}
     </div>
+  );
+}
+
+/** Animated bars shown on the Speak button while the explanation is read out. */
+function SpeakingGlyph() {
+  return (
+    <span className="xact-icon" aria-hidden>
+      <span className="xact-wave">
+        <span />
+        <span />
+        <span />
+        <span />
+      </span>
+    </span>
   );
 }

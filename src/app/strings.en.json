@@ -68,6 +68,8 @@
       "menu": "Selected text",
       "copy": "Copy",
       "speak": "Speak",
+      "speaking": "Speaking…",
+      "preparingSpeech": "Preparing…",
       "explain": "Explain",
       "explainPrompt": "Explain this part of your answer:\n\n> {{text}}",
       "explainTitle": "Explanation",

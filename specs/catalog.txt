@@ -634,7 +634,7 @@ src/components/chat/Composer.tsx :: ComposerHandle — Imperative handle: focus,
 src/components/chat/Markdown.tsx :: Markdown — Memoised react-markdown + remark-gfm renderer with sanitised HTML (no raw HTML is ever rendered).
 src/components/chat/MessageBubble.tsx :: MessageBubble — Memoised user/assistant bubble: markdown, reasoning block, tool activity, sources, stats, retry/resend, read-aloud.
 src/components/chat/ModelPicker.tsx :: ModelPicker — The model list popover with aliases, hidden models and hosted-provider flags.
-src/components/chat/SelectionMenu.tsx :: SelectionMenu — Right-click menu on reply text: copy, explain, ask.
+src/components/chat/SelectionMenu.tsx :: SelectionMenu — Right-click menu on reply text: copy, explain, ask. The explain popover's Copy / Speak / Ask in chat action pills, with Speak reporting its own preparing → speaking → idle states.
 src/components/chat/Sources.tsx :: Sources — The citation list rendered under a reply.
 src/components/chat/ToolActivity.tsx :: ToolActivity — Per-tool status rows; developer mode adds arguments and result previews.
 src/components/chat/ToolConfirmDialog.tsx :: ToolConfirmDialog — The approval dialog for a tool that needs confirmation.
