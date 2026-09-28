@@ -301,9 +301,15 @@ impl ChatEngine {
                 let mut f = ThinkFilter::default();
                 rest = f.push(&done.content).0 + &f.finish().0;
             }
-            if !rest.is_empty() {
-                emit(ExplainEvent::Delta { text: rest });
-            }
+            // Emit final delta; if no content was produced at all, use a
+            // minimal placeholder so the UI can display something rather than
+            // staying completely empty.
+            let text = if rest.is_empty() && !streamed {
+                " (no content generated)".into()
+            } else {
+                rest
+            };
+            emit(ExplainEvent::Delta { text });
             AppResult::Ok(())
         }
         .await;
