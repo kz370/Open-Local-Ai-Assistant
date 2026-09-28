@@ -33,7 +33,14 @@ fn clip(s: &str, max: usize) -> &str {
     }
 }
 
-pub fn request(model: &str, selection: &str, passage: &str, temperature: f32) -> ChatRequest {
+pub fn request(
+    model: &str,
+    selection: &str,
+    passage: &str,
+    temperature: f32,
+    stream: bool,
+    max_tokens: Option<u32>,
+) -> ChatRequest {
     let selection = clip(selection.trim(), MAX_SELECTION_CHARS);
     let passage = clip(passage.trim(), MAX_PASSAGE_CHARS);
     let user = if passage.is_empty() || passage == selection {
@@ -49,8 +56,8 @@ pub fn request(model: &str, selection: &str, passage: &str, temperature: f32) ->
         ],
         tools: vec![],
         temperature,
-        max_tokens: Some(700),
-        stream: true,
+        max_tokens: Some(max_tokens.unwrap_or(2048).max(1024)),
+        stream,
     }
 }
 
@@ -65,19 +72,25 @@ mod tests {
             "  Photosynthese  ",
             "Pflanzen nutzen Photosynthese.",
             0.7,
+            true,
+            None,
         );
         let user = req.messages[1].content_text();
         assert!(user.contains("<selection>\nPhotosynthese\n</selection>"));
         assert!(user.contains("<reply>\nPflanzen nutzen Photosynthese.\n</reply>"));
         assert!(req.tools.is_empty());
+        assert!(req.stream);
+        assert_eq!(req.max_tokens, Some(2048));
 
         // The passage is left out when it is the selection itself.
-        let same = request("m", "hello", "hello", 0.7);
+        let same = request("m", "hello", "hello", 0.7, false, Some(4096));
         assert!(!same.messages[1].content_text().contains("<reply>"));
+        assert!(!same.stream);
+        assert_eq!(same.max_tokens, Some(4096));
 
         // Long input is clipped on a character boundary.
         let long = "ع".repeat(MAX_PASSAGE_CHARS + 50);
-        let req = request("m", "x", &long, 0.7);
+        let req = request("m", "x", &long, 0.7, true, None);
         assert_eq!(
             req.messages[1].content_text().matches('ع').count(),
             MAX_PASSAGE_CHARS

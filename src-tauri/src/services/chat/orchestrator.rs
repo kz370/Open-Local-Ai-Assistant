@@ -282,16 +282,27 @@ impl ChatEngine {
         let result = async {
             let settings = self.settings.get();
             let model = self.resolver.resolve(&settings.ai).await?;
-            let req = explain::request(&model.id, selection, passage, settings.ai.temperature);
+            let req = explain::request(
+                &model.id,
+                selection,
+                passage,
+                settings.ai.temperature,
+                settings.ai.streaming,
+                settings.ai.max_tokens,
+            );
             let mut filter = ThinkFilter::default();
             let mut streamed = false;
-            let mut on_chunk = |c: StreamChunk| {
-                if let StreamChunk::Content(c) = c {
+            let mut buffered_reasoning = String::new();
+            let mut on_chunk = |c: StreamChunk| match c {
+                StreamChunk::Content(c) => {
                     let text = filter.push(&c).0;
                     if !text.is_empty() {
                         streamed = true;
                         emit(ExplainEvent::Delta { text });
                     }
+                }
+                StreamChunk::Reasoning(r) => {
+                    buffered_reasoning.push_str(&r);
                 }
             };
             let done = self.ai.chat(req, token.clone(), &mut on_chunk).await?;
@@ -300,16 +311,31 @@ impl ChatEngine {
                 // Servers that ignore streaming answer in one piece.
                 let mut f = ThinkFilter::default();
                 rest = f.push(&done.content).0 + &f.finish().0;
+                if rest.is_empty() {
+                    let r = if !done.reasoning.is_empty() {
+                        &done.reasoning
+                    } else {
+                        &buffered_reasoning
+                    };
+                    if !r.is_empty() {
+                        let mut f = ThinkFilter::default();
+                        rest = f.push(r).0 + &f.finish().0;
+                        if rest.is_empty() {
+                            rest = r.clone();
+                        }
+                    }
+                }
             }
             // Emit final delta; if no content was produced at all, use a
             // minimal placeholder so the UI can display something rather than
             // staying completely empty.
-            let text = if rest.is_empty() && !streamed {
-                " (no content generated)".into()
-            } else {
-                rest
-            };
-            emit(ExplainEvent::Delta { text });
+            if rest.is_empty() && !streamed {
+                emit(ExplainEvent::Delta {
+                    text: " (no content generated)".into(),
+                });
+            } else if !rest.is_empty() {
+                emit(ExplainEvent::Delta { text: rest });
+            }
             AppResult::Ok(())
         }
         .await;
@@ -1146,6 +1172,7 @@ mod tests {
         script: StdMutex<Vec<ChatCompletion>>,
         requests: StdMutex<Vec<ChatRequest>>,
         fail: Option<fn() -> AppError>,
+        skip_chunks: std::sync::atomic::AtomicBool,
     }
 
     #[async_trait]
@@ -1176,8 +1203,13 @@ mod tests {
         ) -> AppResult<ChatCompletion> {
             self.requests.lock().unwrap().push(req);
             let next = self.script.lock().unwrap().remove(0);
-            for word in next.content.split_inclusive(' ') {
-                on_chunk(StreamChunk::Content(word.to_string()));
+            if !self.skip_chunks.load(std::sync::atomic::Ordering::Relaxed) {
+                for word in next.reasoning.split_inclusive(' ') {
+                    on_chunk(StreamChunk::Reasoning(word.to_string()));
+                }
+                for word in next.content.split_inclusive(' ') {
+                    on_chunk(StreamChunk::Content(word.to_string()));
+                }
             }
             Ok(next)
         }
@@ -1237,6 +1269,7 @@ mod tests {
             script: StdMutex::new(script),
             requests: StdMutex::new(vec![]),
             fail: None,
+            skip_chunks: std::sync::atomic::AtomicBool::new(false),
         });
         let resolver = Arc::new(ModelResolver::with_hardware(
             ai.clone(),
@@ -1354,6 +1387,67 @@ mod tests {
             .contains("<selection>\nphotosynthesis"));
         assert!(db.list_conversations(10, 0).unwrap().is_empty());
         assert!(!e.is_busy());
+    }
+
+    #[tokio::test]
+    async fn explain_handles_non_streamed_answer() {
+        let (e, ai, _db, _files, _dir) = engine(
+            vec![ChatCompletion {
+                content: "Direct complete answer without streaming chunks.".into(),
+                ..Default::default()
+            }],
+            Permission::Allow,
+        );
+        ai.skip_chunks
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        let events = StdMutex::new(Vec::new());
+        e.explain("x2", "selection", "passage", &|ev| {
+            events.lock().unwrap().push(ev)
+        })
+        .await;
+        let events = events.into_inner().unwrap();
+        let text: String = events
+            .iter()
+            .filter_map(|ev| {
+                if let ExplainEvent::Delta { text } = ev {
+                    Some(text.as_str())
+                } else {
+                    None
+                }
+            })
+            .collect();
+        assert_eq!(text, "Direct complete answer without streaming chunks.");
+        assert!(matches!(events.last(), Some(ExplainEvent::Done)));
+    }
+
+    #[tokio::test]
+    async fn explain_handles_reasoning_only_answer() {
+        let (e, _ai, _db, _files, _dir) = engine(
+            vec![ChatCompletion {
+                content: "".into(),
+                reasoning: "The model explained it in reasoning.".into(),
+                ..Default::default()
+            }],
+            Permission::Allow,
+        );
+        let events = StdMutex::new(Vec::new());
+        e.explain("x3", "selection", "passage", &|ev| {
+            events.lock().unwrap().push(ev)
+        })
+        .await;
+        let events = events.into_inner().unwrap();
+        let text: String = events
+            .iter()
+            .filter_map(|ev| {
+                if let ExplainEvent::Delta { text } = ev {
+                    Some(text.as_str())
+                } else {
+                    None
+                }
+            })
+            .collect();
+        assert_eq!(text, "The model explained it in reasoning.");
+        assert!(matches!(events.last(), Some(ExplainEvent::Done)));
     }
 
     #[tokio::test]
@@ -1534,6 +1628,7 @@ step two",
             script: StdMutex::new(vec![]),
             requests: StdMutex::new(vec![]),
             fail: Some(|| AppError::LmStudioUnavailable("refused".into())),
+            skip_chunks: std::sync::atomic::AtomicBool::new(false),
         });
         let resolver = Arc::new(ModelResolver::with_hardware(
             ai.clone(),

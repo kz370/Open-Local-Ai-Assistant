@@ -4142,9 +4142,7 @@ spin up a real `axum` server that imitates LM Studio's `/api/v1/models`,
   status is parsed for `error.message` / `error` and otherwise truncated to
   300 characters. Both the send and the stream loop are wrapped in
   `tokio::select!` against `cancel.cancelled()` → `AppError::Cancelled`.
-  The non-streaming branch reads `reasoning_content` **or** `reasoning`; the
-  streaming branch accepts both spellings on every delta, plus `delta.tool_calls`
-  and `choices[0].finish_reason`, and treats a top-level `error` in any chunk as
+  The non-streaming branch (also taken when the server ignores `stream: true` and answers with a non-SSE `Content-Type: application/json` payload) reads `content` (from `message.content` or `choice.text`) and `reasoning_content` / `reasoning` / `thought`, invoking `on_chunk` for both; the streaming branch accepts `content`, `delta.text`, `choice.text`, and `choice.message.content`, as well as `reasoning_content`, `reasoning`, and `thought`, plus `delta.tool_calls` and `choices[0].finish_reason`, with a fallback to JSON message parsing if no SSE chunks were parsed, and treats a top-level `error` in any chunk as
   a failure. `first_token_ms` is measured from the send, `generation_ms` from
   the first token.
 
@@ -4508,8 +4506,9 @@ Two passes.
 ### Business Logic — `explain`
 `explain` shares the `active` token map, resolves the model, builds the request
 from `explain::request`, streams through a `ThinkFilter` and emits
-`ExplainEvent`s. Servers that ignore streaming are handled by re-filtering the
-whole `completion.content` when nothing was streamed. It **never touches the
+`ExplainEvent`s. Servers that ignore streaming or return in one piece are handled
+by re-filtering the whole `completion.content` (with fallback to reasoning if content
+is empty) when nothing was streamed. It **never touches the
 database** — a test asserts `list_conversations` is still empty afterwards.
 
 ### Concurrency
@@ -4887,10 +4886,10 @@ const MAX_PASSAGE_CHARS:  usize = 12_000;
   briefly; a short paragraph or a few bullets; use the surrounding reply only as
   context; **answer in the language of the selected text**; do not repeat the
   selection and do not start with a preamble.
-- `request(model, selection, passage, temperature)` trims and **clips on a
+- `request(model, selection, passage, temperature, stream, max_tokens)` trims and **clips on a
   character boundary** (via `char_indices().nth(max)`), builds the user message
   as `<reply>…</reply>\n\n<selection>…</selection>`, and sets
-  `tools: vec![]`, `max_tokens: Some(700)`, `stream: true`. The `<reply>` block
+  `tools: vec![]`, `max_tokens: Some(max_tokens.unwrap_or(2048).max(1024))`, `stream`. The `<reply>` block
   is omitted entirely when the passage is empty **or identical to the
   selection** — a test covers both.
 - The 4 000 / 12 000 caps are documented as a latency guard: "Selections are

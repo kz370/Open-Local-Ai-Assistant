@@ -694,13 +694,13 @@ src-tauri/src/capabilities/mod.rs :: (none) — 0.
 src-tauri/src/lib.rs :: (none) — 0.
 src-tauri/src/services/ai/sse.rs :: tests — 5 — split events, CRLF + comments, UTF-8 split across chunks, unterminated tail, tool-call accumulation.
 src-tauri/src/services/ai/model_selector.rs :: tests — 8 — param parsing, loaded-model preference, not-largest, CPU-only, embeddings excluded, tool-use tie-break, unknown metadata, id fallback.
-src-tauri/src/services/ai/lmstudio.rs :: tests — 11 — the four model-list parsers plus native API fallback behaviour.
+src-tauri/src/services/ai/lmstudio.rs :: tests — 13 — the four model-list parsers, streaming variants, and native API fallback behaviour.
 src-tauri/src/services/chat/prompt.rs :: tests — 8 — system-prompt assembly, language and freshness notes.
 src-tauri/src/services/chat/think.rs :: tests — 3 — think-tag streaming and flush.
 src-tauri/src/services/chat/freshness.rs :: tests — 2 — fresh-information heuristic.
 src-tauri/src/services/chat/explain.rs :: tests — 1 — the isolated explain request.
 src-tauri/src/services/chat/attach.rs :: tests — 5 — attachment JSON rehydration and multimodal message construction.
-src-tauri/src/services/chat/orchestrator.rs :: tests — 9 — history trimming, title derivation and turn helpers.
+src-tauri/src/services/chat/orchestrator.rs :: tests — 11 — history trimming, title derivation, turn helpers, and explain streaming/non-streaming/reasoning.
 src-tauri/src/services/attachments/base64.rs :: tests — 3 — encode/decode and data-URL tolerance.
 src-tauri/src/services/attachments/office.rs :: tests — 3 — Office/plain text extraction.
 src-tauri/src/services/attachments/mod.rs :: tests — 6 — ingest paths, limits, text extraction, GC.

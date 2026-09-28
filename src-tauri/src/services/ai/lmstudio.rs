@@ -485,16 +485,39 @@ impl AiService for LmStudioService {
 
         let mut out = ChatCompletion::default();
 
-        if !req.stream {
+        let is_sse = resp
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .map(|ct| ct.contains("text/event-stream"))
+            .unwrap_or(false);
+
+        if !req.stream || !is_sse {
             let v: Value = tokio::select! {
                 r = resp.json() => r.map_err(|e| AppError::LmStudio(e.to_string()))?,
                 _ = cancel.cancelled() => return Err(AppError::Cancelled),
             };
-            let msg = &v["choices"][0]["message"];
-            out.content = msg["content"].as_str().unwrap_or("").to_string();
-            out.reasoning = msg["reasoning_content"]
-                .as_str()
-                .or(msg["reasoning"].as_str())
+            if let Some(err) = v.get("error") {
+                let msg = err["message"]
+                    .as_str()
+                    .or(err.as_str())
+                    .unwrap_or("server error");
+                return Err(AppError::LmStudio(msg.to_string()));
+            }
+            let choice = v["choices"].get(0);
+            let msg = choice.and_then(|c| c.get("message"));
+            out.content = msg
+                .and_then(|m| m["content"].as_str())
+                .or_else(|| choice.and_then(|c| c["text"].as_str()))
+                .unwrap_or("")
+                .to_string();
+            out.reasoning = msg
+                .and_then(|m| {
+                    m["reasoning_content"]
+                        .as_str()
+                        .or_else(|| m["reasoning"].as_str())
+                        .or_else(|| m["thought"].as_str())
+                })
                 .unwrap_or("")
                 .to_string();
             if !out.reasoning.is_empty() {
@@ -503,11 +526,11 @@ impl AiService for LmStudioService {
             if !out.content.is_empty() {
                 on_chunk(StreamChunk::Content(out.content.clone()));
             }
-            if let Some(calls) = msg.get("tool_calls") {
+            if let Some(calls) = msg.and_then(|m| m.get("tool_calls")) {
                 out.tool_calls = serde_json::from_value(calls.clone()).unwrap_or_default();
             }
-            out.finish_reason = v["choices"][0]["finish_reason"]
-                .as_str()
+            out.finish_reason = choice
+                .and_then(|c| c["finish_reason"].as_str())
                 .map(str::to_string);
             read_usage(&v, &mut out);
             out.generation_ms = Some(sent_at.elapsed().as_millis() as u64);
@@ -519,6 +542,7 @@ impl AiService for LmStudioService {
         let mut tools = ToolCallAccumulator::default();
         let mut done = false;
         let mut first_token: Option<Instant> = None;
+        let mut raw_body = Vec::new();
 
         while !done {
             let chunk = tokio::select! {
@@ -526,7 +550,12 @@ impl AiService for LmStudioService {
                 _ = cancel.cancelled() => return Err(AppError::Cancelled),
             };
             let events = match chunk {
-                Some(Ok(bytes)) => decoder.push(&bytes),
+                Some(Ok(bytes)) => {
+                    if out.chunks == 0 {
+                        raw_body.extend_from_slice(&bytes);
+                    }
+                    decoder.push(&bytes)
+                }
                 Some(Err(e)) => return Err(from_lmstudio_http(e)),
                 None => {
                     done = true;
@@ -553,10 +582,13 @@ impl AiService for LmStudioService {
                     continue;
                 };
                 let delta = &choice["delta"];
-                if let Some(r) = delta["reasoning_content"]
+                let reasoning = delta["reasoning_content"]
                     .as_str()
                     .or(delta["reasoning"].as_str())
-                {
+                    .or(delta["thought"].as_str())
+                    .or_else(|| choice["message"]["reasoning_content"].as_str())
+                    .or_else(|| choice["message"]["thought"].as_str());
+                if let Some(r) = reasoning {
                     if !r.is_empty() {
                         first_token.get_or_insert_with(Instant::now);
                         out.chunks += 1;
@@ -564,7 +596,12 @@ impl AiService for LmStudioService {
                         on_chunk(StreamChunk::Reasoning(r.to_string()));
                     }
                 }
-                if let Some(c) = delta["content"].as_str() {
+                let content = delta["content"]
+                    .as_str()
+                    .or(delta["text"].as_str())
+                    .or(choice["text"].as_str())
+                    .or_else(|| choice["message"]["content"].as_str());
+                if let Some(c) = content {
                     if !c.is_empty() {
                         first_token.get_or_insert_with(Instant::now);
                         out.chunks += 1;
@@ -572,7 +609,10 @@ impl AiService for LmStudioService {
                         on_chunk(StreamChunk::Content(c.to_string()));
                     }
                 }
-                if let Some(tc) = delta.get("tool_calls") {
+                if let Some(tc) = delta
+                    .get("tool_calls")
+                    .or_else(|| choice["message"].get("tool_calls"))
+                {
                     if let Ok(parsed) = serde_json::from_value::<Vec<DeltaToolCall>>(tc.clone()) {
                         tools.push(parsed);
                     }
@@ -583,6 +623,39 @@ impl AiService for LmStudioService {
             }
         }
         out.tool_calls = tools.finish();
+        if out.chunks == 0 && out.content.is_empty() && !raw_body.is_empty() {
+            if let Ok(v) = serde_json::from_slice::<Value>(&raw_body) {
+                let choice = v["choices"].get(0);
+                let msg = choice.and_then(|c| c.get("message"));
+                let content = msg
+                    .and_then(|m| m["content"].as_str())
+                    .or_else(|| choice.and_then(|c| c["text"].as_str()))
+                    .unwrap_or("");
+                let reasoning = msg
+                    .and_then(|m| {
+                        m["reasoning_content"]
+                            .as_str()
+                            .or_else(|| m["reasoning"].as_str())
+                            .or_else(|| m["thought"].as_str())
+                    })
+                    .unwrap_or("");
+                if !reasoning.is_empty() {
+                    out.reasoning = reasoning.to_string();
+                    on_chunk(StreamChunk::Reasoning(out.reasoning.clone()));
+                }
+                if !content.is_empty() {
+                    out.content = content.to_string();
+                    on_chunk(StreamChunk::Content(out.content.clone()));
+                }
+                if let Some(calls) = msg.and_then(|m| m.get("tool_calls")) {
+                    out.tool_calls = serde_json::from_value(calls.clone()).unwrap_or_default();
+                }
+                out.finish_reason = choice
+                    .and_then(|c| c["finish_reason"].as_str())
+                    .map(str::to_string);
+                read_usage(&v, &mut out);
+            }
+        }
         if let Some(t) = first_token {
             out.first_token_ms = Some(t.duration_since(sent_at).as_millis() as u64);
             out.generation_ms = Some(t.elapsed().as_millis() as u64);
@@ -652,6 +725,7 @@ mod tests {
         stream_body: Arc<String>,
         native_v1: bool,
         delay_ms: u64,
+        force_json: bool,
     }
 
     async fn v1_models(State(m): State<Mock>) -> Response {
@@ -687,7 +761,7 @@ mod tests {
             )
                 .into_response();
         }
-        if body["stream"] == json!(false) {
+        if m.force_json || body["stream"] == json!(false) {
             return Json(json!({"choices":[{"message":{"role":"assistant","content":"plain answer"},"finish_reason":"stop"}]})).into_response();
         }
         Response::builder()
@@ -828,6 +902,52 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(out.content, "plain answer");
+    }
+
+    #[tokio::test]
+    async fn server_ignores_streaming_and_returns_json() {
+        let mock = Mock {
+            force_json: true,
+            ..Default::default()
+        };
+        let url = serve(mock).await;
+        let svc = LmStudioService::new(&url, 30);
+        let mut chunks = Vec::new();
+        let mut cb = |c: StreamChunk| chunks.push(c);
+        let out = svc
+            .chat(req("m", true), CancellationToken::new(), &mut cb)
+            .await
+            .unwrap();
+        assert_eq!(out.content, "plain answer");
+        assert_eq!(chunks, vec![StreamChunk::Content("plain answer".into())]);
+    }
+
+    #[tokio::test]
+    async fn streaming_alternative_chunk_formats() {
+        let body = sse(&[
+            json!({"choices":[{"delta":{"thought":"deep thought"}}]}),
+            json!({"choices":[{"delta":{"text":"Hello"}}]}),
+            json!({"choices":[{"text":" world"}]}),
+            json!({"choices":[{"message":{"content":"!"}}]}),
+        ]);
+        let mock = Mock {
+            stream_body: Arc::new(body),
+            ..Default::default()
+        };
+        let url = serve(mock).await;
+        let svc = LmStudioService::new(&url, 30);
+        let mut chunks = Vec::new();
+        let mut cb = |c: StreamChunk| chunks.push(c);
+        let out = svc
+            .chat(req("m", true), CancellationToken::new(), &mut cb)
+            .await
+            .unwrap();
+        assert_eq!(out.content, "Hello world!");
+        assert_eq!(out.reasoning, "deep thought");
+        assert_eq!(chunks[0], StreamChunk::Reasoning("deep thought".into()));
+        assert_eq!(chunks[1], StreamChunk::Content("Hello".into()));
+        assert_eq!(chunks[2], StreamChunk::Content(" world".into()));
+        assert_eq!(chunks[3], StreamChunk::Content("!".into()));
     }
 
     #[tokio::test]
