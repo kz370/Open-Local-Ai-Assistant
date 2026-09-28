@@ -232,10 +232,11 @@ coverage completeness but are **not** deep-analysed: they carry no code semantic
 - `/src/styles/chat.css`
 - `/src/styles/settings.css`
 
-### 16. Frontend — Tests (8)
+### 16. Frontend — Tests (9)
 
 - `/src/test/setup.ts`
 - `/src/test/ui.test.tsx`
+- `/src/test/mcpDropdown.test.tsx`
 - `/src/test/history.test.tsx`
 - `/src/test/selection.test.tsx`
 - `/src/test/settings.test.tsx`
@@ -324,8 +325,8 @@ coverage completeness but are **not** deep-analysed: they carry no code semantic
 ### 15. Frontend Styles (4) — COMPLETE
 `styles/{tokens,base,chat,settings}.css`
 
-### 16. Frontend Tests (9) — COMPLETE
-`test/{setup,ui.test,history.test,selection.test,settings.test,shortcutinput.test,soundTags.test,strings.test,voiceSessions.test}.ts(x)`
+### 16. Frontend Tests (10) — COMPLETE
+`test/{setup,ui.test,mcpDropdown.test,history.test,selection.test,settings.test,shortcutinput.test,soundTags.test,strings.test,voiceSessions.test}.ts(x)`
 
 ### 17. Binary Assets (64) — INVENTORIED (excluded from line analysis)
 
@@ -355,3 +356,4 @@ coverage completeness but are **not** deep-analysed: they carry no code semantic
 - [2026-09-28T01:01:35Z] Authoring phase launched: 4 parallel writer agents, each owning a disjoint set of `specs/` files — (a) architecture_overview + dataflow/classes/sequence diagrams, (b) catalog/relationships/data_models, (c) developer_guide + api_reference, (d) full_documentation §4.8–4.11 and §5–7.
 - [2026-09-28T01:01:35Z] Headings verified: exactly one `## 1`–`## 9` each; no duplicate section numbers.
 - [2026-09-28T23:42:00Z] Session-scoped tool toggles added: `SendInput` extended with `web_search_enabled` and `mcp_enabled`; `chatStore` gains `sessionWebSearch`/`sessionMcpEnabled`; UI adds websearch icon toggle and MCP server dropdown in header; specs updated.
+- [2026-09-28T23:58:00Z] Chat MCP control rebuilt around the composer dropdown and made independent of the Settings form. The chip now lives in the composer bar, lists **only servers enabled in Settings** and is hidden entirely when none are enabled; every switch is **off by default** and per-chat only (`mcpEnabled` is now always sent, and `newConversation` no longer clears `sessionMcpEnabled`, which had been silently handing the next turn every enabled server). The dropdown follows `mcp://changed`, so enabling a server in Settings shows up live; its popover is anchored to the chip's end edge because a start-anchored menu was clipped by the window. New store action `syncSessionMcp` reconciles a refreshed server list without discarding the user's switches. `src/test/mcpDropdown.test.tsx` added (4 cases). Sections 13/14 remain PENDING as before, so `Files Processed` still does not equal `Files to Process` for those two pre-existing sections.

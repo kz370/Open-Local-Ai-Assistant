@@ -117,7 +117,11 @@
     "webSearchOn": "Web search on",
     "webSearchOff": "Web search off",
     "mcpTools": "MCP tools",
-    "mcpMenuHint": "Toggle MCP servers for this session"
+    "mcpToolsPanel": "MCP tools for this chat",
+    "mcpMenuHint": "Toggle MCP servers for this session",
+    "mcpActive": "{{on}} of {{total}} on",
+    "mcpOffByDefault": "Servers are off for this chat until you switch them on.",
+    "mcpUseInChat": "Use {{name}} in this chat"
   },
   "attach": {
     "listLabel": "Attachments",

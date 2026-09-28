@@ -2,12 +2,12 @@ import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "re
 import { ArrowUp, AudioLines, ChevronDown, Clock, Globe, Mic, Paperclip, Plus, Square, Volume2, VolumeX, X } from "lucide-react";
 import { attachFromPaste, pickFiles } from "../../app/attach";
 import { useChat } from "../../app/chatStore";
-import { ipc } from "../../app/ipc";
+import { ipc, on } from "../../app/ipc";
 import { useSettings } from "../../app/settingsStore";
 import { errorMessage, t } from "../../app/strings";
 import { useVoice } from "../../app/voiceStore";
 import type { ServerStatus } from "../../app/types";
-import { textDir } from "../common/controls";
+import { Switch, textDir } from "../common/controls";
 import { LevelMeter } from "../voice/LevelMeter";
 import { VoiceBars } from "../voice/VoiceBars";
 import { AttachmentList } from "./Attachments";
@@ -16,6 +16,15 @@ import { ModelPicker } from "./ModelPicker";
 export interface ComposerHandle {
   focus: () => void;
 }
+
+// Connection state shown under each server, in the user's language.
+const MCP_STATE_KEY: Record<ServerStatus["state"], string> = {
+  connected: "status.connected",
+  connecting: "status.connecting",
+  disabled: "status.disconnected",
+  error: "status.error",
+  offline: "status.offline",
+};
 
 export const Composer = forwardRef<ComposerHandle, { onVoiceSetup: () => void; autoModel?: string | null }>(function Composer({ onVoiceSetup, autoModel = null }, ref) {
   const draft = useChat((s) => s.draft);
@@ -36,6 +45,7 @@ export const Composer = forwardRef<ComposerHandle, { onVoiceSetup: () => void; a
   const sessionMcpEnabled = useChat((s) => s.sessionMcpEnabled);
   const setSessionMcpEnabled = useChat((s) => s.setSessionMcpEnabled);
   const resetSessionTools = useChat((s) => s.resetSessionTools);
+  const syncSessionMcp = useChat((s) => s.syncSessionMcp);
   const voice = useVoice();
   const speak = useSettings((s) => s.settings?.tts.speakResponses ?? false);
   const pasteAsFileChars = useSettings((s) => s.settings?.ai.pasteAsFileChars ?? 0);
@@ -44,25 +54,44 @@ export const Composer = forwardRef<ComposerHandle, { onVoiceSetup: () => void; a
   const [mcpServers, setMcpServers] = useState<ServerStatus[]>([]);
   const [mcpOpen, setMcpOpen] = useState(false);
   const mcpRootRef = useRef<HTMLDivElement>(null);
+  const seeded = useRef(false);
 
   useImperativeHandle(ref, () => ({ focus: () => taRef.current?.focus() }));
 
   const recording = voice.mode === "pushToTalk" && voice.phase !== "idle";
 
+  // Only servers enabled in Settings can be switched on here; with none
+  // enabled the chip is not rendered at all.
   useEffect(() => {
     let cancelled = false;
-    void ipc.mcpList().then((servers) => {
-      if (cancelled) return;
-      setMcpServers(servers);
-      const mcpDefaults: Record<string, boolean> = {};
-      servers.forEach((s) => { mcpDefaults[s.config.id] = s.config.enabled; });
-      resetSessionTools({
-        webSearch: true,
-        mcp: mcpDefaults,
-      });
-    }).catch(() => setMcpServers([]));
-    return () => { cancelled = true; };
-  }, [resetSessionTools]);
+    const load = () =>
+      ipc.mcpList().then((servers) => {
+        if (cancelled) return;
+        const enabled = servers.filter((s) => s.config.enabled);
+        setMcpServers(enabled);
+        // Off unless the user already switched this one on.
+        const defaults: Record<string, boolean> = {};
+        servers.forEach((s) => { defaults[s.config.id] = false; });
+        if (seeded.current) {
+          // Later refreshes only reconcile the list, never the user's choice.
+          syncSessionMcp(defaults);
+          return;
+        }
+        seeded.current = true;
+        resetSessionTools({
+          webSearch: useSettings.getState().settings?.search.enabled ?? false,
+          mcp: defaults,
+        });
+      }).catch(() => setMcpServers([]));
+    void load();
+    // The backend emits this on every enable, save, connect and delete, so a
+    // server enabled in Settings shows up here without reopening the window.
+    const sub = on("mcp://changed", () => void load());
+    return () => {
+      cancelled = true;
+      void sub.then((u) => u());
+    };
+  }, [resetSessionTools, syncSessionMcp]);
 
   useEffect(() => {
     if (!mcpOpen) return;
@@ -82,6 +111,9 @@ export const Composer = forwardRef<ComposerHandle, { onVoiceSetup: () => void; a
       window.removeEventListener("keydown", onKey, true);
     };
   }, [mcpOpen]);
+
+  const mcpTotal = mcpServers.length;
+  const mcpOn = mcpServers.filter((s) => sessionMcpEnabled[s.config.id] ?? false).length;
 
   // Also re-measure when recording ends: an empty textarea is hidden while
   // recording, so a transcript lands in the draft while it has no height.
@@ -255,45 +287,51 @@ export const Composer = forwardRef<ComposerHandle, { onVoiceSetup: () => void; a
           >
             <Globe size={14} />
           </button>
-          <span className="composer-sep" aria-hidden />
-          <div className="picker" ref={mcpRootRef}>
-            <button type="button" className={`chip icon-chip mcp-chip${mcpOpen ? " on" : ""}`} aria-haspopup="menu" aria-expanded={mcpOpen} aria-label={t("chat.mcpTools")} title={t("chat.mcpTools")} onClick={() => setMcpOpen((v) => !v)}>
-              <Plus size={14} />
-              {(() => {
-                const total = mcpServers.length;
-                const on = mcpServers.filter((s) => sessionMcpEnabled[s.config.id] ?? s.config.enabled).length;
-                return on > 0 && total > 1 ? <span className="mcp-count">{on}/{total}</span> : null;
-              })()}
-              <ChevronDown size={10} aria-hidden className={mcpOpen ? "flip" : ""} />
-            </button>
-            {mcpOpen && (
-              <div className="picker-menu narrow" role="menu" aria-label={t("chat.mcpTools")}>
-                <div className="picker-head">
-                  <span>{t("chat.mcpTools")}</span>
-                </div>
-                {mcpServers.length === 0 && <div className="picker-empty">{t("status.notInstalled")}</div>}
-                {mcpServers.map((s) => {
-                  const on = sessionMcpEnabled[s.config.id] ?? s.config.enabled;
-                  return (
-                    <button
-                      type="button"
-                      key={s.config.id}
-                      role="menuitemcheckbox"
-                      aria-checked={on}
-                      className="picker-item"
-                      onClick={() => setSessionMcpEnabled(s.config.id, !on)}
-                    >
-                      <span className={`picker-dot${on ? " on" : ""}`} aria-hidden />
-                      <span className="picker-text">
-                        <span className="picker-name">{s.config.name}</span>
-                        <span className="picker-sub">{s.state}</span>
-                      </span>
-                    </button>
-                  );
-                })}
+          {mcpTotal > 0 && (
+            <>
+              <span className="composer-sep" aria-hidden />
+              <div className="picker" ref={mcpRootRef}>
+                <button
+                  type="button"
+                  className={`chip icon-chip mcp-chip${mcpOpen ? " on" : ""}`}
+                  aria-haspopup="dialog"
+                  aria-expanded={mcpOpen}
+                  aria-label={t("chat.mcpTools")}
+                  title={t("chat.mcpTools")}
+                  onClick={() => setMcpOpen((v) => !v)}
+                >
+                  <Plus size={14} />
+                  <ChevronDown size={10} aria-hidden className={mcpOpen ? " flip" : ""} />
+                  <span className="mcp-count">{mcpOn}/{mcpTotal}</span>
+                </button>
+                {mcpOpen && (
+                  <div className="picker-menu narrow mcp-menu" role="dialog" aria-label={t("chat.mcpToolsPanel")}>
+                    <div className="picker-head">
+                      <span>{t("chat.mcpTools")}</span>
+                      <span>{t("chat.mcpActive", { on: mcpOn, total: mcpTotal })}</span>
+                    </div>
+                    <p className="picker-hint">{t("chat.mcpOffByDefault")}</p>
+                    {mcpServers.map((s) => {
+                      const on = sessionMcpEnabled[s.config.id] ?? false;
+                      return (
+                        <div className="picker-item mcp-item" key={s.config.id}>
+                          <span className="picker-text">
+                            <span className="picker-name">{s.config.name}</span>
+                            <span className="picker-sub">{t(MCP_STATE_KEY[s.state])}</span>
+                          </span>
+                          <Switch
+                            label={t("chat.mcpUseInChat", { name: s.config.name })}
+                            checked={on}
+                            onChange={(v) => setSessionMcpEnabled(s.config.id, v)}
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
-            )}
-          </div>
+            </>
+          )}
           <span className="composer-spacer" />
           {!recording && (
             <button className="round-btn mic" aria-label={t("chat.microphone")} title={t("chat.microphone")} onClick={() => void voice.startPushToTalk()} disabled={voice.handsFree}>

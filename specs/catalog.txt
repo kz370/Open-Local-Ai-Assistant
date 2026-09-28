@@ -627,6 +627,8 @@ src/app/strings.en.json :: (data) — The only string table; dotted keys consume
 src/components/chat/Attachments.tsx :: AttachmentList — The staged attachment chips above the composer, with per-item removal.
 src/components/chat/Attachments.tsx :: attachmentSize — Exported size formatter used by the chips.
 src/components/chat/Composer.tsx :: Composer — Text input, attachment staging, drag-and-drop, paste handling, send/stop, mic and the model chip.
+src/components/chat/Composer.tsx :: MCP_STATE_KEY — `Record<ServerStatus["state"], string>` mapping each connection state to its `status.*` string key (a disabled server shows as "Not connected").
+src/components/chat/Composer.tsx :: MCP dropdown (inside Composer) — Chip plus popover listing only the servers **enabled in Settings**; the chip is not rendered when none are. Each row is a per-chat switch, **off by default**, held in `chatStore.sessionMcpEnabled` and sent as `mcpEnabled` on every turn. The list refreshes on the `mcp://changed` event; the first load seeds the store, later loads merge through `syncSessionMcp` so a refresh never re-enables a server the user switched off. No server configuration is written from here.
 src/components/chat/Composer.tsx :: ComposerHandle — Imperative handle: focus, insert text, clear.
 src/components/chat/Markdown.tsx :: Markdown — Memoised react-markdown + remark-gfm renderer with sanitised HTML (no raw HTML is ever rendered).
 src/components/chat/MessageBubble.tsx :: MessageBubble — Memoised user/assistant bubble: markdown, reasoning block, tool activity, sources, stats, retry/resend, read-aloud.

@@ -77,6 +77,7 @@ interface ChatState {
   setSessionWebSearch: (enabled: boolean) => void;
   setSessionMcpEnabled: (serverId: string, enabled: boolean) => void;
   resetSessionTools: (defaults: { webSearch: boolean; mcp: Record<string, boolean> }) => void;
+  syncSessionMcp: (defaults: Record<string, boolean>) => void;
 }
 
 export function activityToUi(a: ActivityRecord): UiToolActivity {
@@ -163,7 +164,10 @@ export const useChat = create<ChatState>((set, get) => {
           voice: !!opts?.voice,
           attachmentIds: attachments.map((a) => a.id),
           webSearchEnabled: sessionWebSearch,
-          mcpEnabled: Object.keys(sessionMcpEnabled).length ? sessionMcpEnabled : null,
+          // Always sent, even when empty: the backend only applies the
+          // per-server overrides when the map is present, so sending null
+          // would silently re-enable every MCP server the user switched off.
+          mcpEnabled: sessionMcpEnabled,
         },
         (ev) => get().handleEvent(ev),
       );
@@ -212,6 +216,16 @@ export const useChat = create<ChatState>((set, get) => {
       set((s) => ({ sessionMcpEnabled: { ...s.sessionMcpEnabled, [serverId]: enabled } })),
     resetSessionTools: (defaults) =>
       set({ sessionWebSearch: defaults.webSearch, sessionMcpEnabled: defaults.mcp }),
+    // Adds servers that appeared since the last refresh and drops deleted ones,
+    // without discarding the switches the user has already flipped.
+    syncSessionMcp: (defaults) =>
+      set((s) => {
+        const next = { ...defaults, ...s.sessionMcpEnabled };
+        for (const id of Object.keys(s.sessionMcpEnabled)) {
+          if (!(id in defaults)) delete next[id];
+        }
+        return { sessionMcpEnabled: next };
+      }),
 
     addAttachments: (added, failures = []) =>
       set((s) => ({ attachments: [...s.attachments, ...added], attachmentErrors: failures })),
@@ -272,7 +286,10 @@ export const useChat = create<ChatState>((set, get) => {
     newConversation: () => {
       get().stop();
       get().clearAttachments();
-      set({ conversationId: null, messages: [], turnId: null, confirmation: null, connectionError: null, draft: "", sessionWebSearch: true, sessionMcpEnabled: {} });
+      // A new conversation keeps the tool switches: they are a per-chat
+      // choice the user made, not per-message state, and dropping them here
+      // used to hand the next turn every enabled MCP server again.
+      set({ conversationId: null, messages: [], turnId: null, confirmation: null, connectionError: null, draft: "" });
       void ipc.convSetLast(null);
       // Lazy import avoids a circular dependency (voiceStore imports chatStore).
       void import("./voiceStore").then(({ useVoice }) => {

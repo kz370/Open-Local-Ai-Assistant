@@ -795,7 +795,27 @@ html[data-route="chat"] #root {
   animation: pop-in 160ms var(--ease);
 }
 .picker-menu.narrow {
-  width: min(180px, calc(100vw - 32px));
+  width: min(220px, calc(100vw - 32px));
+}
+/* The chip sits left of the spacer, so a start-anchored menu would run off the
+   right edge; anchor to the chip's end edge instead. */
+.picker-menu.mcp-menu {
+  inset-inline-start: auto;
+  inset-inline-end: -6px;
+}
+.mcp-item {
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 8px;
+}
+.mcp-item .picker-text {
+  flex: 1;
+  min-width: 0;
+}
+.picker-hint {
+  margin: 0 4px 4px;
+  font-size: 10px;
+  color: var(--text-faint);
 }
 .picker-head {
   display: flex;
