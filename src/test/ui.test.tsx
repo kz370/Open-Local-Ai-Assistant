@@ -319,11 +319,14 @@ describe("Overlay review preview", () => {
     act(() => listeners.get(name)?.({ event: name, id: 1, payload } as Event<unknown>));
   };
   const scrollTo = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollTo");
+  // jsdom implements neither; the dropdown menus scroll the selected row into view.
+  const scrollIntoView = Object.getOwnPropertyDescriptor(Element.prototype, "scrollIntoView");
 
   beforeEach(() => {
     listeners.clear();
     useSettings.setState({ settings: { dictation: { mode: "toggle", language: "", reviewBeforeInsert: true }, stt: { language: "auto" }, language: { entries: [] } } as never });
     Object.defineProperty(HTMLElement.prototype, "scrollTo", { configurable: true, value: vi.fn() });
+    Object.defineProperty(Element.prototype, "scrollIntoView", { configurable: true, value: vi.fn() });
     vi.mocked(listen).mockImplementation(async (event, handler) => {
       listeners.set(event, handler as EventCallback<unknown>);
       return () => {};
@@ -337,6 +340,8 @@ describe("Overlay review preview", () => {
     vi.mocked(listen).mockImplementation(async () => () => {});
     if (scrollTo) Object.defineProperty(HTMLElement.prototype, "scrollTo", scrollTo);
     else Reflect.deleteProperty(HTMLElement.prototype, "scrollTo");
+    if (scrollIntoView) Object.defineProperty(Element.prototype, "scrollIntoView", scrollIntoView);
+    else Reflect.deleteProperty(Element.prototype, "scrollIntoView");
   });
 
   it("shows live text immediately and enables insert after the final transcript arrives", () => {
@@ -390,6 +395,41 @@ describe("Overlay review preview", () => {
       result: { raw: "live words", inserted: "final words", corrected: false, correctionError: null },
     });
     expect(screen.getByRole("textbox")).toHaveValue("my edit");
+  });
+
+  it("offers a profile pill only when profiles exist, and saves the pick", async () => {
+    render(<Overlay />);
+    emit("dictation://state", { state: "listening" });
+    expect(screen.queryByRole("button", { name: /^Dictation profile:/ })).not.toBeInTheDocument();
+
+    const many = (n: number) => ({
+      dictation: { mode: "toggle", language: "", reviewBeforeInsert: true, activeProfile: "", profiles: Array.from({ length: n }, (_, i) => ({ id: `p${i}`, title: `Profile ${i}`, prompt: "" })) },
+      stt: { language: "auto" },
+      language: { entries: [] },
+    });
+    useSettings.setState({ settings: many(3) as never });
+    const pill = await screen.findByRole("button", { name: "Dictation profile: No profile" });
+    fireEvent.click(pill);
+    // The menu is rendered after the window's clip region is widened.
+    fireEvent.click(await screen.findByTitle("Profile 1"));
+    expect(invoke).toHaveBeenCalledWith("dictation_set_profile", { profile: "p1" });
+  });
+
+  it("searches the profile list once it reaches the threshold", async () => {
+    const profiles = Array.from({ length: 10 }, (_, i) => ({ id: `p${i}`, title: `Profile ${i}`, prompt: "" }));
+    useSettings.setState({
+      settings: { dictation: { mode: "toggle", language: "", reviewBeforeInsert: true, activeProfile: "", profiles }, stt: { language: "auto" }, language: { entries: [] } } as never,
+    });
+    render(<Overlay />);
+    emit("dictation://state", { state: "listening" });
+    fireEvent.click(await screen.findByRole("button", { name: "Dictation profile: No profile" }));
+
+    const search = await screen.findByPlaceholderText("Search profiles…");
+    expect(screen.getByTitle("Profile 9")).toBeInTheDocument();
+    fireEvent.change(search, { target: { value: "profile 4" } });
+    expect(screen.queryByTitle("Profile 9")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTitle("Profile 4"));
+    expect(invoke).toHaveBeenCalledWith("dictation_set_profile", { profile: "p4" });
   });
 });
 

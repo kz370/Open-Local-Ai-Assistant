@@ -8,6 +8,7 @@ import { Card, Row, SectionHeader } from "../../../components/settings/layout";
 import { ShortcutInput } from "../../../components/settings/ShortcutInput";
 import { useLmModels } from "./Ai";
 import { useS } from "./Basic";
+import { DictationProfilesSection } from "./DictationProfiles";
 
 function HistoryCard({ enabled, onToggle }: { enabled: boolean; onToggle: (v: boolean) => void }) {
   const [items, setItems] = useState<DictationEntry[]>([]);
@@ -72,7 +73,7 @@ function HistoryCard({ enabled, onToggle }: { enabled: boolean; onToggle: (v: bo
   );
 }
 
-export function DictationSection() {
+export function DictationSection({ sub }: { sub?: string }) {
   const [s, set] = useS();
   const d = s.dictation;
   const { models, error } = useLmModels();
@@ -80,6 +81,8 @@ export function DictationSection() {
   useEffect(() => void ipc.modelsInstalled().then(setInstalled), []);
   const hasStt = installed.some((m) => m.kind === "stt");
   const chatModels = [...models.filter((m) => m.kind !== "embedding")].sort((a, b) => (a.sizeBytes ?? 0) - (b.sizeBytes ?? 0));
+
+  if (sub === "profiles") return <DictationProfilesSection />;
 
   return (
     <>
@@ -130,6 +133,13 @@ export function DictationSection() {
         <Row label={t("settings.dictation.overlayPosition")} hint={t("settings.dictation.overlayPositionHint")}>
           <button className="btn btn-sm" onClick={() => void ipc.dictationResetOverlayPosition()}>
             {t("overlay.resetPosition")}
+          </button>
+        </Row>
+      </Card>
+      <Card title={t("settings.dictation.profiles")}>
+        <Row label={t("settings.dictation.profiles")} hint={t("settings.dictation.profilesHint")} end>
+          <button className="btn btn-sm" onClick={() => (location.hash = "#/settings/dictation/profiles")}>
+            {t("settings.dictation.manageProfiles")}
           </button>
         </Row>
       </Card>

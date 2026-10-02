@@ -122,6 +122,12 @@ export interface Settings {
     historyEnabled: boolean;
     overlayX: number | null;
     overlayY: number | null;
+    /** User-authored profiles, in display order. */
+    profiles: DictationProfile[];
+    /** How many profiles the overlay dropdown holds before it grows a search box. */
+    profileSearchThreshold: number;
+    /** Id of the profile chosen in the overlay; "" = none. */
+    activeProfile: string;
   };
   search: {
     enabled: boolean;
@@ -134,6 +140,14 @@ export interface Settings {
   };
   lastConversationId: string | null;
   version: number;
+}
+
+/** A dictation profile: a title shown in the overlay's profile dropdown plus a
+ *  prompt appended to the built-in correction prompt. */
+export interface DictationProfile {
+  id: string;
+  title: string;
+  prompt: string;
 }
 
 export interface LanguageEntry {

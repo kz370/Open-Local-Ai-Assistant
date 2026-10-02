@@ -300,7 +300,15 @@ async fn run_dictation(app: AppHandle, raw: String) {
         let _ = app.emit("dictation://state", serde_json::json!({ "state": "empty" }));
         linger = LINGER_MSG_MS;
     } else {
-        if settings.correction_enabled {
+        // An active profile always runs the model (it shapes the text); plain
+        // correction only does so when the user turned it on.
+        let profile = settings
+            .profiles
+            .iter()
+            .find(|p| p.id == settings.active_profile)
+            .map(|p| p.prompt.trim())
+            .filter(|p| !p.is_empty());
+        if profile.is_some() || settings.correction_enabled {
             match settings
                 .correction_model
                 .as_deref()
@@ -311,7 +319,9 @@ async fn run_dictation(app: AppHandle, raw: String) {
                         "dictation://state",
                         serde_json::json!({ "state": "correcting" }),
                     );
-                    match dictation::correct_text(state.lmstudio.as_ref(), model, &raw).await {
+                    match dictation::correct_text(state.lmstudio.as_ref(), model, &raw, profile)
+                        .await
+                    {
                         Ok(c) => {
                             text = c;
                             corrected = true;
@@ -644,6 +654,7 @@ pub fn run() {
             commands::voice::dictation_confirm,
             commands::voice::dictation_retry,
             commands::voice::dictation_set_language,
+            commands::voice::dictation_set_profile,
             commands::voice::dictation_history,
             commands::voice::dictation_history_delete,
             commands::voice::dictation_history_clear,

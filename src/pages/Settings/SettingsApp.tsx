@@ -15,7 +15,8 @@ import { WebSearchSection } from "./sections/WebSearch";
 import { DiagnosticsSection, PrivacySection } from "./sections/System";
 import { SpeechSection, VoiceSection } from "./sections/Voice";
 
-type Section = { id: string; group: string; icon: ComponentType<{ size?: number }>; view: ComponentType };
+/** `sub` is the second hash segment, for a section that hosts a sub-page. */
+type Section = { id: string; group: string; icon: ComponentType<{ size?: number }>; view: ComponentType<{ sub?: string }> };
 
 // Ordered by group, so the menu reads as four short lists instead of one long one.
 const SECTIONS: Section[] = [
@@ -64,13 +65,17 @@ function highlightMatch(text: string, q: string) {
   );
 }
 
-function sectionFromHash(): string {
-  const id = location.hash.replace(/^#\/settings\/?/, "").split("/")[0];
-  return SECTIONS.some((s) => s.id === id) ? id : "general";
+/** The full hash split into its section id and the sub-page under it, so a
+ *  section can host a second page (Dictation -> Profiles) while the sidebar
+ *  still highlights the section it belongs to. */
+function routeFromHash(): { section: string; sub: string } {
+  const [section = "", sub = ""] = location.hash.replace(/^#\/settings\/?/, "").split("/");
+  return { section, sub };
 }
 
 export function SettingsApp() {
-  const [section, setSection] = useState(sectionFromHash);
+  const [route, setRoute] = useState(routeFromHash);
+  const section = SECTIONS.some((s) => s.id === route.section) ? route.section : "general";
   const [query, setQuery] = useState("");
   const setHighlight = useSettingsHighlight((s) => s.set);
   const index = useMemo(() => buildSettingsIndex(SECTIONS.map((s) => s.id)), []);
@@ -112,7 +117,7 @@ export function SettingsApp() {
   };
 
   useEffect(() => {
-    const onHash = () => setSection(sectionFromHash());
+    const onHash = () => setRoute(routeFromHash());
     window.addEventListener("hashchange", onHash);
     const sub = on<string>("app://navigate", (route) => {
       location.hash = `#${route}`;
@@ -125,6 +130,9 @@ export function SettingsApp() {
   }, []);
 
   const View = SECTIONS.find((s) => s.id === section)!.view;
+  // The sub-page renders inside its section's main area, so the sidebar entry
+  // stays selected and the key remounts the view when the sub-page changes.
+  const sub = route.sub;
   return (
     <div className="settings-shell">
       <nav className="settings-nav" aria-label={t("settings.title")}>
@@ -180,8 +188,8 @@ export function SettingsApp() {
           </Fragment>
         ))}
       </nav>
-      <main className="settings-main" key={section}>
-        <View />
+      <main className="settings-main" key={`${section}/${sub}`}>
+        <View sub={sub} />
       </main>
     </div>
   );

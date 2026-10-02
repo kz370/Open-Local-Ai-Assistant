@@ -64,7 +64,7 @@ const SETTINGS: Settings = {
   },
   stt: { model: "auto", language: "auto", microphone: null, hardware: "auto", autoSubmit: false, handsFree: false, pushToTalk: true, vadThreshold: 0.5, silenceMs: 800, extraModelDirs: [], callView: true, autoStopSilenceSecs: 8, handsFreeTimeoutSecs: 300 },
   tts: { speakResponses: false, speed: 1, volume: 1, outputDevice: null, preferredGender: "any", voiceHardware: {}, speakAfterReply: false, expressiveSounds: true, expressiveInstruction: "" },
-  dictation: { enabled: true, shortcut: "CommandOrControl+Alt+Space", mode: "hold", correctionEnabled: false, correctionModel: null, insertMethod: "type", addTrailingSpace: true, language: "", reviewBeforeInsert: false, historyEnabled: true, overlayX: null, overlayY: null },
+  dictation: { enabled: true, shortcut: "CommandOrControl+Alt+Space", mode: "hold", correctionEnabled: false, correctionModel: null, insertMethod: "type", addTrailingSpace: true, language: "", reviewBeforeInsert: false, historyEnabled: true, overlayX: null, overlayY: null, profiles: [], activeProfile: "", profileSearchThreshold: 10 },
   search: { enabled: true, maxResults: 5, searxngUrl: "", searxngEnabled: true, searxngSource: "local", searxngPublicUrl: "", primary: "searxng" },
   lastConversationId: null,
   version: 2,
@@ -213,6 +213,49 @@ describe("bubble", () => {
     fireEvent.pointerDown(bubble, { button: 0, screenX: 10, screenY: 10 });
     fireEvent.pointerUp(bubble, { button: 0, screenX: 10, screenY: 10 });
     await waitFor(() => expect(vi.mocked(invoke)).toHaveBeenCalledWith("bubble_open_chat"));
+  });
+});
+
+describe("dictation profiles", () => {
+  beforeEach(async () => {
+    vi.mocked(invoke).mockReset();
+    mockBackend();
+    // Echo what is saved, like the real backend does.
+    const base = vi.mocked(invoke).getMockImplementation()!;
+    vi.mocked(invoke).mockImplementation(async (cmd: string, args?: unknown) => (cmd === "save_settings" ? (args as { settings: Settings }).settings : base(cmd, args as never)));
+    await useSettings.getState().load();
+  });
+
+  it("adds, edits and removes a profile on the sub-page", async () => {
+    location.hash = "#/settings/dictation/profiles";
+    render(<SettingsApp />);
+    expect(await screen.findByText("No profiles yet. Add one to reshape dictation for a topic.")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Add profile/ }));
+    const titles = () => Array.from(document.querySelectorAll<HTMLInputElement>(".profile-title")).map((i) => i.value);
+    await waitFor(() => expect(titles()).toHaveLength(1));
+
+    fireEvent.change(screen.getByLabelText("Profile title"), { target: { value: "Programming" } });
+    fireEvent.change(screen.getByLabelText("Profile prompt"), { target: { value: "format as a code block" } });
+    await waitFor(() => expect(useSettings.getState().settings?.dictation.profiles).toEqual([{ id: "p1", title: "Programming", prompt: "format as a code block" }]));
+
+    // The active profile can be picked here too, and is cleared with its profile.
+    fireEvent.change(screen.getByLabelText(/^Active profile/), { target: { value: "p1" } });
+    await waitFor(() => expect(useSettings.getState().settings?.dictation.activeProfile).toBe("p1"));
+    fireEvent.click(screen.getByRole("button", { name: "Delete profile: Programming" }));
+    await waitFor(() => expect(useSettings.getState().settings?.dictation.profiles).toEqual([]));
+    expect(useSettings.getState().settings?.dictation.activeProfile).toBe("");
+  });
+
+  it("reorders profiles with the move buttons", async () => {
+    useSettings.setState({ settings: { ...SETTINGS, dictation: { ...SETTINGS.dictation, profiles: [{ id: "a", title: "A", prompt: "" }, { id: "b", title: "B", prompt: "" }] } } });
+    location.hash = "#/settings/dictation/profiles";
+    render(<SettingsApp />);
+    const upButtons = await screen.findAllByRole("button", { name: "Move up" });
+    // The first row's "Move up" is disabled, so the second row's moves A down.
+    expect(upButtons[0]).toBeDisabled();
+    fireEvent.click(upButtons[1]);
+    await waitFor(() => expect(useSettings.getState().settings?.dictation.profiles.map((p) => p.id)).toEqual(["b", "a"]));
   });
 });
 

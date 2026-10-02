@@ -442,6 +442,19 @@ impl Default for SearchSettings {
     }
 }
 
+/// One user-authored dictation profile: a title shown in the overlay's profile
+/// dropdown plus a prompt appended to the built-in correction prompt, so the
+/// same take is shaped for the topic the user is speaking about (programming,
+/// imaging, a report, ...).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(rename_all = "camelCase", default)]
+pub struct DictationProfile {
+    pub id: String,
+    pub title: String,
+    /// Extra instructions appended to `services::dictation`'s correction prompt.
+    pub prompt: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", default)]
 pub struct DictationSettings {
@@ -466,6 +479,15 @@ pub struct DictationSettings {
     /// None to auto-center it near the bottom of the screen.
     pub overlay_x: Option<i32>,
     pub overlay_y: Option<i32>,
+    /// User-authored profiles, in display order. Capped and de-duplicated by
+    /// `Settings::sanitize`.
+    pub profiles: Vec<DictationProfile>,
+    /// How many profiles the overlay's dropdown holds before it grows a search
+    /// box, so a long list stays usable. Clamped by `Settings::sanitize`.
+    pub profile_search_threshold: u32,
+    /// Id of the profile chosen in the overlay, or "" for none. Reset to ""
+    /// when the id no longer exists.
+    pub active_profile: String,
 }
 
 impl Default for DictationSettings {
@@ -483,6 +505,9 @@ impl Default for DictationSettings {
             history_enabled: true,
             overlay_x: None,
             overlay_y: None,
+            profiles: Vec::new(),
+            profile_search_threshold: 10,
+            active_profile: String::new(),
         }
     }
 }
@@ -591,6 +616,34 @@ impl Settings {
             && !lang_ok(&self.dictation.language, &self.language.entries)
         {
             self.dictation.language = String::new();
+        }
+        // Profiles are the user's own list, so there is no cap: ids must only be
+        // unique and non-empty, and the text is trimmed so a pasted prompt or a
+        // padded title cannot store unbounded junk.
+        let mut profile_ids = std::collections::HashSet::new();
+        self.dictation.profiles = std::mem::take(&mut self.dictation.profiles)
+            .into_iter()
+            .filter_map(|mut p| {
+                p.id = p.id.trim().chars().take(40).collect();
+                p.title = p.title.trim().chars().take(60).collect();
+                p.prompt = p.prompt.trim().chars().take(4000).collect();
+                if p.id.is_empty() || p.title.is_empty() || !profile_ids.insert(p.id.clone()) {
+                    return None;
+                }
+                Some(p)
+            })
+            .collect();
+        // Above this many profiles the overlay's dropdown gets a search box.
+        self.dictation.profile_search_threshold =
+            self.dictation.profile_search_threshold.clamp(2, 100);
+        self.dictation.active_profile = self.dictation.active_profile.trim().to_string();
+        if !self
+            .dictation
+            .profiles
+            .iter()
+            .any(|p| p.id == self.dictation.active_profile)
+        {
+            self.dictation.active_profile.clear();
         }
         self.language.arabic_tashkeel_instruction = self
             .language
@@ -853,6 +906,42 @@ mod tests {
         assert_eq!(s.ai.temperature, 2.0);
         assert_eq!(s.tts.volume, 1.0);
         assert_eq!(s.ai.server_url, DEFAULT_LMSTUDIO_URL);
+    }
+
+    #[test]
+    fn sanitize_cleans_dictation_profiles() {
+        let mut s = Settings::default();
+        let profile = |id: &str, title: &str, prompt: &str| DictationProfile {
+            id: id.into(),
+            title: title.into(),
+            prompt: prompt.into(),
+        };
+        s.dictation.profiles = vec![
+            profile(" code ", "  Code  ", " write code "),
+            profile("code", "Duplicate id", "dropped"),
+            profile("img", "   ", "no title"),
+            profile("", "No id", "dropped"),
+            profile("img", "Imaging", "describe as an image prompt"),
+        ];
+        s.dictation.active_profile = " code ".into();
+        s.sanitize();
+        assert_eq!(s.dictation.profiles.len(), 2);
+        assert_eq!(s.dictation.profiles[0].id, "code");
+        assert_eq!(s.dictation.profiles[0].title, "Code");
+        assert_eq!(s.dictation.profiles[0].prompt, "write code");
+        assert_eq!(s.dictation.profiles[1].id, "img");
+        assert_eq!(s.dictation.active_profile, "code");
+        // A selection that no longer exists is cleared, not left dangling.
+        s.dictation.active_profile = "gone".into();
+        s.sanitize();
+        assert!(s.dictation.active_profile.is_empty());
+        // The list itself is not capped; only the searchable-from count is.
+        s.dictation.profile_search_threshold = 0;
+        s.sanitize();
+        assert_eq!(s.dictation.profile_search_threshold, 2);
+        s.dictation.profile_search_threshold = 9999;
+        s.sanitize();
+        assert_eq!(s.dictation.profile_search_threshold, 100);
     }
 
     #[test]

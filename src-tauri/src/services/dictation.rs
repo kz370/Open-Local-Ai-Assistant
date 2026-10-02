@@ -42,11 +42,25 @@ When the speaker explicitly names an emoji together with the word emoji (for exa
 \"thumbs up emoji\", \"laughing emoji\", \"Herz Emoji\", \"إيموجي قلب\"), replace that phrase with the \
 emoji character itself. Never add emojis the speaker did not name this way. Output only the corrected text.";
 
-pub async fn correct_text(ai: &dyn AiService, model: &str, text: &str) -> AppResult<String> {
+/// Rewrites a transcript with the built-in correction rules plus, when a
+/// profile is active, the profile's own prompt (so the take is shaped for the
+/// topic being dictated). The length-ratio guard is skipped for profiles: a
+/// profile may legitimately summarise, reformat or expand the text, which is
+/// exactly what the guard exists to reject for plain correction.
+pub async fn correct_text(
+    ai: &dyn AiService,
+    model: &str,
+    text: &str,
+    profile: Option<&str>,
+) -> AppResult<String> {
+    let system = match profile.map(str::trim).filter(|p| !p.is_empty()) {
+        Some(extra) => format!("{CORRECTION_PROMPT}\n\nAdditional instructions from the user's active dictation profile:\n{extra}"),
+        None => CORRECTION_PROMPT.to_string(),
+    };
     let req = ChatRequest {
         model: model.to_string(),
         messages: vec![
-            ChatMessage::text("system", CORRECTION_PROMPT),
+            ChatMessage::text("system", &system),
             ChatMessage::text("user", format!("<transcript>\n{text}\n</transcript>")),
         ],
         tools: vec![],
@@ -69,7 +83,8 @@ pub async fn correct_text(ai: &dyn AiService, model: &str, text: &str) -> AppRes
     };
     ai.chat(req, cancel, &mut cb).await?;
     visible.push_str(&filter.finish().0);
-    let cleaned = sanitize_correction(&visible);
+    let profiling = profile.map(str::trim).filter(|p| !p.is_empty()).is_some();
+    let cleaned = sanitize_correction(&visible, profiling);
     if cleaned.is_empty() {
         return Err(AppError::LmStudio(
             "correction model returned no text".into(),
@@ -77,11 +92,14 @@ pub async fn correct_text(ai: &dyn AiService, model: &str, text: &str) -> AppRes
     }
     // Guard against a model that "answers" instead of correcting. An emoji
     // stands in for a spoken phrase ("heart emoji"), so it counts as one.
-    let (a, b) = (text.chars().count() as f32, spoken_len(&cleaned) as f32);
-    if b > a * 2.0 + 40.0 || b < a * 0.3 {
-        return Err(AppError::LmStudio(
-            "correction output did not resemble the dictated text".into(),
-        ));
+    // A profile prompt is trusted to reshape the text, so the bounds do not apply.
+    if !profiling {
+        let (a, b) = (text.chars().count() as f32, spoken_len(&cleaned) as f32);
+        if b > a * 2.0 + 40.0 || b < a * 0.3 {
+            return Err(AppError::LmStudio(
+                "correction output did not resemble the dictated text".into(),
+            ));
+        }
     }
     Ok(cleaned)
 }
@@ -98,14 +116,25 @@ fn is_emoji(c: char) -> bool {
     matches!(c as u32, 0x1F000..=0x1FAFF | 0x2600..=0x27BF | 0x2B00..=0x2BFF)
 }
 
-fn sanitize_correction(s: &str) -> String {
+/// Strips the model's framing and normalises whitespace. Plain correction is a
+/// single line, so runs of whitespace collapse to one space. A profile may ask
+/// for structure (lists, paragraphs, code blocks), so `profiling` keeps line
+/// breaks and only trims trailing space from each line.
+fn sanitize_correction(s: &str, profiling: bool) -> String {
     let mut t = s.trim();
     for tag in ["<transcript>", "</transcript>"] {
         t = t.trim_start_matches(tag).trim_end_matches(tag).trim();
     }
     let t = t.strip_prefix("Corrected text:").unwrap_or(t).trim();
     let t = t.trim_matches(|c| c == '"' || c == '“' || c == '”').trim();
-    t.split_whitespace().collect::<Vec<_>>().join(" ")
+    if !profiling {
+        return t.split_whitespace().collect::<Vec<_>>().join(" ");
+    }
+    t.lines()
+        .map(str::trim_end)
+        .filter(|l| !l.trim().is_empty())
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 #[cfg(windows)]
@@ -545,7 +574,9 @@ mod tests {
     use crate::services::ai::{ChatCompletion, ConnectionStatus, ModelInfo};
     use async_trait::async_trait;
 
-    struct Echo(&'static str);
+    /// Streams `text` back, asserting the system prompt carries `expected`
+    /// (the built-in correction rules always, plus `self.1` when given).
+    struct Echo(&'static str, Option<&'static str>);
 
     #[async_trait]
     impl AiService for Echo {
@@ -566,6 +597,13 @@ mod tests {
         ) -> AppResult<ChatCompletion> {
             assert_eq!(req.temperature, 0.1);
             assert!(req.messages[0].content_text().contains("Do not translate"));
+            if let Some(expected) = self.1 {
+                assert!(
+                    req.messages[0].content_text().contains(expected),
+                    "system prompt is missing {:?}",
+                    expected
+                );
+            }
             cb(StreamChunk::Content(self.0.into()));
             Ok(ChatCompletion::default())
         }
@@ -574,32 +612,78 @@ mod tests {
     #[tokio::test]
     async fn correction_applies_and_guards() {
         let out = correct_text(
-            &Echo("<think>hmm</think>Hello, how are you?"),
+            &Echo("<think>hmm</think>Hello, how are you?", None),
             "small",
             "hello how are you",
+            None,
         )
         .await
         .unwrap();
         assert_eq!(out, "Hello, how are you?");
         assert_eq!(
-            sanitize_correction("No, I don't think this   is\t\tgoing to work."),
+            sanitize_correction("No, I don't think this   is\t\tgoing to work.", false),
             "No, I don't think this is going to work."
         );
         let long_answer: &'static str = "Sure! Here is a very long essay about many things that the user never asked for in the first place, with lots of detail.";
-        assert!(correct_text(&Echo(long_answer), "small", "hi there")
-            .await
-            .is_err());
+        assert!(
+            correct_text(&Echo(long_answer, None), "small", "hi there", None)
+                .await
+                .is_err()
+        );
         // A spoken emoji name may shrink to a single character.
         assert_eq!(
-            correct_text(&Echo("❤️"), "small", "heart emoji")
+            correct_text(&Echo("❤️", None), "small", "heart emoji", None)
                 .await
                 .unwrap(),
             "❤️"
         );
-        assert!(
-            correct_text(&Echo("ok"), "small", "please write the whole report for me")
-                .await
-                .is_err()
+        assert!(correct_text(
+            &Echo("ok", None),
+            "small",
+            "please write the whole report for me",
+            None
+        )
+        .await
+        .is_err());
+    }
+
+    #[tokio::test]
+    async fn profile_prompt_is_appended_and_skips_the_length_guard() {
+        // A profile may reformat into a list, so the ratio guard must not fire.
+        assert_eq!(
+            correct_text(
+                &Echo("- one\n- two\n- three", Some("format as markdown")),
+                "small",
+                "one two three",
+                Some("format as markdown"),
+            )
+            .await
+            .unwrap(),
+            "- one\n- two\n- three"
+        );
+        // A blank profile is treated as no profile, guard included.
+        assert!(correct_text(
+            &Echo(
+                "Sure! Here is a long unrelated essay that has nothing at all to do with the short dictated input.",
+                None
+            ),
+            "small",
+            "hi there",
+            Some("   "),
+        )
+        .await
+        .is_err());
+        // Plain correction stays on one line even when the model breaks lines.
+        assert_eq!(
+            sanitize_correction("one\ntwo   three", false),
+            "one two three"
+        );
+        // A profile keeps the structure it asked for: line breaks and the
+        // indent of nested items, minus blank lines and trailing space. The
+        // first line's indent goes with the overall trim, as it does for text.
+        assert_eq!(
+            sanitize_correction("- one  \n\n    - two  \n\n", true),
+            "- one\n    - two"
         );
     }
 

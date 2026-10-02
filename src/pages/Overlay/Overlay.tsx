@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState } from "react";
-import { Check, CheckCircle2, ChevronDown, Globe, Mic, Pencil, RotateCcw, X, XCircle } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Check, CheckCircle2, ChevronDown, Globe, Mic, Pencil, RotateCcw, SlidersHorizontal, X, XCircle } from "lucide-react";
 import { getCurrentWindow, PhysicalPosition } from "@tauri-apps/api/window";
 import { ipc, on } from "../../app/ipc";
 import { useSettings } from "../../app/settingsStore";
 import { errorMessage, t } from "../../app/strings";
-import type { DictationStateEvent, LanguageEntry, VoiceEvent } from "../../app/types";
+import type { DictationProfile, DictationStateEvent, LanguageEntry, VoiceEvent } from "../../app/types";
 import { textDir } from "../../components/common/controls";
 import { VoiceBars } from "../../components/voice/VoiceBars";
 
@@ -78,6 +78,11 @@ function HeadBtn(props: { label: string; onClick: () => void; children: React.Re
 
 const quiet = () => undefined;
 
+/** Stable empty lists for the settings selectors below: a fresh `[]` from a
+ *  selector would be a new value on every snapshot and spin the store. */
+const NO_LANGUAGES: LanguageEntry[] = [];
+const NO_PROFILES: DictationProfile[] = [];
+
 const MENU_ROW = 27; // option height + gap
 const MENU_PAD = 10; // padding + border
 const MENU_MAX_ROWS = 8;
@@ -85,28 +90,52 @@ const MENU_GAP = 6; // between the pill and the menu
 const MENU_W = 210; // matches .overlay-lang-menu
 const MENU_LEAVE_MS = 500; // grace before a pointer that left the overlay closes the menu
 
-/** Language pill with a dropdown list. The overlay window keeps invisible room
- *  above and below the card (see MENU_ROOM in window.rs) and is clipped to the
- *  card; opening the menu adds the menu's outline to the clip, so the list
- *  hangs outside the card at full size without the window moving. It opens
- *  downward, or upward when the screen ends below. Clicks outside the card
- *  and menu go to the app behind, so leaving them also closes the menu. */
-function LanguageMenu(props: { value: string; languages: LanguageEntry[]; onChange: (code: string) => void; resetKey: string }) {
+/** The window has one menu rectangle (MENU_RECT in window.rs), so the pill
+ *  that put it there is tracked here: only that pill may take it away, which
+ *  keeps a close-then-open pair of calls from arriving in the wrong order. */
+let menuOwner: object | null = null;
+
+type PillOption = { value: string; short: string; name: string };
+
+/** Header pill with a dropdown list, used for the language and the profile.
+ *  The overlay window keeps invisible room above and below the card (see
+ *  MENU_ROOM in window.rs) and is clipped to the card; opening the menu adds
+ *  the menu's outline to the clip, so the list hangs outside the card at full
+ *  size without the window moving. It opens downward, or upward when the
+ *  screen ends below. Clicks outside the card and menu go to the app behind,
+ *  so leaving them also closes the menu. */
+function PillMenu(props: {
+  label: string;
+  icon: React.ReactNode;
+  value: string;
+  options: PillOption[];
+  onChange: (value: string) => void;
+  resetKey: string;
+  /** Adds a filter box on top of the options, for lists too long to scan. */
+  searchable?: boolean;
+  searchPlaceholder?: string;
+}) {
   const [open, setOpen] = useState<{ top: number; right: number } | null>(null);
+  const [query, setQuery] = useState("");
   const ref = useRef<HTMLDivElement>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const openRef = useRef(false);
+  const owner = useRef({});
 
-  const nameOf = (e: LanguageEntry) => (e.builtIn ? t(`languages.${e.code}`) : e.displayName);
-  const options = [{ code: "auto", short: t("overlay.auto"), name: t("app.automatic") }, ...props.languages.map((e) => ({ code: e.code, short: e.code.toUpperCase(), name: nameOf(e) }))];
-  const current = options.find((o) => o.code === props.value) ?? options[0];
-  const menuH = Math.min(options.length, MENU_MAX_ROWS) * MENU_ROW + MENU_PAD;
+  const current = props.options.find((o) => o.value === props.value) ?? props.options[0];
+  const needle = query.trim().toLowerCase();
+  const shown = !needle ? props.options : props.options.filter((o) => `${o.short} ${o.name}`.toLowerCase().includes(needle));
+  const rows = shown.length + (props.searchable ? 1 : 0); // the search box is a row
+  const menuH = Math.min(rows, MENU_MAX_ROWS) * MENU_ROW + MENU_PAD;
 
   const close = () => {
     if (!openRef.current) return;
     openRef.current = false;
     setOpen(null);
+    setQuery("");
+    if (menuOwner !== owner.current) return;
+    menuOwner = null;
     void ipc.dictationOverlayMenu(null).catch(quiet);
   };
 
@@ -120,6 +149,7 @@ function LanguageMenu(props: { value: string; languages: LanguageEntry[]; onChan
     const top = down ? r.bottom + MENU_GAP : r.top - MENU_GAP - menuH;
     const right = document.documentElement.clientWidth - r.right;
     // Unclip the menu's area first, so its first frame isn't cut off.
+    menuOwner = owner.current;
     await ipc.dictationOverlayMenu([r.right - MENU_W, top, MENU_W, menuH]).catch(quiet);
     if (!openRef.current) return;
     setOpen({ top, right });
@@ -161,33 +191,50 @@ function LanguageMenu(props: { value: string; languages: LanguageEntry[]; onChan
         ref={btnRef}
         type="button"
         className={`overlay-lang${open ? " open" : ""}${up ? " up" : ""}`}
-        title={`${t("overlay.language")}: ${current.name}`}
-        aria-label={`${t("overlay.language")}: ${current.name}`}
+        title={`${props.label}: ${current.name}`}
+        aria-label={`${props.label}: ${current.name}`}
         aria-haspopup="listbox"
         aria-expanded={!!open}
         onClick={() => (open ? close() : void show())}
       >
-        <Globe size={12} aria-hidden />
-        {current.short}
+        {props.icon}
+        {current.short && <span className="overlay-lang-current">{current.short}</span>}
         <ChevronDown size={12} aria-hidden className="overlay-lang-chevron" />
       </button>
       {open && (
-        <div ref={menuRef} className="overlay-lang-menu" role="listbox" aria-label={t("overlay.language")} style={{ top: open.top, right: open.right, maxHeight: menuH }}>
-          {options.map((o) => (
+        <div ref={menuRef} className="overlay-lang-menu" role="listbox" aria-label={props.label} style={{ top: open.top, right: open.right, maxHeight: menuH }}>
+          {props.searchable && (
+            <input
+              className="input overlay-lang-search"
+              autoFocus
+              value={query}
+              placeholder={props.searchPlaceholder}
+              aria-label={`${props.label}: ${t("app.search")}`}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key !== "Enter" || !shown.length) return;
+                e.preventDefault();
+                close();
+                if (shown[0].value !== props.value) props.onChange(shown[0].value);
+              }}
+              onPointerDown={(e) => e.stopPropagation()}
+            />
+          )}
+          {shown.map((o) => (
             <button
-              key={o.code}
+              key={o.value}
               type="button"
               role="option"
-              aria-selected={o.code === props.value}
+              aria-selected={o.value === props.value}
               className="overlay-lang-option"
               title={o.name}
               onClick={() => {
                 close();
-                if (o.code !== props.value) props.onChange(o.code);
+                if (o.value !== props.value) props.onChange(o.value);
               }}
             >
               <span className="overlay-lang-check" aria-hidden>
-                {o.code === props.value && <Check size={11} />}
+                {o.value === props.value && <Check size={11} />}
               </span>
               <span className="overlay-lang-code">{o.short}</span>
               <span className="overlay-lang-name">{o.name}</span>
@@ -333,7 +380,27 @@ export function Overlay() {
     ? mode === "toggle" ? t("overlay.hintToggleReview") : t("overlay.hintReview")
     : mode === "toggle" ? t("overlay.hintToggle") : t("overlay.hint");
   const language = useSettings((st) => st.settings?.dictation.language || st.settings?.stt.language || "auto");
-  const languages = useSettings((st) => st.settings?.language.entries ?? []);
+  const languages = useSettings((st) => st.settings?.language.entries ?? NO_LANGUAGES);
+  const profiles = useSettings((st) => st.settings?.dictation.profiles ?? NO_PROFILES);
+  const activeProfile = useSettings((st) => st.settings?.dictation.activeProfile ?? "");
+  const profileSearchAt = useSettings((st) => st.settings?.dictation.profileSearchThreshold ?? 10);
+  const languageOptions = useMemo(
+    () => [
+      { value: "auto", short: t("overlay.auto"), name: t("app.automatic") },
+      ...languages.map((e: LanguageEntry) => ({ value: e.code, short: e.code.toUpperCase(), name: e.builtIn ? t(`languages.${e.code}`) : e.displayName })),
+    ],
+    [languages]
+  );
+  // A profile title is the whole label, so the pill's short form is trimmed
+  // hard and the full name stays in the option row and the tooltip. With none
+  // selected the pill is icon-only, to keep the header on one line.
+  const profileOptions = useMemo(
+    () => [
+      { value: "", short: "", name: t("overlay.profileNone") },
+      ...profiles.map((p) => ({ value: p.id, short: p.title.length > 12 ? `${p.title.slice(0, 11)}…` : p.title, name: p.title })),
+    ],
+    [profiles]
+  );
   const changeLanguage = (code: string) => {
     void ipc
       .dictationSetLanguage(code)
@@ -360,13 +427,24 @@ export function Overlay() {
         <span className="overlay-icon">{icon}</span>
         <span className="overlay-label">{label}</span>
         {listening && <VoiceBars bands={bands} level={level} label={t("voice.level")} />}
-        {listening && (
-          <span className="overlay-dbg">
-            {Math.round(level * 100)}|{(bands.length ? Math.max(...bands) : 0).toFixed(2)}|{bands.length}
-          </span>
-        )}
         <span style={{ flex: 1 }} />
-        {(listening || state === "review") && <LanguageMenu value={language} languages={languages} onChange={changeLanguage} resetKey={state} />}
+        {(listening || state === "review") && (
+          <div className="overlay-pills">
+            {profiles.length > 0 && (
+              <PillMenu
+                label={t("overlay.profile")}
+                icon={<SlidersHorizontal size={12} aria-hidden />}
+                value={activeProfile}
+                options={profileOptions}
+                onChange={(id) => void ipc.dictationSetProfile(id).catch(quiet)}
+                resetKey={state}
+                searchable={profiles.length >= profileSearchAt}
+                searchPlaceholder={t("overlay.searchProfiles")}
+              />
+            )}
+            <PillMenu label={t("overlay.language")} icon={<Globe size={12} aria-hidden />} value={language} options={languageOptions} onChange={changeLanguage} resetKey={state} />
+          </div>
+        )}
         <HeadBtn label={`${t("voice.cancel")} (Esc)`} onClick={() => void ipc.dictationCancel().catch(quiet)}>
           <X size={14} />
         </HeadBtn>

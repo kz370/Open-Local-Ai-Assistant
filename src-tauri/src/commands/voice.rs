@@ -89,6 +89,21 @@ pub fn dictation_set_language(
     Ok(())
 }
 
+/// Remembers the dictation profile chosen in the overlay. An empty id clears
+/// the selection; the store drops an id that matches no profile.
+#[tauri::command]
+pub fn dictation_set_profile(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    profile: String,
+) -> CmdResult<()> {
+    let saved = state
+        .settings
+        .update(|s| s.dictation.active_profile = profile)?;
+    let _ = app.emit("settings://changed", &saved);
+    Ok(())
+}
+
 #[tauri::command]
 pub fn dictation_history(state: State<'_, AppState>) -> CmdResult<Vec<DictationEntry>> {
     state.db.dictation_list()
