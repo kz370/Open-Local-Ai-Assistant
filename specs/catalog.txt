@@ -436,9 +436,12 @@ services/search/mod.rs :: CACHE_TTL / INSTANCES_TTL / MAX_SNIPPET / AUTO_INSTANC
 services/dictation.rs :: DictationResult — `{ raw, inserted, corrected, correction_error }`.
 services/dictation.rs :: ReviewPending — `{ raw, corrected, correction_error }`; the text held in the overlay for editing.
 services/dictation.rs :: correct_text — `pub async fn correct_text(ai, model, text)`; streaming grammar correction with emoji handling, normalized whitespace, and a length sanity check.
-services/dictation.rs :: type_text — Windows: paced per-character Enigo Unicode entry for Typing; other platforms: Enigo text entry.
+services/dictation.rs :: type_text — Windows: paced per-character real key events (scancodes resolved from the target window's layout, 16 ms apart, Unicode fallback per character); other platforms: Enigo text entry.
+services/dictation.rs :: key_events — `#[cfg(windows)]` module; `target_layout`, `scan_for`, `type_char`. Turns a character into scancode + shift via `VkKeyScanExW`/`MapVirtualKeyExW` and injects `KEYEVENTF_SCANCODE` events, falling back to Enigo's Unicode path when the layout cannot produce the character.
 services/dictation.rs :: LiveTyper — Incremental typing into the foreground application with at most one operation in flight.
 services/dictation.rs :: LiveTyper::snapshot / reset / set_target / finish / retract — Read the on-screen text, arm it, type it, or backspace it.
+services/dictation.rs :: LiveTyper::desynced — `AtomicBool`; set when an injection failed, so the next apply retypes from scratch instead of diffing against text that never landed.
+services/dictation.rs :: committed_prefix / is_word_char — Cut a live partial at its last word boundary; live typing only ever commits whole words.
 services/dictation.rs :: insert_text — `pub fn insert_text(text, settings)`; blocking. `"paste"` swaps the clipboard and restores it afterwards.
 services/dictation.rs :: finalize_text — Trims and applies the trailing-space setting.
 services/dictation.rs :: CORRECTION_PROMPT / EMOJI_PHRASE_CHARS — The corrector system prompt and the 10-character emoji cost estimate.
@@ -723,7 +726,7 @@ src-tauri/src/services/mcp/config.rs :: tests — 3 — validation, round trip, 
 src-tauri/src/services/mcp/permissions.rs :: tests — 2 — classification and default permissions.
 src-tauri/src/services/mcp/sources.rs :: tests — 3 — source extraction from text and structured content.
 src-tauri/src/services/search/mod.rs :: tests — 10 — result normalisation, base-URL rules, instance list parsing.
-src-tauri/src/services/dictation.rs :: tests — 2 — delta reconciliation and text finalisation.
+src-tauri/src/services/dictation.rs :: tests — 3 — correction guards, text finalisation, and word-boundary live typing.
 src-tauri/src/services/hardware/mod.rs :: tests — 2 — thread budget and VRAM/NVIDIA helpers.
 src-tauri/src/desktop/window.rs :: tests — 4 — pure geometry (preset, clamp, monitor detection).
 src-tauri/src/desktop/shortcuts.rs :: tests — 1 — accelerator/modifier-token classification.

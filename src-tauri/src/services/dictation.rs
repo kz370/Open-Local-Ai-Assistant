@@ -131,15 +131,19 @@ fn modifiers_down() -> bool {
 /// then returns a fresh keyboard handle. Only for a one-shot action right
 /// after a session ends — never call this per live partial, since in
 /// hold-to-talk mode the modifier is legitimately held for the whole session.
-fn keyboard_settled() -> AppResult<enigo::Enigo> {
+fn plain_keyboard() -> AppResult<enigo::Enigo> {
     use enigo::{Enigo, Settings};
+    Enigo::new(&Settings::default())
+        .map_err(|e| AppError::Other(format!("keyboard input unavailable: {e}")))
+}
+
+fn keyboard_settled() -> AppResult<enigo::Enigo> {
     let wait = Instant::now();
     while modifiers_down() && wait.elapsed() < Duration::from_secs(3) {
         std::thread::sleep(Duration::from_millis(30));
     }
     std::thread::sleep(Duration::from_millis(60));
-    Enigo::new(&Settings::default())
-        .map_err(|e| AppError::Other(format!("keyboard input unavailable: {e}")))
+    plain_keyboard()
 }
 
 fn backspace(enigo: &mut enigo::Enigo, n: usize) -> AppResult<()> {
@@ -156,6 +160,120 @@ fn common_prefix_len(a: &[char], b: &[char]) -> usize {
     a.iter().zip(b.iter()).take_while(|(x, y)| x == y).count()
 }
 
+/// Types text as real key events (scancodes) on Windows.
+///
+/// `KEYEVENTF_UNICODE` injection — what `enigo.text` sends — is unreliable in
+/// classic Win32 edit controls: measured against Notepad it silently drops and
+/// duplicates characters ("... take    nn entire aaar      a nnngle job." for
+/// text that decodes perfectly). Real scancode events take the same path as a
+/// physical keyboard and came through byte-exact in every target tried
+/// (Notepad, Chromium/WebView2), including runs of the same character and
+/// multiple spaces. Only characters the active layout cannot produce (emoji, or
+/// Arabic typed while an English layout is active) fall back to the Unicode
+/// path, one character at a time.
+#[cfg(windows)]
+mod key_events {
+    use crate::errors::{AppError, AppResult};
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        GetKeyboardLayout, MapVirtualKeyExW, SendInput, VkKeyScanExW, HKL, INPUT, INPUT_0,
+        INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, KEYEVENTF_SCANCODE, MAPVK_VK_TO_VSC_EX,
+        VIRTUAL_KEY,
+    };
+    use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId};
+
+    /// Scancode of the left shift key on every layout.
+    const SHIFT_SCAN: u16 = 0x2A;
+
+    /// Layout of the window being typed into, so its own key map decides which
+    /// physical key produces each character.
+    pub fn target_layout() -> HKL {
+        // SAFETY: both calls are plain queries and tolerate a null window by
+        // returning this thread's id.
+        unsafe { GetKeyboardLayout(GetWindowThreadProcessId(GetForegroundWindow(), None)) }
+    }
+
+    fn key_input(scan: u16, up: bool) -> INPUT {
+        let flags = if up {
+            KEYEVENTF_SCANCODE | KEYEVENTF_KEYUP
+        } else {
+            KEYEVENTF_SCANCODE
+        };
+        INPUT {
+            r#type: INPUT_KEYBOARD,
+            Anonymous: INPUT_0 {
+                ki: KEYBDINPUT {
+                    wVk: VIRTUAL_KEY(0),
+                    wScan: scan,
+                    dwFlags: flags,
+                    time: 0,
+                    dwExtraInfo: 0,
+                },
+            },
+        }
+    }
+
+    fn send(inputs: &[INPUT]) -> AppResult<()> {
+        // SAFETY: `inputs` is a well-formed array of KEYBDINPUT events and
+        // `cbsize` is the real size of INPUT.
+        let sent = unsafe { SendInput(inputs, std::mem::size_of::<INPUT>() as i32) };
+        if sent as usize != inputs.len() {
+            return Err(AppError::Other(format!(
+                "keyboard input rejected: {sent} of {} events",
+                inputs.len()
+            )));
+        }
+        Ok(())
+    }
+
+    /// Scancode and shift requirement for `ch` on `hkl`, or `None` when the
+    /// layout cannot produce it as a plain character.
+    fn scan_for(ch: char, hkl: HKL) -> Option<(u16, bool)> {
+        let mut buf = [0u16; 2];
+        let code = *ch.encode_utf16(&mut buf).first()?;
+        // SAFETY: pure layout lookup.
+        let vks = unsafe { VkKeyScanExW(code, hkl) };
+        if vks == -1 {
+            return None;
+        }
+        let state = (vks >> 8) as u8;
+        // Anything beyond shift (ctrl/alt combos) is not plain typing.
+        if state & 0xFE != 0 {
+            return None;
+        }
+        // SAFETY: pure layout lookup.
+        let scan = unsafe { MapVirtualKeyExW((vks & 0xFF) as u32, MAPVK_VK_TO_VSC_EX, Some(hkl)) };
+        if scan == 0 {
+            return None;
+        }
+        Some((scan as u16, state & 1 == 1))
+    }
+
+    /// Presses and releases the keys that type `ch`, falling back to the Unicode
+    /// path for characters the layout cannot produce.
+    pub fn type_char(ch: char, fallback: &mut enigo::Enigo) -> AppResult<()> {
+        match scan_for(ch, target_layout()) {
+            Some((scan, shift)) => {
+                let mut batch = Vec::with_capacity(4);
+                if shift {
+                    batch.push(key_input(SHIFT_SCAN, false));
+                }
+                batch.push(key_input(scan, false));
+                batch.push(key_input(scan, true));
+                if shift {
+                    batch.push(key_input(SHIFT_SCAN, true));
+                }
+                send(&batch)
+            }
+            None => {
+                use enigo::Keyboard;
+                fallback
+                    .text(&ch.to_string())
+                    .map_err(|e| AppError::Other(format!("typing failed: {e}")))
+            }
+        }
+    }
+}
+
 #[cfg(windows)]
 fn type_text(enigo: &mut enigo::Enigo, text: &str) -> AppResult<()> {
     use enigo::{Direction, Key, Keyboard};
@@ -169,10 +287,11 @@ fn type_text(enigo: &mut enigo::Enigo, text: &str) -> AppResult<()> {
                 .map_err(|e| AppError::Other(format!("typing failed: {e}")))?,
             '\r' => continue,
             _ => {
-                enigo
-                    .text(&ch.to_string())
-                    .map_err(|e| AppError::Other(format!("typing failed: {e}")))?;
-                std::thread::sleep(Duration::from_millis(4));
+                key_events::type_char(ch, enigo)?;
+                // 16 ms, measured: at 4-8 ms the receiving app silently drops
+                // characters (and `SendInput` still reports every event
+                // accepted), at 16 ms and above the text arrives byte-exact.
+                std::thread::sleep(Duration::from_millis(16));
             }
         }
     }
@@ -207,9 +326,25 @@ fn apply_delta_raw(prev: &str, next: &str) -> AppResult<()> {
     if prev == next {
         return Ok(());
     }
-    let enigo = enigo::Enigo::new(&enigo::Settings::default())
-        .map_err(|e| AppError::Other(format!("keyboard input unavailable: {e}")))?;
-    reconcile(enigo, prev, next)
+    reconcile(plain_keyboard()?, prev, next)
+}
+
+/// Longest prefix of `text` that ends on a word boundary (the boundary
+/// character included). Live typing only ever commits whole words: a word the
+/// recognizer is still revising never reaches the screen, so it can neither be
+/// shown wrong nor have to be backspaced again. Everything after the last
+/// boundary is left to the next partial, or to `finish` when the session ends.
+fn committed_prefix(text: &str) -> &str {
+    match text.char_indices().rev().find(|(_, c)| !is_word_char(*c)) {
+        Some((i, c)) => &text[..i + c.len_utf8()],
+        None => "",
+    }
+}
+
+/// Characters that continue a word instead of ending it: alphanumerics plus the
+/// apostrophe forms that appear inside words ("don't", "l'autre").
+fn is_word_char(c: char) -> bool {
+    c.is_alphanumeric() || matches!(c, '\'' | '\u{2019}' | '\u{02bc}' | '\u{ff07}')
 }
 
 /// Same reconciliation, but waits for the hotkey's modifiers to settle first
@@ -225,11 +360,15 @@ fn apply_delta_settled(prev: &str, next: &str) -> AppResult<()> {
 /// can be shown live and reconciled to the final (possibly corrected) result
 /// once the session ends. Only used when `insert_method == "type"` — "paste"
 /// stays a single atomic clipboard paste at the end, never fed through here.
+/// Live typing is word-committed: only whole words reach the screen.
 #[derive(Default)]
 pub struct LiveTyper {
     current: Mutex<String>,
     target: Mutex<Option<String>>,
     busy: AtomicBool,
+    /// Set when an injection failed, so the on-screen text can no longer be
+    /// trusted. Survives `reset` on purpose: the garbage is still there.
+    desynced: AtomicBool,
 }
 
 impl LiveTyper {
@@ -249,6 +388,54 @@ impl LiveTyper {
         *self.target.lock().unwrap_or_else(|p| p.into_inner()) = None;
     }
 
+    /// Brings the on-screen text to `goal`. `settled` waits for the hotkey's
+    /// modifiers first (finalize only, never a live partial).
+    ///
+    /// `current` is advanced only when the injection actually succeeded. A
+    /// partial failure leaves the screen in an unknown state — advancing anyway
+    /// would make every later diff compute backspaces against text that was
+    /// never typed, which is how stray characters accumulate on screen.
+    fn apply(&self, goal: &str, settled: bool) -> AppResult<()> {
+        let res = if self.desynced.swap(false, Ordering::SeqCst) {
+            // Untrustworthy screen: erase what was last confirmed to have
+            // landed, then type the goal from scratch.
+            let confirmed = self.snapshot().chars().count();
+            self.retype(goal, confirmed, settled)
+        } else {
+            let prev = self.snapshot();
+            if prev == goal {
+                Ok(())
+            } else if settled {
+                apply_delta_settled(&prev, goal)
+            } else {
+                apply_delta_raw(&prev, goal)
+            }
+        };
+        match &res {
+            Ok(()) => *self.current.lock().unwrap_or_else(|p| p.into_inner()) = goal.to_string(),
+            Err(_) => {
+                self.desynced.store(true, Ordering::SeqCst);
+            }
+        }
+        res
+    }
+
+    fn retype(&self, goal: &str, erase: usize, settled: bool) -> AppResult<()> {
+        let mut enigo = if settled {
+            keyboard_settled()?
+        } else {
+            plain_keyboard()?
+        };
+        if erase > 0 {
+            backspace(&mut enigo, erase)?;
+        }
+        if goal.is_empty() {
+            Ok(())
+        } else {
+            type_text(&mut enigo, goal)
+        }
+    }
+
     /// Queues `text` as the newest partial to type. If a worker is already
     /// draining the queue it picks this up (or a later value) instead of a
     /// second typing operation racing against it — at most one is ever in
@@ -263,19 +450,15 @@ impl LiveTyper {
         }
         std::thread::spawn(move || {
             let typer = &app.state::<AppState>().dictation_live_typer;
-            loop {
-                let next = typer
-                    .target
-                    .lock()
-                    .unwrap_or_else(|p| p.into_inner())
-                    .take();
-                let Some(next) = next else { break };
-                let prev = typer.snapshot();
-                if prev != next {
-                    if let Err(e) = apply_delta_raw(&prev, &next) {
-                        tracing::warn!(error = %e, "live-typing dictation partial failed");
-                    }
-                    *typer.current.lock().unwrap_or_else(|p| p.into_inner()) = next;
+            while let Some(next) = typer
+                .target
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .take()
+            {
+                let goal = committed_prefix(&next).to_string();
+                if let Err(e) = typer.apply(&goal, false) {
+                    tracing::warn!(error = %e, "live-typing dictation partial failed");
                 }
             }
             typer.busy.store(false, Ordering::SeqCst);
@@ -290,8 +473,7 @@ impl LiveTyper {
         while self.busy.load(Ordering::SeqCst) {
             std::thread::sleep(Duration::from_millis(5));
         }
-        let prev = self.snapshot();
-        let res = apply_delta_settled(&prev, final_text);
+        let res = self.apply(final_text, true);
         self.reset();
         res
     }
@@ -301,11 +483,12 @@ impl LiveTyper {
         while self.busy.load(Ordering::SeqCst) {
             std::thread::sleep(Duration::from_millis(5));
         }
-        let prev = self.snapshot();
-        let res = if prev.is_empty() {
+        let confirmed = self.snapshot().chars().count();
+        self.desynced.store(false, Ordering::SeqCst);
+        let res = if confirmed == 0 {
             Ok(())
         } else {
-            backspace(&mut keyboard_settled()?, prev.chars().count())
+            backspace(&mut keyboard_settled()?, confirmed)
         };
         self.reset();
         res
@@ -425,5 +608,26 @@ mod tests {
         let s = DictationSettings::default();
         assert_eq!(finalize_text("  hallo ", &s), "hallo ");
         assert_eq!(finalize_text("   ", &s), "");
+    }
+
+    #[test]
+    fn live_typing_only_commits_whole_words() {
+        // A word still being recognized must not reach the screen.
+        assert_eq!(committed_prefix("hello"), "");
+        assert_eq!(committed_prefix("hello wor"), "hello ");
+        assert_eq!(committed_prefix("hello wor"), "hello ");
+        assert_eq!(committed_prefix("hello world foo"), "hello world ");
+        // Punctuation counts as a boundary, so the word before it lands.
+        assert_eq!(committed_prefix("no, i don't"), "no, i ");
+        assert_eq!(committed_prefix("done."), "done.");
+        assert_eq!(committed_prefix(""), "");
+        // Apostrophes continue a word instead of committing half of it.
+        assert_eq!(committed_prefix("it's"), "");
+        assert_eq!(committed_prefix("it's fine"), "it's ");
+        assert_eq!(committed_prefix("l\u{2019}autre chose"), "l\u{2019}autre ");
+        // Non-ASCII must slice on char boundaries.
+        assert_eq!(committed_prefix("مرحبا بالعالم"), "مرحبا ");
+        assert_eq!(committed_prefix("hello 42"), "hello ");
+        assert_eq!(committed_prefix("hello 42."), "hello 42.");
     }
 }

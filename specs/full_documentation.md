@@ -2177,17 +2177,19 @@ Voice dictation into other applications: transcript → optional LM Studio gramm
 correction → typed or pasted into the focused window.
 
 ### Summary
-343 lines. Two result structs, a `LiveTyper` for incremental typing, and the
-correction/insertion pipeline.
+633 lines. Two result structs, a `LiveTyper` for incremental (word-committed,
+failure-guarded) typing, and the correction/insertion pipeline.
 
 ### Technical Details
 ```rust
 pub struct DictationResult { raw, inserted: String, corrected: bool, correction_error: Option<String> }
 pub struct ReviewPending   { raw: String, corrected: bool, correction_error: Option<String> }
-pub struct LiveTyper { current: Mutex<String>, target: Mutex<Option<String>>, busy: AtomicBool }
+pub struct LiveTyper { current: Mutex<String>, target: Mutex<Option<String>>, busy: AtomicBool, desynced: AtomicBool }
 
 pub async fn correct_text(ai: &dyn AiService, model: &str, text: &str) -> AppResult<String>
 impl LiveTyper { snapshot(), reset(), set_target(app, text), finish(final_text), retract() }
+fn committed_prefix(text: &str) -> &str   // cut at the last word boundary
+fn is_word_char(c: char) -> bool         // alphanumeric or an apostrophe form
 pub fn insert_text(text: &str, settings: &DictationSettings) -> AppResult<()>   // blocking
 pub fn finalize_text(text: &str, settings: &DictationSettings) -> String
 ```
@@ -2234,9 +2236,26 @@ whitespace runs so malformed model spacing cannot reach review or insertion.
 - **`insert_text`** is blocking. `"paste"` mode saves the previous clipboard text,
   sets the new text, sleeps **40 ms**, sends `Ctrl`/`Cmd`+`v`, sleeps **300 ms**,
   then restores the previous clipboard content (best-effort; restore errors are
-  swallowed). On Windows, Typing mode sends each character through Enigo's
-  Unicode text path with a **4 ms** gap between characters; newline and tab
-  retain their normal key behavior. Other platforms use `enigo.text(text)`.
+  swallowed). On Windows, Typing mode sends **real key events**, not Unicode
+  injection: each character is resolved against the target window's keyboard
+  layout (`VkKeyScanExW` → `MapVirtualKeyExW(MAPVK_VK_TO_VSC_EX)`) into a
+  scancode plus optional left-shift, and pressed as `KEYEVENTF_SCANCODE`
+  down/up pairs; newline and tab retain their normal key behavior. Characters the
+  active layout cannot produce (emoji, or Arabic under an English layout) fall
+  back to Enigo's Unicode path for that single character. Characters are spaced
+  **16 ms** apart. Other platforms use `enigo.text(text)`.
+  - **Why scancodes, not `KEYEVENTF_UNICODE`.** Measured against Notepad with
+    raw `SendInput`, Unicode injection per character at 4 ms silently drops and
+    duplicates characters — `"...to work at all. It might take    nn entire
+    aaar      a nnngle job."` for text that decodes perfectly — and Enigo's bulk
+    single-call form drops far more (only the tail landed). Scancode events take
+    the same path as a physical keyboard and arrived byte-exact in every target
+    tried (Notepad, Chromium/WebView2), including runs of one character and
+    multiple spaces.
+  - **Why 16 ms.** At 4-8 ms the receiving application silently drops
+    characters while `SendInput` still reports every event accepted, so the
+    return value cannot detect it; a stuck shift is the visible symptom
+    (`unicode` → `Unicode`). At 16 ms and above nothing was lost.
 - **`finalize_text`** trims, returns empty for empty input, and appends a
   trailing space when `add_trailing_space` is set (default `true`).
 - **`LiveTyper` invariant:** at most one typing operation is in flight, enforced
@@ -2245,6 +2264,19 @@ whitespace runs so malformed model spacing cannot reach review or insertion.
   harmless, because `finish`/`retract` always act on the **real on-screen text**
   (`current`), never on `target`. `retract` backspaces `current.chars().count()`
   characters. Both reset afterwards.
+- **Word-committed live typing.** `committed_prefix(text)` cuts a partial at its
+  last word boundary (boundary character included; alphanumerics and the
+  apostrophe forms `'` `’` `ʼ` `＇` continue a word, everything else ends it).
+  The worker only ever types that prefix, so a word the recognizer is still
+  revising never reaches the screen and never has to be backspaced again. The
+  in-progress tail is typed once, by `finish`, at the end of the session.
+- **Injection-failure guard.** `current` advances **only** when the injection
+  returned `Ok`. On failure the `desynced` flag is set and `current` keeps its
+  last confirmed value, so the next diff can never compute backspaces against
+  text that was never typed. While `desynced`, the next `apply` (live partial or
+  `finish`) discards the delta path entirely: it backspaces
+  `current.chars().count()` and retypes the goal from scratch. `desynced`
+  deliberately survives `reset`, because the stray text is still on screen.
 - Live typing is used **only** for `insert_method == "type"`; `"paste"` stays a
   single atomic clipboard paste at the end.
 
