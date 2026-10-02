@@ -2234,7 +2234,9 @@ whitespace runs so malformed model spacing cannot reach review or insertion.
 - **`insert_text`** is blocking. `"paste"` mode saves the previous clipboard text,
   sets the new text, sleeps **40 ms**, sends `Ctrl`/`Cmd`+`v`, sleeps **300 ms**,
   then restores the previous clipboard content (best-effort; restore errors are
-  swallowed). Any other value means `enigo.text(text)`.
+  swallowed). On Windows, Typing mode sends checked Unicode key-down/key-up
+  pairs with a **4 ms** gap between UTF-16 code units; newline and tab retain
+  their normal key behavior. Other platforms use `enigo.text(text)`.
 - **`finalize_text`** trims, returns empty for empty input, and appends a
   trailing space when `add_trailing_space` is set (default `true`).
 - **`LiveTyper` invariant:** at most one typing operation is in flight, enforced

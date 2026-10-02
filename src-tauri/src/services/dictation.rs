@@ -156,18 +156,82 @@ fn common_prefix_len(a: &[char], b: &[char]) -> usize {
     a.iter().zip(b.iter()).take_while(|(x, y)| x == y).count()
 }
 
+#[cfg(windows)]
+fn type_text(enigo: &mut enigo::Enigo, text: &str) -> AppResult<()> {
+    use enigo::{Direction, Key, Keyboard};
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, KEYEVENTF_UNICODE,
+        VIRTUAL_KEY,
+    };
+
+    let input_size = std::mem::size_of::<INPUT>() as i32;
+    for ch in text.chars() {
+        match ch {
+            '\n' => enigo
+                .key(Key::Return, Direction::Click)
+                .map_err(|e| AppError::Other(format!("typing failed: {e}")))?,
+            '\t' => enigo
+                .key(Key::Tab, Direction::Click)
+                .map_err(|e| AppError::Other(format!("typing failed: {e}")))?,
+            '\r' => continue,
+            '\0' => {
+                return Err(AppError::Other(
+                    "typing failed: text contains a null byte".into(),
+                ))
+            }
+            _ => {
+                let mut units = [0; 2];
+                for &unit in ch.encode_utf16(&mut units).iter() {
+                    let key_event = |flags| INPUT {
+                        r#type: INPUT_KEYBOARD,
+                        Anonymous: INPUT_0 {
+                            ki: KEYBDINPUT {
+                                wVk: VIRTUAL_KEY(0),
+                                wScan: unit,
+                                dwFlags: flags,
+                                time: 0,
+                                dwExtraInfo: 0,
+                            },
+                        },
+                    };
+                    let events = [
+                        key_event(KEYEVENTF_UNICODE),
+                        key_event(KEYEVENTF_UNICODE | KEYEVENTF_KEYUP),
+                    ];
+                    let sent = unsafe { SendInput(&events, input_size) };
+                    if sent != events.len() as u32 {
+                        let error = std::io::Error::last_os_error();
+                        let release = [key_event(KEYEVENTF_UNICODE | KEYEVENTF_KEYUP)];
+                        let _ = unsafe { SendInput(&release, input_size) };
+                        return Err(AppError::Other(format!(
+                            "typing failed: Windows accepted {sent} of 2 Unicode keyboard events: {error}"
+                        )));
+                    }
+                    std::thread::sleep(Duration::from_millis(4));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn type_text(enigo: &mut enigo::Enigo, text: &str) -> AppResult<()> {
+    use enigo::Keyboard;
+    enigo
+        .text(text)
+        .map_err(|e| AppError::Other(format!("typing failed: {e}")))
+}
+
 /// Backspaces the non-common suffix of `prev` and types the non-common suffix
 /// of `next`. No-op when equal.
 fn reconcile(mut enigo: enigo::Enigo, prev: &str, next: &str) -> AppResult<()> {
-    use enigo::Keyboard;
     let (p, n): (Vec<char>, Vec<char>) = (prev.chars().collect(), next.chars().collect());
     let common = common_prefix_len(&p, &n);
     backspace(&mut enigo, p.len() - common)?;
     let suffix: String = n[common..].iter().collect();
     if !suffix.is_empty() {
-        enigo
-            .text(&suffix)
-            .map_err(|e| AppError::Other(format!("typing failed: {e}")))?;
+        type_text(&mut enigo, &suffix)?;
     }
     Ok(())
 }
@@ -313,9 +377,7 @@ pub fn insert_text(text: &str, settings: &DictationSettings) -> AppResult<()> {
         }
         res.map_err(|e| AppError::Other(format!("paste failed: {e}")))
     } else {
-        enigo
-            .text(text)
-            .map_err(|e| AppError::Other(format!("typing failed: {e}")))
+        type_text(&mut enigo, text)
     }
 }
 
