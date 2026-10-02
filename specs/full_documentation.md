@@ -1475,6 +1475,13 @@ stays alive in the tray when all windows close.
 - A `listening` state resets the live typer — a new session must never inherit
   live-typed text from the previous one.
 - Live typing happens **only** when `insert_method == "type" && !review_before_insert`.
+- With review enabled, `dictation_insert_now` opens the overlay editor immediately
+  with the latest live partial while speech recognition finishes. The editor shows
+  a processing hint and keeps Insert disabled until the final review result arrives;
+  the final text replaces the preview unless the user has already edited it. The
+  listening control and shortcut hint say "Review" instead of "Insert" in this mode.
+- `ChatApp` continues to treat dictation as active during this new `"reviewing"`
+  preparation state, so its dictation-related UI does not resume prematurely.
 - `correction_enabled` with an empty correction model records `AppError::NoModel`
   as `correction_error`; a correction failure is **warn-only and the raw
   transcript is still inserted** — degraded, not blocked.
@@ -2208,7 +2215,8 @@ plausible: the spoken length must lie between **30 % of the input** and
 phrase it replaced (`EMOJI_PHRASE_CHARS = 10`). Failure is
 `AppError::LmStudio("correction output did not resemble the dictated text")`.
 `sanitize_correction` trims, strips leaked `<transcript>` tags, a
-`"Corrected text:"` prefix, and surrounding quotation marks.
+`"Corrected text:"` prefix, and surrounding quotation marks, and collapses
+whitespace runs so malformed model spacing cannot reach review or insertion.
 
 **Timeout:** 45 s, enforced by a spawned task that cancels the `CancellationToken`.
 

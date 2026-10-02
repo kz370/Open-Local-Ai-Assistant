@@ -762,17 +762,22 @@
     "speakNow": "Start speaking…",
     "hint": "Release the keys to insert · Esc cancels",
     "hintToggle": "Press the shortcut again to insert · Esc cancels",
+    "hintReview": "Release the keys to review · Esc cancels",
+    "hintToggleReview": "Press the shortcut again to review · Esc cancels",
     "resetPosition": "Reset overlay position",
     "dragHint": "Drag to move · double-click to reset position",
     "auto": "Auto",
     "restart": "Start over",
     "language": "Dictation language",
         "insertNowHint": "Stop listening and insert what you said",
+        "reviewNow": "Review",
+        "reviewNowHint": "Stop listening and review what you said",
     "retry": "Retry",
     "retryHint": "Throw this away and dictate again",
     "review": "Review — edit if needed",
     "insert": "Insert",
-    "insertHint": "Ctrl+Enter to insert · Esc discards"
+    "insertHint": "Ctrl+Enter to insert · Esc discards",
+    "reviewPending": "Finalizing dictation; you can edit now and insert when ready."
   },
   "languages": {
     "en": "English",

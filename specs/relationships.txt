@@ -534,6 +534,7 @@ lib::on_voice_event | emits | dictation://state
 lib::run_dictation | emits | dictation://state
 lib::confirm_review | emits | dictation://state
 lib::retry_dictation | emits | dictation://state
+commands::dictation_insert_now | emits | dictation://state { state:"reviewing", text } when review-before-insert is enabled
 desktop::shortcuts::start_dictation | emits | dictation://state
 desktop::shortcuts::toggle_dictation | emits | dictation://state
 src/pages/Overlay/Overlay.tsx | subscribes_to | dictation://state

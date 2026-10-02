@@ -207,25 +207,52 @@ export function Overlay() {
   const [error, setError] = useState<string | null>(null);
   const [text, setText] = useState("");
   const [draft, setDraft] = useState("");
+  const [reviewPreview, setReviewPreview] = useState(false);
   const [levels, setLevels] = useState<number[]>(new Array(18).fill(0));
   const mode = useSettings((s) => s.settings?.dictation.mode ?? "hold");
+  const reviewBeforeInsert = useSettings((s) => s.settings?.dictation.reviewBeforeInsert ?? false);
   const textRef = useRef<HTMLDivElement>(null);
   const editRef = useRef<HTMLTextAreaElement>(null);
+  const previewRef = useRef(false);
+  const reviewDoneRef = useRef(false);
+  const draftDirty = useRef(false);
   const drag = useOverlayDrag();
 
   useEffect(() => {
     document.documentElement.classList.add("overlay");
     const subs = [
       on<DictationStateEvent>("dictation://state", (e) => {
+        if (e.state === "idle" && (previewRef.current || reviewDoneRef.current)) return;
+        if (e.state === "reviewing" && reviewDoneRef.current) return;
         setState(e.state);
         if (e.state === "listening") {
           setText("");
           setError(null);
           setLevels(new Array(18).fill(0));
+          previewRef.current = false;
+          reviewDoneRef.current = false;
+          draftDirty.current = false;
+          setReviewPreview(false);
+        }
+        if (e.state === "reviewing") {
+          previewRef.current = true;
+          draftDirty.current = false;
+          setReviewPreview(true);
+          setDraft(e.text ?? "");
+        }
+        if (e.state === "review") {
+          previewRef.current = false;
+          reviewDoneRef.current = true;
+          setReviewPreview(false);
+          if (!draftDirty.current) setDraft(e.result?.inserted ?? "");
+        }
+        if (["inserted", "empty", "cancelled", "error"].includes(e.state)) {
+          previewRef.current = false;
+          reviewDoneRef.current = true;
+          setReviewPreview(false);
         }
         if (e.error) setError(errorMessage(e.error.code));
         if (e.result?.inserted) setText(e.result.inserted);
-        if (e.state === "review") setDraft(e.result?.inserted ?? "");
       }),
       on<VoiceEvent>("voice://event", (e) => {
         if (e.mode !== "dictation") return;
@@ -241,9 +268,10 @@ export function Overlay() {
     textRef.current?.scrollTo({ top: textRef.current.scrollHeight });
   }, [text]);
 
-  const reviewing = state === "review";
+  const reviewEditorOpen = reviewPreview || state === "review";
+  const reviewReady = state === "review";
   useEffect(() => {
-    if (!reviewing) return;
+    if (!reviewEditorOpen) return;
     // The window only just became focusable; give it a beat before typing focus.
     const id = setTimeout(() => {
       const el = editRef.current;
@@ -252,9 +280,9 @@ export function Overlay() {
       el.setSelectionRange(el.value.length, el.value.length);
     }, 60);
     return () => clearTimeout(id);
-  }, [reviewing]);
+  }, [reviewEditorOpen]);
 
-  const listening = state === "listening" || state === "idle";
+  const listening = state === "listening";
   let icon = (
     <span className="overlay-rec" aria-hidden>
       <Mic size={12} />
@@ -274,6 +302,10 @@ export function Overlay() {
       icon = <Pencil size={16} style={{ color: "var(--accent)" }} />;
       label = t("overlay.review");
       break;
+    case "reviewing":
+      icon = <span className="spinner" />;
+      label = t("overlay.transcribing");
+      break;
     case "inserted":
       icon = <CheckCircle2 size={16} style={{ color: "var(--success)" }} />;
       label = t("overlay.inserted");
@@ -292,7 +324,9 @@ export function Overlay() {
       break;
   }
 
-  const keysHint = mode === "toggle" ? t("overlay.hintToggle") : t("overlay.hint");
+  const keysHint = reviewBeforeInsert
+    ? mode === "toggle" ? t("overlay.hintToggleReview") : t("overlay.hintReview")
+    : mode === "toggle" ? t("overlay.hintToggle") : t("overlay.hint");
   const language = useSettings((st) => st.settings?.dictation.language || st.settings?.stt.language || "auto");
   const languages = useSettings((st) => st.settings?.language.entries ?? []);
   const changeLanguage = (code: string) => {
@@ -302,7 +336,9 @@ export function Overlay() {
       .then(() => (listening ? ipc.dictationRetry() : undefined))
       .catch(quiet);
   };
-  const confirm = () => void ipc.dictationConfirm(draft).catch(quiet);
+  const confirm = () => {
+    if (reviewReady) void ipc.dictationConfirm(draft).catch(quiet);
+  };
 
   return (
     <div className={`overlay-card${state === "inserted" ? " done" : ""}`} role="status" aria-live="polite">
@@ -320,12 +356,12 @@ export function Overlay() {
         <span className="overlay-label">{label}</span>
         {listening && <LevelMeter levels={levels} max={14} label={t("voice.level")} />}
         <span style={{ flex: 1 }} />
-        {(listening || reviewing) && <LanguageMenu value={language} languages={languages} onChange={changeLanguage} resetKey={state} />}
+        {(listening || state === "review") && <LanguageMenu value={language} languages={languages} onChange={changeLanguage} resetKey={state} />}
         <HeadBtn label={`${t("voice.cancel")} (Esc)`} onClick={() => void ipc.dictationCancel().catch(quiet)}>
           <X size={14} />
         </HeadBtn>
       </div>
-      {reviewing ? (
+      {reviewEditorOpen ? (
         <>
           <textarea
             ref={editRef}
@@ -333,7 +369,10 @@ export function Overlay() {
             value={draft}
             dir={draft ? textDir(draft) : "auto"}
             spellCheck
-            onChange={(e) => setDraft(e.target.value)}
+            onChange={(e) => {
+              draftDirty.current = true;
+              setDraft(e.target.value);
+            }}
             onKeyDown={(e) => {
               if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
                 e.preventDefault();
@@ -345,11 +384,11 @@ export function Overlay() {
             }}
           />
           <div className="overlay-actions">
-            <span className="overlay-hint">{t("overlay.insertHint")}</span>
-            <button type="button" className="btn btn-sm btn-ghost" title={t("overlay.retryHint")} onClick={() => void ipc.dictationRetry().catch(quiet)}>
+            <span className="overlay-hint">{reviewReady ? t("overlay.insertHint") : t("overlay.reviewPending")}</span>
+            <button type="button" className="btn btn-sm btn-ghost" title={t("overlay.retryHint")} disabled={!reviewReady} onClick={() => void ipc.dictationRetry().catch(quiet)}>
               <RotateCcw size={13} /> {t("overlay.retry")}
             </button>
-            <button type="button" className="btn btn-sm btn-primary" onClick={confirm}>
+            <button type="button" className="btn btn-sm btn-primary" disabled={!reviewReady} onClick={confirm}>
               <Check size={13} /> {t("overlay.insert")}
             </button>
           </div>
@@ -365,8 +404,14 @@ export function Overlay() {
               <button type="button" className="btn btn-sm btn-ghost" title={t("overlay.retryHint")} onClick={() => void ipc.dictationRetry().catch(quiet)}>
                 <RotateCcw size={13} /> {t("overlay.restart")}
               </button>
-              <button type="button" className="btn btn-sm btn-primary" title={t("overlay.insertNowHint")} onClick={() => void ipc.dictationInsertNow().catch(quiet)}>
-                <Check size={13} /> {t("overlay.insert")}
+              <button
+                type="button"
+                className="btn btn-sm btn-primary"
+                title={t(reviewBeforeInsert ? "overlay.reviewNowHint" : "overlay.insertNowHint")}
+                onClick={() => void ipc.dictationInsertNow(text).catch(quiet)}
+              >
+                {reviewBeforeInsert ? <Pencil size={13} /> : <Check size={13} />}
+                {t(reviewBeforeInsert ? "overlay.reviewNow" : "overlay.insert")}
               </button>
             </div>
           )}

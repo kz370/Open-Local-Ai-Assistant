@@ -455,10 +455,10 @@ type ListenMode     = "pushToTalk" | "handsFree" | "dictation" | "test";
   { type:"voiceUnavailable";   language: string }
   { type:"error";              detail: string }
 
---- EVENT UNION 5 of 5: DictationStateEvent (9 states, an interface) ---
-  state: "listening" | "transcribing" | "idle" | "correcting" | "review" |
+--- EVENT UNION 5 of 5: DictationStateEvent (10 states, an interface) ---
+  state: "listening" | "transcribing" | "idle" | "correcting" | "reviewing" | "review" |
          "inserted" | "empty" | "cancelled" | "error"
-  text?:   string
+  text?:   string (also seeds the immediate editable review preview)
   error?:  AppErrorPayload
   result?: { raw: string; inserted: string; corrected: boolean; correctionError: string | null }
 

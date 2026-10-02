@@ -105,7 +105,7 @@ fn sanitize_correction(s: &str) -> String {
     }
     let t = t.strip_prefix("Corrected text:").unwrap_or(t).trim();
     let t = t.trim_matches(|c| c == '"' || c == '“' || c == '”').trim();
-    t.to_string()
+    t.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 #[cfg(windows)]
@@ -372,6 +372,10 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(out, "Hello, how are you?");
+        assert_eq!(
+            sanitize_correction("No, I don't think this   is\t\tgoing to work."),
+            "No, I don't think this is going to work."
+        );
         let long_answer: &'static str = "Sure! Here is a very long essay about many things that the user never asked for in the first place, with lots of detail.";
         assert!(correct_text(&Echo(long_answer), "small", "hi there")
             .await

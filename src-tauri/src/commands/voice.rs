@@ -50,10 +50,17 @@ pub fn dictation_cancel(app: AppHandle) {
     crate::desktop::window::cancel_dictation(&app);
 }
 
-/// Stops listening and inserts what was heard so far (the overlay's "Insert now").
+/// Stops listening; review mode opens a live preview while final transcription runs.
 #[tauri::command]
-pub fn dictation_insert_now(state: State<'_, AppState>) {
+pub fn dictation_insert_now(app: AppHandle, state: State<'_, AppState>, text: String) {
     if state.voice.active_mode() == Some(ListenMode::Dictation) {
+        if state.settings.get().dictation.review_before_insert {
+            crate::desktop::window::set_overlay_review(&app, true);
+            let _ = app.emit(
+                "dictation://state",
+                serde_json::json!({ "state": "reviewing", "text": text }),
+            );
+        }
         state.voice.stop(false);
     }
 }

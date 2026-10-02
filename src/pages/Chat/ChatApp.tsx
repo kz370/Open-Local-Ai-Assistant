@@ -171,7 +171,7 @@ export function ChatApp() {
       }),
       on("app://toggle-hands-free", () => void useVoice.getState().toggleHandsFree()),
       on<DictationStateEvent>("dictation://state", (e) => {
-        setDictating(e.state === "listening" || e.state === "transcribing" || e.state === "correcting");
+        setDictating(e.state === "listening" || e.state === "transcribing" || e.state === "correcting" || e.state === "reviewing");
       }),
     ];
     return () => {

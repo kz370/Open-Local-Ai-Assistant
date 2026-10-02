@@ -1,6 +1,7 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
+import { listen, type Event, type EventCallback } from "@tauri-apps/api/event";
 import { useChat, type UiMessage } from "../app/chatStore";
 import { useSettings } from "../app/settingsStore";
 import type { Attachment } from "../app/types";
@@ -11,6 +12,7 @@ import { useVoice } from "../app/voiceStore";
 import { SpokenText } from "../components/voice/SpokenText";
 import { textDir } from "../components/common/controls";
 import { acceleratorFromEvent, prettyAccelerator } from "../components/settings/ShortcutInput";
+import { Overlay } from "../pages/Overlay/Overlay";
 
 const base: UiMessage = { id: "m1", role: "assistant", content: "", attachments: [], language: null, reasoning: "", sources: [], tools: [], streaming: false, createdAt: "" };
 
@@ -308,6 +310,70 @@ describe("CallView", () => {
     fireEvent.click(interrupt);
     expect(invoke).toHaveBeenCalledWith("tts_stop");
     expect(useVoice.getState().speaking).toBe(false);
+  });
+});
+
+describe("Overlay review preview", () => {
+  const listeners = new Map<string, EventCallback<unknown>>();
+  const emit = (name: string, payload: unknown) => {
+    act(() => listeners.get(name)?.({ event: name, id: 1, payload } as Event<unknown>));
+  };
+  const scrollTo = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollTo");
+
+  beforeEach(() => {
+    listeners.clear();
+    useSettings.setState({ settings: { dictation: { mode: "toggle", language: "", reviewBeforeInsert: true }, stt: { language: "auto" }, language: { entries: [] } } as never });
+    Object.defineProperty(HTMLElement.prototype, "scrollTo", { configurable: true, value: vi.fn() });
+    vi.mocked(listen).mockImplementation(async (event, handler) => {
+      listeners.set(event, handler as EventCallback<unknown>);
+      return () => {};
+    });
+    vi.mocked(invoke).mockResolvedValue(undefined);
+  });
+
+  afterEach(() => {
+    cleanup();
+    useSettings.setState({ settings: null });
+    vi.mocked(listen).mockImplementation(async () => () => {});
+    if (scrollTo) Object.defineProperty(HTMLElement.prototype, "scrollTo", scrollTo);
+    else Reflect.deleteProperty(HTMLElement.prototype, "scrollTo");
+  });
+
+  it("shows live text immediately and enables insert after the final transcript arrives", () => {
+    render(<Overlay />);
+    emit("dictation://state", { state: "listening" });
+    emit("voice://event", { type: "partial", mode: "dictation", text: "live words" });
+    fireEvent.click(screen.getByRole("button", { name: "Review" }));
+    expect(invoke).toHaveBeenCalledWith("dictation_insert_now", { text: "live words" });
+
+    emit("dictation://state", { state: "reviewing", text: "live words" });
+    expect(screen.getByRole("textbox")).toHaveValue("live words");
+    expect(screen.getByRole("button", { name: "Insert" })).toBeDisabled();
+    expect(screen.getByText("Finalizing dictation; you can edit now and insert when ready.")).toBeInTheDocument();
+
+    emit("dictation://state", { state: "transcribing" });
+    emit("dictation://state", { state: "idle" });
+    expect(screen.getByText("Transcribing…")).toBeInTheDocument();
+
+    emit("dictation://state", {
+      state: "review",
+      result: { raw: "live words", inserted: "final words", corrected: false, correctionError: null },
+    });
+    expect(screen.getByRole("textbox")).toHaveValue("final words");
+    expect(screen.getByRole("button", { name: "Insert" })).toBeEnabled();
+    emit("dictation://state", { state: "idle" });
+    expect(screen.getByRole("textbox")).toHaveValue("final words");
+  });
+
+  it("preserves edits made before the final transcript arrives", () => {
+    render(<Overlay />);
+    emit("dictation://state", { state: "reviewing", text: "live words" });
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "my edit" } });
+    emit("dictation://state", {
+      state: "review",
+      result: { raw: "live words", inserted: "final words", corrected: false, correctionError: null },
+    });
+    expect(screen.getByRole("textbox")).toHaveValue("my edit");
   });
 });
 

@@ -154,7 +154,7 @@ commands/voice.rs :: audio_devices — ASYNC `() -> CmdResult<AudioDevices>` —
 commands/voice.rs :: voice_start — SYNC `(state, mode: ListenMode) -> CmdResult<u64>` — stops TTS first (except `Test`); returns the monotonically increasing session number.
 commands/voice.rs :: voice_stop — SYNC `(state, discard) -> Option<ListenMode>` — the mode that was active, or `None` when idle.
 commands/voice.rs :: dictation_cancel — SYNC `(app) -> ()` — documented no-op when idle.
-commands/voice.rs :: dictation_insert_now — SYNC `(state) -> ()` — stops with `discard=false`, but only while the active mode is `Dictation`.
+commands/voice.rs :: dictation_insert_now — SYNC `(app, state, text) -> ()` — stops with `discard=false`; in review mode, opens an immediate editable partial-text preview while final transcription continues.
 commands/voice.rs :: dictation_confirm — ASYNC `(app, text) -> CmdResult<()>` — accepts the review card text and inserts it.
 commands/voice.rs :: dictation_retry — ASYNC `(app)` — re-arms dictation from the review or the listening state.
 commands/voice.rs :: dictation_set_language — SYNC `(app, state, language) -> CmdResult<()>` — sets the overlay dictation language.
@@ -435,7 +435,7 @@ services/search/mod.rs :: CACHE_TTL / INSTANCES_TTL / MAX_SNIPPET / AUTO_INSTANC
 --- services/dictation ---
 services/dictation.rs :: DictationResult — `{ raw, inserted, corrected, correction_error }`.
 services/dictation.rs :: ReviewPending — `{ raw, corrected, correction_error }`; the text held in the overlay for editing.
-services/dictation.rs :: correct_text — `pub async fn correct_text(ai, model, text)`; streaming grammar correction with emoji handling and a length sanity check.
+services/dictation.rs :: correct_text — `pub async fn correct_text(ai, model, text)`; streaming grammar correction with emoji handling, normalized whitespace, and a length sanity check.
 services/dictation.rs :: LiveTyper — Incremental typing into the foreground application with at most one operation in flight.
 services/dictation.rs :: LiveTyper::snapshot / reset / set_target / finish / retract — Read the on-screen text, arm it, type it, or backspace it.
 services/dictation.rs :: insert_text — `pub fn insert_text(text, settings)`; blocking. `"paste"` swaps the clipboard and restores it afterwards.
@@ -577,7 +577,7 @@ src/app/types.ts :: AudioDevice / VoiceInfo / CatalogEntry / InstalledModel / In
 src/app/types.ts :: McpServerConfig / ToolView / ServerStatus / ImportCandidate — MCP payloads.
 src/app/types.ts :: PublicSearxInstance / SearchTestResult — SearXNG payloads.
 src/app/types.ts :: GpuInfo / HardwareInfo / CapabilityReport / AppInfo / PrivacyStatus — Machine and privacy payloads.
-src/app/types.ts :: DictationEntry / DictationStateEvent — Dictation payloads; `DictationStateEvent` has the only 3 optional properties besides `Message`/`Source`.
+src/app/types.ts :: DictationEntry / DictationStateEvent — Dictation payloads; `DictationStateEvent` includes the `reviewing` preview state and has the only 3 optional properties besides `Message`/`Source`.
 
 src/app/chatStore.ts :: useChat — Zustand store: 12 state fields, 17 actions, the send queue, the confirmation dialog and error banners.
 src/app/chatStore.ts :: ToolStatus / UiToolActivity / UiMessage / QueuedMessage — View-model types.
@@ -662,8 +662,8 @@ src/components/voice/VoiceBars.tsx :: VoiceBars — 24-band spectrum bars for th
 ================================================================================
 
 src/pages/Bubble/Bubble.tsx :: Bubble — The 60x60 draggable launcher circle; morphs into the chat window and mirrors voice/dictation state.
-src/pages/Chat/ChatApp.tsx :: ChatApp — The chat window: header, message list, composer, history, call view, tool confirmation, selection menu.
-src/pages/Overlay/Overlay.tsx :: Overlay — The always-on-top dictation card: state, level, review editor, language menu.
+src/pages/Chat/ChatApp.tsx :: ChatApp — The chat window: header, message list, composer, history, call view, tool confirmation, selection menu; holds dictation-active state through review preparation.
+src/pages/Overlay/Overlay.tsx :: Overlay — The always-on-top dictation card: review-aware action labels, immediate editable preview, transcription feedback, and final text update unless edited.
 src/pages/Settings/SettingsApp.tsx :: SettingsApp — The 13-section dashboard shell with sidebar live search, jump highlighting and `app://navigate` routing.
 src/pages/Settings/searchIndex.ts :: SEARCH_INDEX — The search index built from `strings.en.json` label and hint keys.
 src/pages/Settings/sections/About.tsx :: AboutSection — Version, licence, build and repository links.
@@ -744,7 +744,7 @@ src-tauri/src/bin/gpu_probe.rs :: (diagnostic) — Standalone CUDA speech probe;
 
 --- Frontend tests in src/test/ ---
 src/test/setup.ts :: (harness) — Mocks `@tauri-apps/api/core`, `api/event`, `plugin-opener`, `plugin-dialog` and stubs `window.matchMedia`.
-src/test/ui.test.tsx :: 24 cases — text direction, SpokenText, MessageBubble (incl. the no-raw-HTML guard), chat-store streaming and queueing, Composer, CallView, accelerator building, and the Tauri capability file.
+src/test/ui.test.tsx :: 26 cases — text direction, SpokenText, MessageBubble (incl. the no-raw-HTML guard), chat-store streaming and queueing, Composer, CallView, live dictation review preview, accelerator building, and the Tauri capability file.
 src/test/settings.test.tsx :: 19 cases (6 `it` + 1 `it.each` over 13 sections) — every section mounts, model manager, model picker, bubble, web-search round trip.
 src/test/selection.test.tsx :: 5 cases — right-click selection menu and the explain pop-up.
 src/test/history.test.tsx :: 4 cases — recency grouping, empty state, delete resets the last-conversation pointer, a DB failure is not shown as empty.
