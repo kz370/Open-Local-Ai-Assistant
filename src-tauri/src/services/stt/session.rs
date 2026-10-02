@@ -506,6 +506,7 @@ impl SessionCtx {
                         }
                     }
                     Ok(CaptureEvent::Error(e)) => {
+                        tracing::warn!(error = %e, "capture failed during warm-up");
                         (self.emit)(VoiceEvent::Error {
                             mode: self.mode,
                             code: "audio".into(),
@@ -547,6 +548,7 @@ impl SessionCtx {
             match rx.recv_timeout(Duration::from_millis(100)) {
                 Ok(CaptureEvent::Level(v, bands)) => self.emit_level(v, bands),
                 Ok(CaptureEvent::Error(e)) => {
+                    tracing::warn!(error = %e, "capture stream failed");
                     (self.emit)(VoiceEvent::Error {
                         mode: self.mode,
                         code: "audio".into(),
@@ -654,6 +656,7 @@ impl SessionCtx {
                     }
                 }
                 Ok(CaptureEvent::Error(e)) => {
+                    tracing::warn!(error = %e, "capture stream failed");
                     (self.emit)(VoiceEvent::Error {
                         mode: self.mode,
                         code: "audio".into(),
@@ -821,6 +824,7 @@ impl SessionCtx {
                         }
                     }
                     Ok(CaptureEvent::Error(e)) => {
+                        tracing::warn!(error = %e, "capture stream failed");
                         (self.emit)(VoiceEvent::Error {
                             mode: self.mode,
                             code: "audio".into(),

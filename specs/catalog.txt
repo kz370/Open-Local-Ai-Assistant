@@ -354,7 +354,8 @@ services/audio/devices.rs :: list_inputs / list_outputs — Enumeration; failure
 services/audio/devices.rs :: input_device / output_device — Resolution with the 14-entry loopback blacklist and fallbacks.
 services/audio/capture.rs :: CaptureEvent — `Samples(Vec<f32>) | Level(f32, Vec<f32>) | Error(String)`.
 services/audio/capture.rs :: Capture — Owns the cpal input stream on the `mic-capture` thread.
-services/audio/capture.rs :: Capture::start / stop — Start with a 5 s readiness handshake; stop by flag, joined within 20 ms.
+services/audio/capture.rs :: Capture::start / stop — Start blocks until the stream has survived the 250 ms settle window, rebuilding it up to 4 times (300 ms apart) when the driver kills it; stop by flag, joined within 20 ms.
+services/audio/capture.rs :: START_SETTLE / START_ATTEMPTS / RETRY_PAUSE — 250 ms / 4 / 300 ms; the stream-recovery budget for a driver that raises `AUDCLNT_E_BUFFER_ERROR` right after start.
 services/audio/playback.rs :: Clip — `{ id, samples, rate, tag }`; mono f32 PCM at the model's own rate.
 services/audio/playback.rs :: Player — Single output stream on the `audio-playback` thread; 8 public methods.
 services/audio/playback.rs :: Player::new / set_device / set_volume / enqueue / current_clip / stop / set_paused / is_paused / is_active / is_available — Playback control; clip id `0` is the "nothing playing" sentinel.

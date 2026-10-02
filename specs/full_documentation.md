@@ -2818,7 +2818,7 @@ Microphone capture on a dedicated thread: downmix to mono, resample to 16 kHz,
 high-pass filter, and deliver samples plus level events.
 
 ### Summary
-153 lines wrapping cpal.
+236 lines wrapping cpal.
 
 ### Technical Details
 ```rust
@@ -2841,17 +2841,32 @@ impl Capture { pub fn start(device_id: Option<&str>) -> AppResult<(Capture, Rece
 - **Meter cadence:** `meter_every = 16_000 / 20 = 800` samples ⇒ ~**20 level
   events per second**. Each `Level` carries the RMS and the 24-band spectrum.
 - **Diagnostics:** every 20 ticks (≈1 s) a `tracing::debug!` line is emitted.
-- cpal stream buffer-size hint: `Some(Duration::from_secs(3))`.
+- cpal activation timeout: `Some(Duration::from_secs(3))`. In cpal 0.18 this
+  argument is the *activation timeout*, not a buffer size; the capture period
+  comes from the device.
 
-### Business Logic — startup handshake
+### Business Logic — startup handshake and stream recovery
 A separate `ready` channel means `start()` does not return before the stream is
-actually playing. It waits up to **5 s**: `Ok(Ok(()))` → success;
-`Ok(Err(e))` → `AppError::Audio("could not open microphone: {e}")`;
-timeout or disconnect → `AppError::Audio("microphone did not start in time")`.
+actually playing **and has survived `START_SETTLE` = 250 ms**. It waits up to
+**10 s**: `Ok(Ok(()))` → success; `Ok(Err(e))` →
+`AppError::Audio("could not open microphone: {e}")`; timeout or disconnect →
+`AppError::Audio("microphone did not start in time")`.
+
+Drivers — Realtek among them — can raise `AUDCLNT_E_BUFFER_ERROR` ("A buffer
+underrun or overrun occurred") a few tens of milliseconds into an otherwise
+valid stream, and WASAPI offers no way to revive a dead client: only a new
+stream will do. So the capture thread treats "still alive after the settle
+window" as the success criterion and otherwise **rebuilds the stream**, up to
+`START_ATTEMPTS` = **4** times with a `RETRY_PAUSE` of **300 ms** between
+attempts. Only after the last attempt does the failure reach the session (and
+the overlay). Once healthy, the thread forwards any later stream error as
+`CaptureEvent::Error` and every failure is logged with `tracing::warn!`.
 
 ### Concurrency
 One named thread `mic-capture` owns the `cpal::Stream` and polls the stop flag
-every **20 ms** before dropping the stream. The heavy DSP runs **inside the cpal
+every **20 ms** before dropping the stream. That poll loop also drains the
+stream's error channel, so a failure that happens after startup reaches the
+session instead of dying silently. The heavy DSP runs **inside the cpal
 input callback**, which is why the twiddle tables are precomputed. The sample
 channel is unbounded, so the callback never blocks on the consumer.
 
