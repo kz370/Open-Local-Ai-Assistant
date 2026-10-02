@@ -668,7 +668,7 @@ src/components/voice/VoiceBars.tsx :: VoiceBars — 24-band spectrum bars for th
 
 src/pages/Bubble/Bubble.tsx :: Bubble — The 60x60 draggable launcher circle; morphs into the chat window and mirrors voice/dictation state.
 src/pages/Chat/ChatApp.tsx :: ChatApp — The chat window: header, message list, composer, history, call view, tool confirmation, selection menu; holds dictation-active state through review preparation.
-src/pages/Overlay/Overlay.tsx :: Overlay — The always-on-top dictation card: review-aware action labels, immediate editable preview, transcription feedback, and final text update unless edited.
+src/pages/Overlay/Overlay.tsx :: Overlay — The always-on-top dictation card: live voice spectrum (VoiceBars from the `level` event's `bands`), review-aware action labels, immediate editable preview, transcription feedback, and final text update unless edited.
 src/pages/Settings/SettingsApp.tsx :: SettingsApp — The 13-section dashboard shell with sidebar live search, jump highlighting and `app://navigate` routing.
 src/pages/Settings/searchIndex.ts :: SEARCH_INDEX — The search index built from `strings.en.json` label and hint keys.
 src/pages/Settings/sections/About.tsx :: AboutSection — Version, licence, build and repository links.

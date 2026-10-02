@@ -365,6 +365,22 @@ describe("Overlay review preview", () => {
     expect(screen.getByRole("textbox")).toHaveValue("final words");
   });
 
+  it("moves the spectrum bars while the microphone is picked up", () => {
+    render(<Overlay />);
+    emit("dictation://state", { state: "listening" });
+    const bars = () => [...document.querySelectorAll<HTMLElement>(".overlay-head .voice-bars span")].map((s) => s.style.transform);
+    const band = (v: number) => new Array(24).fill(v);
+
+    emit("voice://event", { type: "level", mode: "dictation", value: 0.42, bands: band(0.1) });
+    const quiet = bars();
+    expect(quiet).toHaveLength(48);
+
+    emit("voice://event", { type: "level", mode: "dictation", value: 0.72, bands: band(0.74) });
+    const loud = bars();
+    expect(loud).not.toEqual(quiet);
+    expect(loud[0]).toBe("scaleY(0.74)");
+  });
+
   it("preserves edits made before the final transcript arrives", () => {
     render(<Overlay />);
     emit("dictation://state", { state: "reviewing", text: "live words" });

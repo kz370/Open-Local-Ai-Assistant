@@ -425,6 +425,10 @@ menu.
   that this "must match `MENU_ROOM` in `window.rs`". `.overlay-card` is sized
   `calc(100% - 2 * var(--menu-room) - 16px)` and its shadow must stay within the
   8px margin because the native window is clipped just outside it.
+- **Overlay live meter:** the header shows `.voice-bars` (mirrored 24-band
+  spectrum, 148×18px, 2px bars), not the rolling `.meter`. Spectrum bars are
+  scaled with `transform: scaleY()` on a 0.12 floor, so a normal speaking level
+  moves every bar; integer-pixel heights in a 14px box stayed visually flat.
 
 ### Business Logic
 - **The single breakpoint:**

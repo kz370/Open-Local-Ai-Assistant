@@ -691,18 +691,22 @@ html.overlay {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.overlay-head .meter {
-  height: 14px;
-  flex: 1;
-  min-width: 0;
-  max-width: 120px;
-  gap: 2px;
-  justify-content: flex-start;
-  overflow: hidden;
-}
-.overlay-head .meter span {
-  width: 3px;
+/* Live spectrum: 24 mirrored bands scaled by transform, so a normal speaking
+   level moves every bar instead of nudging integer pixel heights. */
+.overlay-head .voice-bars {
+  height: 18px;
   flex: none;
+  width: 148px;
+  justify-content: flex-start;
+}
+.overlay-head .voice-bars span {
+  width: 2px;
+}
+.overlay-dbg {
+  flex: none;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-faint);
 }
 .overlay-lang {
   display: inline-flex;

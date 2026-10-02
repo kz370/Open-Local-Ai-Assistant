@@ -898,6 +898,31 @@ mod tests {
     }
 
     #[test]
+    fn level_carries_the_spectrum_and_a_mute_flattens_it() {
+        let seen: Arc<Mutex<Vec<VoiceEvent>>> = Arc::new(Mutex::new(Vec::new()));
+        let sink = seen.clone();
+        let mut c = ctx(false);
+        c.emit = Arc::new(move |e| sink.lock().unwrap().push(e));
+
+        let bands: Vec<f32> = (0..24).map(|b| b as f32 / 24.0).collect();
+        c.emit_level(0.5, bands.clone());
+        c.muted.store(true, Ordering::Relaxed);
+        c.emit_level(0.5, bands);
+
+        let events = seen.lock().unwrap();
+        let VoiceEvent::Level { value, bands, .. } = &events[0] else {
+            panic!("expected a level event");
+        };
+        assert_eq!(*value, 0.5);
+        assert_eq!(bands.len(), 24, "the spectrum must reach the meter");
+        let VoiceEvent::Level { value, bands, .. } = &events[1] else {
+            panic!("expected a level event");
+        };
+        assert_eq!(*value, 0.0);
+        assert!(bands.iter().all(|v| *v == 0.0));
+    }
+
+    #[test]
     fn no_gating_while_silent() {
         assert!(!ctx(false).input_muted(false));
     }

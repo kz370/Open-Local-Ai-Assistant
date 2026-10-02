@@ -6,7 +6,7 @@ import { useSettings } from "../../app/settingsStore";
 import { errorMessage, t } from "../../app/strings";
 import type { DictationStateEvent, LanguageEntry, VoiceEvent } from "../../app/types";
 import { textDir } from "../../components/common/controls";
-import { LevelMeter } from "../../components/voice/LevelMeter";
+import { VoiceBars } from "../../components/voice/VoiceBars";
 
 /** Free drag on the overlay's header strip; Shift locks to horizontal-only,
  * Alt locks to vertical-only. Uses manual `setPosition` (not Tauri's
@@ -208,7 +208,8 @@ export function Overlay() {
   const [text, setText] = useState("");
   const [draft, setDraft] = useState("");
   const [reviewPreview, setReviewPreview] = useState(false);
-  const [levels, setLevels] = useState<number[]>(new Array(18).fill(0));
+  const [bands, setBands] = useState<number[]>([]);
+  const [level, setLevel] = useState(0);
   const mode = useSettings((s) => s.settings?.dictation.mode ?? "hold");
   const reviewBeforeInsert = useSettings((s) => s.settings?.dictation.reviewBeforeInsert ?? false);
   const textRef = useRef<HTMLDivElement>(null);
@@ -228,7 +229,8 @@ export function Overlay() {
         if (e.state === "listening") {
           setText("");
           setError(null);
-          setLevels(new Array(18).fill(0));
+          setBands([]);
+          setLevel(0);
           previewRef.current = false;
           reviewDoneRef.current = false;
           draftDirty.current = false;
@@ -256,7 +258,10 @@ export function Overlay() {
       }),
       on<VoiceEvent>("voice://event", (e) => {
         if (e.mode !== "dictation") return;
-        if (e.type === "level") setLevels((l) => [...l.slice(1), e.value]);
+        if (e.type === "level") {
+          setLevel(e.value);
+          setBands(e.bands);
+        }
         if (e.type === "partial") setText(e.text);
         if (e.type === "transcript" && e.text) setText(e.text);
       }),
@@ -354,7 +359,12 @@ export function Overlay() {
       >
         <span className="overlay-icon">{icon}</span>
         <span className="overlay-label">{label}</span>
-        {listening && <LevelMeter levels={levels} max={14} label={t("voice.level")} />}
+        {listening && <VoiceBars bands={bands} level={level} label={t("voice.level")} />}
+        {listening && (
+          <span className="overlay-dbg">
+            {Math.round(level * 100)}|{(bands.length ? Math.max(...bands) : 0).toFixed(2)}|{bands.length}
+          </span>
+        )}
         <span style={{ flex: 1 }} />
         {(listening || state === "review") && <LanguageMenu value={language} languages={languages} onChange={changeLanguage} resetKey={state} />}
         <HeadBtn label={`${t("voice.cancel")} (Esc)`} onClick={() => void ipc.dictationCancel().catch(quiet)}>

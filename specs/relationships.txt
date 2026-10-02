@@ -780,7 +780,7 @@ src/pages/Overlay/Overlay | uses | src/app/settingsStore
 src/pages/Overlay/Overlay | uses | src/app/strings
 src/pages/Overlay/Overlay | uses | src/app/types
 src/pages/Overlay/Overlay | uses | src/components/common/controls
-src/pages/Overlay/Overlay | uses | src/components/voice/LevelMeter
+src/pages/Overlay/Overlay | uses | src/components/voice/VoiceBars
 src/pages/Settings/SettingsApp | uses | src/app/ipc
 src/pages/Settings/SettingsApp | uses | src/app/settingsHighlight
 src/pages/Settings/SettingsApp | uses | src/app/strings
