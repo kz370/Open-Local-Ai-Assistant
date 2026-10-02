@@ -436,7 +436,7 @@ services/search/mod.rs :: CACHE_TTL / INSTANCES_TTL / MAX_SNIPPET / AUTO_INSTANC
 services/dictation.rs :: DictationResult — `{ raw, inserted, corrected, correction_error }`.
 services/dictation.rs :: ReviewPending — `{ raw, corrected, correction_error }`; the text held in the overlay for editing.
 services/dictation.rs :: correct_text — `pub async fn correct_text(ai, model, text)`; streaming grammar correction with emoji handling, normalized whitespace, and a length sanity check.
-services/dictation.rs :: type_text — Windows: checked, paced Unicode SendInput pairs for Typing; other platforms: Enigo text entry.
+services/dictation.rs :: type_text — Windows: paced per-character Enigo Unicode entry for Typing; other platforms: Enigo text entry.
 services/dictation.rs :: LiveTyper — Incremental typing into the foreground application with at most one operation in flight.
 services/dictation.rs :: LiveTyper::snapshot / reset / set_target / finish / retract — Read the on-screen text, arm it, type it, or backspace it.
 services/dictation.rs :: insert_text — `pub fn insert_text(text, settings)`; blocking. `"paste"` swaps the clipboard and restores it afterwards.
