@@ -1,6 +1,6 @@
 # RUNTIME
 
-Documentation pipeline state for **Open Local Assistant** (`local-ai-assistant` v1.0.0).
+Documentation pipeline state for **Open Local Assistant** (`local-ai-assistant` v1.1.0).
 
 - **Repository root:** `I:\Development\repos\Open-Local-Ai-Assistant`
 - **Tracked files (git):** 232

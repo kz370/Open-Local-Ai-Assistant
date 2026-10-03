@@ -1,6 +1,6 @@
 # FULL DOCUMENTATION
 
-**Project:** Open Local Assistant (`local-ai-assistant` v1.0.0)
+**Project:** Open Local Assistant (`local-ai-assistant` v1.1.0)
 **License:** GPL-3.0-only
 **Type:** Tauri 2 desktop application — Rust backend + React 19 / TypeScript frontend
 **Platform:** Windows 10/11 x64 (primary); code is written to also build on macOS and Linux

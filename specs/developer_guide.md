@@ -1,6 +1,6 @@
 # DEVELOPER GUIDE
 
-**Project:** Open Local Assistant (`local-ai-assistant` v1.0.0)
+**Project:** Open Local Assistant (`local-ai-assistant` v1.1.0)
 **Repository:** `https://github.com/kz370/Open-Local-Ai-Assistant`
 **License:** GPL-3.0-only
 **Audience:** contributors and AI agents changing this repository

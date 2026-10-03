@@ -1,6 +1,6 @@
 # API REFERENCE
 
-**Project:** Open Local Assistant (`local-ai-assistant` v1.0.0)
+**Project:** Open Local Assistant (`local-ai-assistant` v1.1.0)
 **Transport:** Tauri 2 IPC
 **Scope:** the complete contract between the React frontend (`src/`) and the Rust
 backend (`src-tauri/src/`) — 94 commands, 18 global events, 2 streaming channels,

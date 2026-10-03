@@ -1,6 +1,6 @@
 # Architecture Overview
 
-**Project:** Open Local Assistant (`local-ai-assistant` v1.0.0)
+**Project:** Open Local Assistant (`local-ai-assistant` v1.1.0)
 **License:** GPL-3.0-only
 **Repository:** <https://github.com/kz370/Open-Local-Ai-Assistant>
 **Companion diagram:** [`diagrams/architecture.mmd`](./diagrams/architecture.mmd) (layered view)
