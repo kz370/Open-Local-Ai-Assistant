@@ -48,12 +48,17 @@ jobs:
       - name: Check build output
         shell: pwsh
         run: |
-          $files = @("release\Open Local Assistant.exe", "release\onnxruntime.dll",
-                     "release\onnxruntime_providers_shared.dll", "release\sherpa-onnx-c-api.dll",
-                     "release\sherpa-onnx-cxx-api.dll")
-          $files += (Get-ChildItem release\Open-Local-Assistant-*-setup.exe).FullName
+          # build-installer.bat writes to release\v<version>\, one folder per release.
+          $dist = Get-ChildItem release -Directory | Sort-Object LastWriteTime -Descending |
+                 Where-Object { Test-Path (Join-Path $_.FullName "Open Local Assistant.exe") } |
+                 Select-Object -First 1
+          if (-not $dist) { throw "No release\v<version>\ folder with build output found" }
+          $files = @("Open Local Assistant.exe", "onnxruntime.dll",
+                     "onnxruntime_providers_shared.dll", "sherpa-onnx-c-api.dll",
+                     "sherpa-onnx-cxx-api.dll") | ForEach-Object { Join-Path $dist.FullName $_ }
+          $files += (Get-ChildItem (Join-Path $dist.FullName "Open-Local-Assistant-*-setup.exe")).FullName
           foreach ($f in $files) { if (-not (Test-Path $f)) { throw "Missing $f" } }
-          Get-ChildItem release | Format-Table Name, Length
+          Get-ChildItem $dist.FullName | Format-Table Name, Length
 
       - uses: actions/upload-artifact@v4
         with:

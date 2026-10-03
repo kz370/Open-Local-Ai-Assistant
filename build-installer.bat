@@ -4,6 +4,9 @@ rem ---------------------------------------------------------------------------
 rem  Open Local Assistant - build the release .exe and an installer for
 rem  C:\Program Files
 rem
+rem  Build outputs land in release\v<version>\ - one folder per release, so
+rem  rebuilding an old version never overwrites the current release's files.
+rem
 rem    build-installer.bat           build exe + setup (Inno Setup)
 rem    build-installer.bat install   build exe, then install it directly into
 rem                                  "C:\Program Files\Open Local Assistant"
@@ -21,14 +24,16 @@ set "ROOT=%~dp0"
 set "APPNAME=Open Local Assistant"
 set "BINNAME=local-ai-assistant"
 set "EXE=%ROOT%src-tauri\target\release\%BINNAME%.exe"
-rem NOTE: outputs go to release\, never to dist\ (dist\ is the Tauri
-rem frontend folder and gets embedded into the exe as-is).
-set "DIST=%ROOT%release"
 
 
 rem version = the "version" line of Cargo.toml
 for /f "tokens=2 delims== " %%v in ('findstr /b /c:"version" "%ROOT%src-tauri\Cargo.toml"') do if not defined VERSION set "VERSION=%%~v"
 if not defined VERSION set "VERSION=0.1.0"
+
+rem NOTE: outputs go to release\v<version>\ (one folder per release), never
+rem to dist\ (dist\ is the Tauri frontend folder and gets embedded into the
+rem exe as-is). upload-release.bat looks in the same place.
+set "DIST=%ROOT%release\v%VERSION%"
 
 
 echo.

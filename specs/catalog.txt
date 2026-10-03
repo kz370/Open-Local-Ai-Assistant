@@ -807,14 +807,14 @@ src-tauri/capabilities/default.json :: permissions — `core:default`, three `co
 .github/workflows/build.yml :: triggers — `workflow_dispatch` and `push` on tags `v*`.
 .github/workflows/build.yml :: permissions — `contents: read`; the workflow never writes to the repository.
 .github/workflows/build.yml :: job build — `windows-latest`, `timeout-minutes: 90`, single job, no matrix, no lint/test job.
-.github/workflows/build.yml :: steps — checkout; `setup-node@v4` (Node 22, npm cache); `dtolnay/rust-toolchain@stable`; `Swatinem/rust-cache@v2` (`workspaces: src-tauri`); `choco install innosetup` guarded on the IS 6 path; `npm ci`; `build-installer.bat noupload < NUL`; PowerShell output verification; `upload-artifact@v4` (`release/`, `if-no-files-found: error`).
+.github/workflows/build.yml :: steps — checkout; `setup-node@v4` (Node 22, npm cache); `dtolnay/rust-toolchain@stable`; `Swatinem/rust-cache@v2` (`workspaces: src-tauri`); `choco install innosetup` guarded on the IS 6 path; `npm ci`; `build-installer.bat noupload < NUL`; PowerShell output verification (newest `release\v<version>\` folder); `upload-artifact@v4` (`release/`, `if-no-files-found: error`).
 .github/workflows/build.yml :: known gap — CI installs/checks Inno Setup 6 while the build script searches for Inno Setup 7, so the setup exe can be silently missing; no `cargo test`/`clippy`/`npm run lint` runs in CI.
 
 build-installer.bat :: modes — no argument (build + offer to publish), `install`, `upload`, `noupload` (what CI uses).
-build-installer.bat :: DIST — `release` (never `dist\`, which is the embedded frontend folder).
+build-installer.bat :: DIST — `release\v<version>` (one folder per release; never `dist\`, which is the embedded frontend folder).
 build-installer.bat :: phases — preflight cache trim (8 GB cap) -> `npm run build` -> `cargo build --release` + sherpa-onnx cache copy-back -> locate Inno Setup -> `ISCC` with `/D` defines.
 build-installer.bat :: portable output — `Open Local Assistant.exe` plus 4 speech DLLs (`sherpa-onnx-c-api`, `sherpa-onnx-cxx-api`, `onnxruntime`, `onnxruntime_providers_shared`).
-upload-release.bat :: — Commits first, zips only the 5 portable files, then `gh release create` / `upload --clobber` with `release-notes/<tag>.md` when present.
+upload-release.bat :: — Reads `release\v<version>\` (newest setup exe found recursively under `release\` wins when no tag is given, flat `release\` accepted as fallback); commits first, zips only the 5 portable files, then `gh release create` / `upload --clobber` with `release-notes/<tag>.md` when present.
 installer/open-local-assistant.iss :: — Inno Setup script receiving `AppVersion`, `SourceExe`, `LibDir`, `OutputDir` from the batch file.
 scripts/generate_icon.py :: — Generates the build-time icon (rounded teal square + white wave); deliberately different from the runtime icon in `desktop/icon.rs`.
 

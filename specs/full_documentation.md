@@ -3972,9 +3972,12 @@ without asking), and `noupload` (**what CI uses**).
 
 **Variables:** `APPNAME = "Open Local Assistant"`, `BINNAME = local-ai-assistant`
 (matching `mainBinaryName`), `EXE` = `src-tauri\target\release\local-ai-assistant.exe`,
-**`DIST = release` — never `dist\`**, with the explicit comment "`dist\` is the
+**`DIST = release\v<version>` — never `dist\`**, with the explicit comment "`dist\` is the
 Tauri frontend folder and gets embedded into the exe as-is". `VERSION` is parsed
-from `src-tauri\Cargo.toml`, falling back to a **stale `0.1.0`**. `JOBS` is half
+from `src-tauri\Cargo.toml` (it is parsed **before** `DIST` is derived from it), falling
+back to a **stale `0.1.0`**. Output therefore lands in a **per-release folder**
+`release\v<version>\`, so rebuilding an old version never overwrites the current release's
+files. `JOBS` is half
 the processor count, overridable by `BUILD_JOBS`. `CACHE_LIMIT_GB = 8`.
 
 **Four build phases:**
@@ -4021,7 +4024,10 @@ real installer.
 
 ### Purpose
 Publishes a GitHub release from the files `build-installer.bat` staged in
-`release\`.
+`release\v<version>\` (artifacts built before the per-release folders existed); with no
+tag it takes the **newest** setup exe found anywhere under `release\` (PowerShell recursive
+`Get-ChildItem` sorted by `LastWriteTime`, because `dir /o-d /s` only sorts *within* each
+directory) and derives both the folder and the tag `v<version>` from it.
 
 ### Technical Details
 104 lines. `upload-release.bat [tag]`; with no tag the version is derived from the
@@ -4083,9 +4089,10 @@ matrix and no separate lint/test/release job.
 | 8 | PowerShell verification of the required outputs | see below |
 | 9 | `actions/upload-artifact@v4` | `name: open-local-assistant-windows`, `path: release/`, `if-no-files-found: error` |
 
-**Step 8 requires exactly:** `release\Open Local Assistant.exe`, the **four**
-speech DLLs, and **at least one** `Open-Local-Assistant-*-setup.exe`; anything
-missing `throw`s. It then prints the whole `release\` directory as a table.
+**Step 8 requires exactly:** the **newest** `release\v<version>\` folder containing
+`Open Local Assistant.exe` (found by sorting `release` subfolders by `LastWriteTime`), the
+**four** speech DLLs beside it, and **at least one** `Open-Local-Assistant-*-setup.exe`;
+anything missing `throw`s. It then prints that folder as a table.
 
 **No GitHub Release is created** — `noupload` is passed and the workflow has only
 `contents: read`. Publishing is `upload-release.bat`'s job, run locally.

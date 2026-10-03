@@ -1236,17 +1236,23 @@ embedded into the exe as-is).
 `[!] Inno Setup 7 not found, so no setup file was made.`, points at jrsoftware.org and
 at `build-installer.bat install`, and exits **0**.
 
-### 11.2 The `release/` layout — 5 portable files + 1 installer
+### 11.2 The `release/` layout — one folder per release, 5 portable files + 1 installer
 
 ```
 release\
-  Open Local Assistant.exe                          ← renamed from local-ai-assistant.exe
-  sherpa-onnx-c-api.dll
-  sherpa-onnx-cxx-api.dll
-  onnxruntime.dll
-  onnxruntime_providers_shared.dll
-  Open-Local-Assistant-<version>-setup.exe           ← built by Inno Setup
+  v1.0.0\
+    Open Local Assistant.exe                        ← renamed from local-ai-assistant.exe
+    sherpa-onnx-c-api.dll
+    sherpa-onnx-cxx-api.dll
+    onnxruntime.dll
+    onnxruntime_providers_shared.dll
+    Open-Local-Assistant-1.0.0-setup.exe            ← built by Inno Setup
 ```
+
+`build-installer.bat` reads the version from `src-tauri\Cargo.toml` and writes **every**
+artifact to `release\v<version>\`, so rebuilding an old version never overwrites the current
+release's files. `upload-release.bat` reads the same folder (`release\v<version>\`) and still
+falls back to the flat `release\` layout for artifacts built before this change.
 
 The **five** portable files are the exact set `upload-release.bat` and the CI check
 require. **Keep the four DLLs next to the `.exe`** — the portable version will not start
@@ -1337,7 +1343,7 @@ If Chocolatey installs IS 6, the batch's search fails. It then prints
 **exit code 0** — a warning, not a failure. Step 8 then runs:
 
 ```pwsh
-$files += (Get-ChildItem release\Open-Local-Assistant-*-setup.exe).FullName
+$files += (Get-ChildItem (Join-Path $dist.FullName "Open-Local-Assistant-*-setup.exe")).FullName
 ```
 
 With no setup exe, `Get-ChildItem` returns **nothing**, so `$files` still contains only

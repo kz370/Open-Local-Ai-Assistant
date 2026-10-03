@@ -3,27 +3,37 @@ setlocal EnableExtensions
 cd /d "%~dp0"
 
 rem Publish a GitHub release of this repo from the files build-installer.bat
-rem put in release\:
-rem   release\Open-Local-Assistant-<version>-setup.exe      uploaded as-is
-rem   release\Open Local Assistant.exe + the speech DLLs    zipped as the portable version
+rem put in release\v<version>\:
+rem   release\v<version>\Open-Local-Assistant-<version>-setup.exe   uploaded as-is
+rem   release\v<version>\Open Local Assistant.exe + speech DLLs    zipped as the
+rem                                                              portable version
 rem Release notes come from release-notes\<tag>.md, the commit message from
 rem commit-message.txt (git-ignored, rewrite it for each release).
 rem
 rem Usage: upload-release.bat [tag]   (e.g. upload-release.bat v1.0.0)
-rem No tag given = read the version from the setup exe name
-rem (Open-Local-Assistant-<version>-setup.exe) and use tag v<version>.
-set "DIST=release"
+rem No tag given = read the version from the newest setup exe under
+rem release\ (release\v<version>\Open-Local-Assistant-<version>-setup.exe)
+rem and use tag v<version>.
+set "RELEASEDIR=release"
 set "TAG=%~1"
 if not "%TAG%"=="" goto :have_tag
 
-rem Newest setup exe wins if there are several.
+rem Newest setup exe wins if there are several. Searched recursively because each
+rem release keeps its own release\v<version>\ folder.
 set "SETUP="
-for /f "delims=" %%F in ('dir /b /a-d /o-d "%DIST%\Open-Local-Assistant-*-setup.exe" 2^>nul') do if not defined SETUP set "SETUP=%%F"
+set "VERSION="
+set "DIST="
+for /f "delims=" %%F in ('powershell -NoProfile -Command "$f = Get-ChildItem -Path '%RELEASEDIR%' -Recurse -File -Filter 'Open-Local-Assistant-*-setup.exe' -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1; if ($f) { $f.FullName }"') do if not defined SETUP set "SETUP=%%F"
 if not defined SETUP (
-  echo No %DIST%\Open-Local-Assistant-*-setup.exe found and no tag given.
+  echo No Open-Local-Assistant-*-setup.exe found under %RELEASEDIR%\ and no tag given.
   echo Run build-installer.bat first.
   exit /b 1
 )
+for %%P in ("%SETUP%") do (
+  set "DIST=%%~dpP"
+  set "SETUP=%%~nxP"
+)
+if "%DIST:~-1%"=="\" set "DIST=%DIST:~0,-1%"
 set "VERSION=%SETUP:Open-Local-Assistant-=%"
 set "VERSION=%VERSION:-setup.exe=%"
 set "TAG=v%VERSION%"
@@ -33,6 +43,10 @@ goto :tag_ready
 set "VERSION=%TAG%"
 if /i "%VERSION:~0,1%"=="v" set "VERSION=%VERSION:~1%"
 set "SETUP=Open-Local-Assistant-%VERSION%-setup.exe"
+set "DIST=%RELEASEDIR%\v%VERSION%"
+if exist "%DIST%\%SETUP%" goto :tag_ready
+rem No per-release folder (built before this layout): fall back to release\.
+if exist "%RELEASEDIR%\%SETUP%" set "DIST=%RELEASEDIR%"
 
 :tag_ready
 echo Using tag %TAG% (version %VERSION%)
