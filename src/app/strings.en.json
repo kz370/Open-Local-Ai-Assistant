@@ -492,6 +492,10 @@
       "profileNeedsModel": "A profile needs a correction model.",
       "searchAt": "Searchable from",
       "searchAtHint": "When you have this many profiles or more, the dictation window's profile dropdown gets a search box.",
+      "unsaved": "Unsaved changes",
+      "saving": "Saving…",
+      "saved": "Saved",
+      "profileTitleRequired": "Every profile needs a title.",
       "removeProfile": "Remove profile"
     },
     "models": {

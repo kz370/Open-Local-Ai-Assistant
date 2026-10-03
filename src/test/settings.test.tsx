@@ -237,14 +237,36 @@ describe("dictation profiles", () => {
 
     fireEvent.change(screen.getByLabelText("Profile title"), { target: { value: "Programming" } });
     fireEvent.change(screen.getByLabelText("Profile prompt"), { target: { value: "format as a code block" } });
-    await waitFor(() => expect(useSettings.getState().settings?.dictation.profiles).toEqual([{ id: "p1", title: "Programming", prompt: "format as a code block" }]));
+    // Nothing is persisted until Save is pressed.
+    expect(screen.getByText("Unsaved changes")).toBeInTheDocument();
+    expect(useSettings.getState().settings?.dictation.profiles).toEqual([]);
 
-    // The active profile can be picked here too, and is cleared with its profile.
     fireEvent.change(screen.getByLabelText(/^Active profile/), { target: { value: "p1" } });
-    await waitFor(() => expect(useSettings.getState().settings?.dictation.activeProfile).toBe("p1"));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(await screen.findByText("Saved")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(useSettings.getState().settings?.dictation.profiles).toEqual([{ id: "p1", title: "Programming", prompt: "format as a code block" }])
+    );
+    expect(useSettings.getState().settings?.dictation.activeProfile).toBe("p1");
+
     fireEvent.click(screen.getByRole("button", { name: "Delete profile: Programming" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(useSettings.getState().settings?.dictation.profiles).toEqual([]));
+    // The dropdown's selection has to point at a profile that still exists.
     expect(useSettings.getState().settings?.dictation.activeProfile).toBe("");
+  });
+
+  it("keeps a profile whose title was cleared, and refuses to save it", async () => {
+    useSettings.setState({ settings: { ...SETTINGS, dictation: { ...SETTINGS.dictation, profiles: [{ id: "a", title: "Imaging", prompt: "describe" }] } } });
+    location.hash = "#/settings/dictation/profiles";
+    render(<SettingsApp />);
+    fireEvent.change(await screen.findByLabelText("Profile title"), { target: { value: "" } });
+
+    // The row stays: the title is required, not a delete.
+    expect(document.querySelectorAll(".profile-title")).toHaveLength(1);
+    expect(screen.getByText("Every profile needs a title.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+    expect(useSettings.getState().settings?.dictation.profiles).toEqual([{ id: "a", title: "Imaging", prompt: "describe" }]);
   });
 
   it("reorders profiles with the move buttons", async () => {
@@ -255,6 +277,7 @@ describe("dictation profiles", () => {
     // The first row's "Move up" is disabled, so the second row's moves A down.
     expect(upButtons[0]).toBeDisabled();
     fireEvent.click(upButtons[1]);
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(useSettings.getState().settings?.dictation.profiles.map((p) => p.id)).toEqual(["b", "a"]));
   });
 });

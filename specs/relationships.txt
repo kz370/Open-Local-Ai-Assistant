@@ -427,6 +427,7 @@ commands::voice::dictation_insert_now | calls | services::stt::session::VoiceSes
 commands::voice::dictation_confirm | calls | lib::confirm_review
 commands::voice::dictation_retry | calls | lib::retry_dictation
 commands::voice::dictation_set_language | writes | settings::SettingsStore
+commands::voice::dictation_set_profile | writes | settings::SettingsStore
 commands::voice::dictation_history | reads | database::dictation
 commands::voice::dictation_history_delete | writes | database::dictation
 commands::voice::dictation_history_clear | writes | database::dictation
@@ -507,6 +508,7 @@ services::settings::backup | depends_on | chacha20poly1305 + sha2 (key derivatio
 --- settings://changed ---
 commands::app::save_settings | emits | settings://changed
 commands::voice::dictation_set_language | emits | settings://changed
+commands::voice::dictation_set_profile | emits | settings://changed
 desktop::window::open_settings | emits | settings://changed
 src/app/settingsStore.ts::useSettings.subscribe | subscribes_to | settings://changed
 

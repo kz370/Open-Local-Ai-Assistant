@@ -511,7 +511,9 @@ stt 14, tts 9, dictation 12, search 7.
     insertMethod: "type"|"paste"; addTrailingSpace: boolean; language: string;
     reviewBeforeInsert: boolean; historyEnabled: boolean;
     overlayX: number|null; overlayY: number|null;
+    profiles: DictationProfile[]; profileSearchThreshold: number; activeProfile: string;
   }
+  DictationProfile { id: string; title: string; prompt: string }
   search: {
     enabled: boolean; maxResults: number; searxngUrl: string; searxngEnabled: boolean;
     searxngSource: "local"|"public"; searxngPublicUrl: string;

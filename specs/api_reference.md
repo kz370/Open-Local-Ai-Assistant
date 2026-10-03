@@ -3,7 +3,7 @@
 **Project:** Open Local Assistant (`local-ai-assistant` v1.0.0)
 **Transport:** Tauri 2 IPC
 **Scope:** the complete contract between the React frontend (`src/`) and the Rust
-backend (`src-tauri/src/`) — 93 commands, 18 global events, 2 streaming channels,
+backend (`src-tauri/src/`) — 94 commands, 18 global events, 2 streaming channels,
 16 error codes.
 
 > Companion documents: [`full_documentation.md`](./full_documentation.md) (per-file
@@ -49,7 +49,7 @@ Three IPC mechanisms are in use:
 
 | Mechanism | Tauri's name | Used for |
 | --- | --- | --- |
-| **Request / response** | `invoke(cmd, args)` ⇄ `#[tauri::command]` | All 93 commands. The command resolves with the return value, or rejects with an `AppError` serialised as `{code, detail}`. |
+| **Request / response** | `invoke(cmd, args)` ⇄ `#[tauri::command]` | All 94 commands. The command resolves with the return value, or rejects with an `AppError` serialised as `{code, detail}`. |
 | **Channel (bidirectional push, per invocation)** | `Channel<T>` from `@tauri-apps/api/core` | Exactly two commands: `chat_send` and `chat_explain`. A `Channel` belongs to **one** invocation; it is created by the caller and handed to Rust as an argument, so events cannot leak between turns or windows. |
 | **Global event (broadcast)** | `app.emit(name, payload)` ⇄ `listen(name, cb)` | 18 names. Any window may listen; `emit_to(label, …)` targets one window (used for `app://*` and for the overlay's dictation telemetry). |
 
@@ -162,7 +162,7 @@ oversight.
 
 ## 3. Commands
 
-All 93 commands, grouped **exactly** as in `src/app/ipc.ts`, which is the authoritative
+All 94 commands, grouped **exactly** as in `src/app/ipc.ts`, which is the authoritative
 grouping. Every command appears in `tauri::generate_handler![ … ]` in `lib.rs`, 1:1.
 
 Conventions used in the tables:
@@ -280,21 +280,22 @@ API.
 | 49 | `dictation_confirm` | `text: string` | `void` | **async.** Inserts the (possibly edited) result the overlay holds in review mode. Takes the pending review; `invalid: "nothing is waiting to be inserted"` if there is none. Shrinks the overlay, restores focus to the dictated window, waits 150 ms, then inserts. Emits `dictation://state { state: "inserted" \| "empty", result }` and `dictation://history`. |
 | 50 | `dictation_retry` | — | `void` | **async.** Discards the current take (listening or under review) and re-arms. **Returns early when transcribing or correcting** — nothing to retry yet. |
 | 51 | `dictation_set_language` | `language: string` | `void` | sync. Remembers the language chosen in the overlay. `""` means "follow the speech-recognition language". Emits `settings://changed`. |
-| 52 | `dictation_history` | — | `DictationEntry[]` | sync. `{ id, createdAt, raw, text, corrected, inserted }`. `inserted: false` records that typing/pasting into the target app failed. |
-| 53 | `dictation_history_delete` | `id: string` | `void` | sync. |
-| 54 | `dictation_history_clear` | — | `void` | sync. |
-| 55 | `dictation_reset_overlay_position` | — | `void` | sync. Reverts the dragged overlay position to the default centred-near-the-bottom placement. |
-| 56 | `dictation_overlay_menu` | `menu: [number, number, number, number] \| null` | `void` | sync. Shows the overlay's language menu (logical `x, y, width, height` in window coordinates) outside the card, or hides it again with `null`. The rect is merged into the window region so the menu can hang outside the card without moving the window. |
-| 57 | `voice_status` | — | `"pushToTalk" \| "handsFree" \| "dictation" \| "test" \| null` | sync. The active mode, or `null`. |
-| 58 | `voice_set_muted` | `muted: boolean` | `boolean` | sync. Mutes the microphone **without ending the session**, so a hands-free call can be held. Returns the resulting state. While muted, silence still counts toward the idle timeout and the level meter reads zero. |
-| 59 | `voice_muted` | — | `boolean` | sync. |
-| 60 | `tts_voices` | — | `VoiceInfo[]` | sync. `VoiceInfo = { id, modelId, name, language, speakerId, engine, quality, gender }`. `language` is `"*"` for a multilingual voice. `id` is `"<model_id>:<speaker_id>"`. |
-| 61 | `tts_speak` | `text: string`, `language?: string \| null`, `tag?: string` | `void` | sync. Long text is **sentence-split inside the service** so speech starts immediately and can be paused or stopped at any point. `tts_unavailable` if there is no output device. An unknown `language` silently becomes the default voice. `tag` is the caller-supplied identity used to group and cancel one utterance; the default is a fresh UUID. Emits `tts://event`. |
-| 62 | `tts_set_paused` | `paused: boolean` | `{ speaking: boolean; paused: boolean }` | sync. Returns the resulting state so the UI never has to guess. |
-| 63 | `tts_state` | — | `{ speaking: boolean; paused: boolean }` | sync. `speaking` is true even while paused; the store additionally tracks `paused` separately. |
-| 64 | `tts_test` | `language: string`, `text?: string` | `void` | sync. Speaks `text` with the voice chosen for `language`, or a **hard-coded sample sentence** when `text` is empty. `invalid: "language"` for an unknown code; `tts_unavailable` when no voice is installed for that language. Uses the fixed tag `"test-voice"`, so repeated tests replace each other. |
-| 65 | `tts_stop` | — | `void` | sync. `stop_all` — stops the player, invalidates queued jobs and emits `tts://event { type: "idle" }`. |
-| 66 | `tts_replay_last` | — | `boolean` | sync. Replays the last completed turn. Returns whether a replay was possible. |
+| 52 | `dictation_set_profile` | `profile: string` | `void` | sync. Remembers the dictation profile chosen in the overlay. A profile id appends its prompt to the built-in correction prompt and forces the model pass on, so it needs a correction model; `""` clears the selection. An id matching no profile is dropped by `sanitize`. Emits `settings://changed`. |
+| 53 | `dictation_history` | — | `DictationEntry[]` | sync. `{ id, createdAt, raw, text, corrected, inserted }`. `inserted: false` records that typing/pasting into the target app failed. |
+| 54 | `dictation_history_delete` | `id: string` | `void` | sync. |
+| 55 | `dictation_history_clear` | — | `void` | sync. |
+| 56 | `dictation_reset_overlay_position` | — | `void` | sync. Reverts the dragged overlay position to the default centred-near-the-bottom placement. |
+| 57 | `dictation_overlay_menu` | `menu: [number, number, number, number] \| null` | `void` | sync. Shows the overlay's language menu (logical `x, y, width, height` in window coordinates) outside the card, or hides it again with `null`. The rect is merged into the window region so the menu can hang outside the card without moving the window. |
+| 58 | `voice_status` | — | `"pushToTalk" \| "handsFree" \| "dictation" \| "test" \| null` | sync. The active mode, or `null`. |
+| 59 | `voice_set_muted` | `muted: boolean` | `boolean` | sync. Mutes the microphone **without ending the session**, so a hands-free call can be held. Returns the resulting state. While muted, silence still counts toward the idle timeout and the level meter reads zero. |
+| 60 | `voice_muted` | — | `boolean` | sync. |
+| 61 | `tts_voices` | — | `VoiceInfo[]` | sync. `VoiceInfo = { id, modelId, name, language, speakerId, engine, quality, gender }`. `language` is `"*"` for a multilingual voice. `id` is `"<model_id>:<speaker_id>"`. |
+| 62 | `tts_speak` | `text: string`, `language?: string \| null`, `tag?: string` | `void` | sync. Long text is **sentence-split inside the service** so speech starts immediately and can be paused or stopped at any point. `tts_unavailable` if there is no output device. An unknown `language` silently becomes the default voice. `tag` is the caller-supplied identity used to group and cancel one utterance; the default is a fresh UUID. Emits `tts://event`. |
+| 63 | `tts_set_paused` | `paused: boolean` | `{ speaking: boolean; paused: boolean }` | sync. Returns the resulting state so the UI never has to guess. |
+| 64 | `tts_state` | — | `{ speaking: boolean; paused: boolean }` | sync. `speaking` is true even while paused; the store additionally tracks `paused` separately. |
+| 65 | `tts_test` | `language: string`, `text?: string` | `void` | sync. Speaks `text` with the voice chosen for `language`, or a **hard-coded sample sentence** when `text` is empty. `invalid: "language"` for an unknown code; `tts_unavailable` when no voice is installed for that language. Uses the fixed tag `"test-voice"`, so repeated tests replace each other. |
+| 66 | `tts_stop` | — | `void` | sync. `stop_all` — stops the player, invalidates queued jobs and emits `tts://event { type: "idle" }`. |
+| 67 | `tts_replay_last` | — | `boolean` | sync. Replays the last completed turn. Returns whether a replay was possible. |
 
 ---
 
@@ -302,12 +303,12 @@ API.
 
 | # | Command | Parameters | Returns | Notes |
 | --- | --- | --- | --- | --- |
-| 67 | `models_catalog` | — | `CatalogEntry[]` | sync. The curated catalogue, flattened with runtime state: `id, kind, engine, name, languages, quality, minRamGb, license, downloadBytes, installed, recommended, downloading, deletable`. `recommended` comes from the hardware-agnostic starter set; `deletable = !PROTECTED_MODELS.contains(id)`. The **built-in VAD model is filtered out** — it ships inside the exe and has nothing to download. |
-| 68 | `models_installed` | — | `InstalledModel[]` | sync. Every model found in the app's models folder and in every configured extra folder, deduplicated by path. Handles plain folders, grouped folders and the Hugging Face `models--org--name/snapshots/<hash>/` layout. |
-| 69 | `models_incompatible` | — | `IncompatibleModel[]` | sync. Folders found in **extra** folders only that have no `.onnx` but do have PyTorch weights (`.safetensors` / `.pt` / `.pth` / `.ckpt` / `pytorch_model.bin`) or `.gguf`. Each carries a **reason** — "GGUF models run in LM Studio, not in the local speech engine" or "PyTorch weights: this app needs an ONNX export (sherpa-onnx format)" — so they are listed, not silently hidden. |
-| 70 | `models_download` | `ids: string[]` | `void` | **async. Fire-and-forget.** All-or-nothing on validation: one unknown id aborts the whole batch with `invalid: "unknown model id"`. Then every not-yet-installed model is **reserved with a `CancellationToken` immediately** and `models://changed` is emitted, so the UI greys them out as queued at once and they cannot be selected twice. The actual work is one spawned task installing models **sequentially**. Per model: skip if already installed, treat a missing token as "cancelled before it started", emit `models://download` per tick, release the reservation, and on success **reload STT if a model is loaded** (a new model may now be the automatic pick). Every file is SHA-256 verified. |
-| 71 | `models_cancel` | `id: string` | `void` | sync. Cancels a queued or in-flight download via its token. A cancelled download reports `models://download { state: "cancelled" }` and cleans up the staging directory. |
-| 72 | `models_delete` | `id: string` | `void` | sync. `invalid: "built-in models cannot be deleted"` for a protected id. If the deleted model is the **loaded STT model** it is unloaded **first** (its files are in use), then deleted, then STT is reloaded so speech keeps working without a wait. Ids containing `/`, `\` or `..` are rejected and the resolved path must stay inside the models directory, so models in **extra folders are never removed by the app**. Emits `models://changed`. |
+| 68 | `models_catalog` | — | `CatalogEntry[]` | sync. The curated catalogue, flattened with runtime state: `id, kind, engine, name, languages, quality, minRamGb, license, downloadBytes, installed, recommended, downloading, deletable`. `recommended` comes from the hardware-agnostic starter set; `deletable = !PROTECTED_MODELS.contains(id)`. The **built-in VAD model is filtered out** — it ships inside the exe and has nothing to download. |
+| 69 | `models_installed` | — | `InstalledModel[]` | sync. Every model found in the app's models folder and in every configured extra folder, deduplicated by path. Handles plain folders, grouped folders and the Hugging Face `models--org--name/snapshots/<hash>/` layout. |
+| 70 | `models_incompatible` | — | `IncompatibleModel[]` | sync. Folders found in **extra** folders only that have no `.onnx` but do have PyTorch weights (`.safetensors` / `.pt` / `.pth` / `.ckpt` / `pytorch_model.bin`) or `.gguf`. Each carries a **reason** — "GGUF models run in LM Studio, not in the local speech engine" or "PyTorch weights: this app needs an ONNX export (sherpa-onnx format)" — so they are listed, not silently hidden. |
+| 71 | `models_download` | `ids: string[]` | `void` | **async. Fire-and-forget.** All-or-nothing on validation: one unknown id aborts the whole batch with `invalid: "unknown model id"`. Then every not-yet-installed model is **reserved with a `CancellationToken` immediately** and `models://changed` is emitted, so the UI greys them out as queued at once and they cannot be selected twice. The actual work is one spawned task installing models **sequentially**. Per model: skip if already installed, treat a missing token as "cancelled before it started", emit `models://download` per tick, release the reservation, and on success **reload STT if a model is loaded** (a new model may now be the automatic pick). Every file is SHA-256 verified. |
+| 72 | `models_cancel` | `id: string` | `void` | sync. Cancels a queued or in-flight download via its token. A cancelled download reports `models://download { state: "cancelled" }` and cleans up the staging directory. |
+| 73 | `models_delete` | `id: string` | `void` | sync. `invalid: "built-in models cannot be deleted"` for a protected id. If the deleted model is the **loaded STT model** it is unloaded **first** (its files are in use), then deleted, then STT is reloaded so speech keeps working without a wait. Ids containing `/`, `\` or `..` are rejected and the resolved path must stay inside the models directory, so models in **extra folders are never removed by the app**. Emits `models://changed`. |
 
 ---
 
@@ -318,11 +319,11 @@ process start, which is why most of this takes effect only after a restart.
 
 | # | Command | Parameters | Returns | Notes |
 | --- | --- | --- | --- | --- |
-| 73 | `gpu_status` | — | `GpuStatus` | sync. `{ supported, gpuName, installed, sizeBytes, downloadBytes, active, restartRequired }`. `restartRequired` is true when the pack is installed and enabled but this process has not activated it. |
-| 74 | `gpu_set_enabled` | `enabled: boolean` | `void` | sync. Writes the flag. **Takes effect only after a restart**, because `services::gpu::activate_early()` relaunches the process with the pack's DLLs ahead of the bundled CPU ones before `main` runs. Emits `gpu://changed`. |
-| 75 | `gpu_install` | — | `void` | **async. Fire-and-forget.** `invalid: "no NVIDIA GPU was detected"` when `hardware.has_nvidia()` is false. **Idempotent** — an existing `"gpu-pack"` reservation returns `Ok(())` immediately. On success the pack is **auto-enabled** ("installing it is what the user asked for"). ~1.65 GiB across four archives (sherpa-onnx CUDA + cuDART + cuBLAS + cuDNN from `developer.download.nvidia.com`, so no CUDA toolkit is needed). Emits `gpu://download` per tick and `gpu://changed` at the end. |
-| 76 | `gpu_cancel` | — | `void` | sync. Cancels an in-flight pack download. |
-| 77 | `gpu_remove` | — | `void` | sync. Removes the pack **and forces `set_enabled(false)`**, so removal can never leave a dangling enabled flag. Emits `gpu://changed`. |
+| 74 | `gpu_status` | — | `GpuStatus` | sync. `{ supported, gpuName, installed, sizeBytes, downloadBytes, active, restartRequired }`. `restartRequired` is true when the pack is installed and enabled but this process has not activated it. |
+| 75 | `gpu_set_enabled` | `enabled: boolean` | `void` | sync. Writes the flag. **Takes effect only after a restart**, because `services::gpu::activate_early()` relaunches the process with the pack's DLLs ahead of the bundled CPU ones before `main` runs. Emits `gpu://changed`. |
+| 76 | `gpu_install` | — | `void` | **async. Fire-and-forget.** `invalid: "no NVIDIA GPU was detected"` when `hardware.has_nvidia()` is false. **Idempotent** — an existing `"gpu-pack"` reservation returns `Ok(())` immediately. On success the pack is **auto-enabled** ("installing it is what the user asked for"). ~1.65 GiB across four archives (sherpa-onnx CUDA + cuDART + cuBLAS + cuDNN from `developer.download.nvidia.com`, so no CUDA toolkit is needed). Emits `gpu://download` per tick and `gpu://changed` at the end. |
+| 77 | `gpu_cancel` | — | `void` | sync. Cancels an in-flight pack download. |
+| 78 | `gpu_remove` | — | `void` | sync. Removes the pack **and forces `set_enabled(false)`**, so removal can never leave a dangling enabled flag. Emits `gpu://changed`. |
 
 ---
 
@@ -334,9 +335,9 @@ pick it), `"llm:<model id>"`, and the special `"all"` accepted **only** by `memo
 
 | # | Command | Parameters | Returns | Notes |
 | --- | --- | --- | --- | --- |
-| 78 | `memory_status` | — | `MemoryItem[]` | **async.** `{ key, kind, role, model, state, detail, autoloadKey, autoload }` with `state` ∈ `loaded \| loading \| idle \| missing \| failed`. `detail` is `"GPU"`/`"CPU"` for ONNX models and `"LM Studio"` for LLM entries. **LLM entries exist only for `provider === "lmstudio"`** — a hosted provider keeps no models on this computer. A resolver failure yields one synthetic `key: "llm", state: "failed"` entry rather than an error. |
-| 79 | `memory_load` | `key: string` | `void` | **async.** Loads one model and returns once it is in memory. `"all"` loads everything (ignoring the per-model autoload opt-outs) and **returns immediately** — the work is spawned. Each load marks the key as `loading` and emits `memory://changed` **before** awaiting, and again after, so the UI shows a spinner at once. `"voice:<code>"` caps synthesis at `min(inferenceThreads, 4)`. `"llm:<id>"` calls `load_model` **then** `resolver.invalidate()`. Unknown key → `invalid: "unknown model {key}"`. |
-| 80 | `memory_unload` | `key: string` | `void` | **async.** `"stt"` is refused with `invalid: "speech recognition is in use; stop listening first"` whenever a listening mode is active — the app never yanks a model out from under a live session. The bare `"llm"` key is **not** supported for unload. Emits `memory://changed`. |
+| 79 | `memory_status` | — | `MemoryItem[]` | **async.** `{ key, kind, role, model, state, detail, autoloadKey, autoload }` with `state` ∈ `loaded \| loading \| idle \| missing \| failed`. `detail` is `"GPU"`/`"CPU"` for ONNX models and `"LM Studio"` for LLM entries. **LLM entries exist only for `provider === "lmstudio"`** — a hosted provider keeps no models on this computer. A resolver failure yields one synthetic `key: "llm", state: "failed"` entry rather than an error. |
+| 80 | `memory_load` | `key: string` | `void` | **async.** Loads one model and returns once it is in memory. `"all"` loads everything (ignoring the per-model autoload opt-outs) and **returns immediately** — the work is spawned. Each load marks the key as `loading` and emits `memory://changed` **before** awaiting, and again after, so the UI shows a spinner at once. `"voice:<code>"` caps synthesis at `min(inferenceThreads, 4)`. `"llm:<id>"` calls `load_model` **then** `resolver.invalidate()`. Unknown key → `invalid: "unknown model {key}"`. |
+| 81 | `memory_unload` | `key: string` | `void` | **async.** `"stt"` is refused with `invalid: "speech recognition is in use; stop listening first"` whenever a listening mode is active — the app never yanks a model out from under a live session. The bare `"llm"` key is **not** supported for unload. Emits `memory://changed`. |
 
 ---
 
@@ -344,19 +345,19 @@ pick it), `"llm:<model id>"`, and the special `"all"` accepted **only** by `memo
 
 | # | Command | Parameters | Returns | Notes |
 | --- | --- | --- | --- | --- |
-| 81 | `mcp_list` | — | `ServerStatus[]` | **async.** `{ config, state, error, tools, internet }` with `state` ∈ `disabled \| connecting \| connected \| error \| offline`. `tools` is `ToolView[]` = `{ name, description, category, permission, defaultPermission }`. A tool is **never returned** when its effective permission is `deny`. |
-| 82 | `mcp_save` | `config: McpServerConfig` | `McpServerConfig` | **async.** A server with an **empty `id` is new** and is always stored `enabled: false`, `source: "user"`. For an existing server the incoming `enabled` is **ignored** and the stored value is re-applied, so the UI cannot flip connection state behind the manager's back. If the stored server is enabled a connect is attempted (errors ignored). |
-| 83 | `mcp_delete` | `id: string` | `void` | **async.** Disconnects **first**, then deletes the row — no dangling client. |
-| 84 | `mcp_set_enabled` | `id: string`, `enabled: boolean` | `void` | **async.** The explicit user action that enables a server. MCP servers are never enabled automatically. |
-| 85 | `mcp_reconnect` | `id: string` | `void` | **async. Fire-and-forget.** Always returns `Ok(())`; a connect failure is visible only through `mcp://changed` and the new `state`. |
-| 86 | `mcp_set_permission` | `serverId: string`, `tool: string`, `permission: "allow" \| "ask" \| "deny"` | `"allow" \| "ask" \| "deny"` | **async.** Returns the **effective** permission after clamping, so with safe mode on (the default) a request for `allow` on a sensitive tool returns **`ask`**, not `allow`. |
-| 87 | `mcp_set_all_permissions` | `serverId: string`, `permission: Permission \| null` | `void` | **async.** `null` resets every tool of the server to its `defaultPermission`. |
-| 88 | `mcp_safe_mode` | — | `boolean` | sync. Safe mode **resets to on at every launch**, so it can never persist as off across a restart. |
-| 89 | `mcp_set_safe_mode` | `enabled: boolean` | `void` | **async. The one OS-verification gate in the whole API.** Turning safe mode **off** requires Windows Hello via an HWND-parented `UserConsentVerifier` prompt ("Confirm it's you to turn off MCP safe mode"); turning it **on** never does, so the fail-safe direction is cheap. `Cancelled` if the user dismisses the prompt; `PermissionDenied` if Windows Hello is not set up or verification fails — **and on non-Windows it always denies** (fail-closed, never a silent bypass). This is the only command that takes a `WebviewWindow` rather than an `AppHandle`. |
-| 90 | `mcp_import_preview` | — | `ImportCandidate[]` | sync. Reads LM Studio's `mcp.json`. A **missing file is not an error** — an empty list is returned. `alreadyConfigured` uses a case-insensitive name match. **`envKeys` contains only the key names, never the values** — a deliberate secret-safety rule. |
-| 91 | `mcp_import` | `names: string[]` | `number` | sync. Imports the selected candidates, **always disabled** with `source: "lmstudio"`. Skips candidates not in `names` and those whose lowercase name already exists; saves only those passing `validate()`. Returns the **count actually saved**, so the user can tell that some were rejected. A missing `mcp.json` **is** an error here (`not_found`). |
-| 92 | `search_public_instances` | `refresh: boolean` | `PublicSearxInstance[]` | **async.** Public SearXNG instances from **searx.space**: `{ url, searchSuccess, searchTime, version }`. `refresh` forces a reload instead of using the cache. |
-| 93 | `search_test` | — | `{ engine: string; count: number; firstTitle: string \| null }` | **async.** Runs **one real, uncached** search with the hard-coded probe query `"open source search engine"`, bypassing the cache. Doubles as a connectivity test and a label check. `engine` names the engine that actually answered, e.g. `"SearXNG (https://searx.be/)"` or `"Built-in search (DuckDuckGo)"`. |
+| 82 | `mcp_list` | — | `ServerStatus[]` | **async.** `{ config, state, error, tools, internet }` with `state` ∈ `disabled \| connecting \| connected \| error \| offline`. `tools` is `ToolView[]` = `{ name, description, category, permission, defaultPermission }`. A tool is **never returned** when its effective permission is `deny`. |
+| 83 | `mcp_save` | `config: McpServerConfig` | `McpServerConfig` | **async.** A server with an **empty `id` is new** and is always stored `enabled: false`, `source: "user"`. For an existing server the incoming `enabled` is **ignored** and the stored value is re-applied, so the UI cannot flip connection state behind the manager's back. If the stored server is enabled a connect is attempted (errors ignored). |
+| 84 | `mcp_delete` | `id: string` | `void` | **async.** Disconnects **first**, then deletes the row — no dangling client. |
+| 85 | `mcp_set_enabled` | `id: string`, `enabled: boolean` | `void` | **async.** The explicit user action that enables a server. MCP servers are never enabled automatically. |
+| 86 | `mcp_reconnect` | `id: string` | `void` | **async. Fire-and-forget.** Always returns `Ok(())`; a connect failure is visible only through `mcp://changed` and the new `state`. |
+| 87 | `mcp_set_permission` | `serverId: string`, `tool: string`, `permission: "allow" \| "ask" \| "deny"` | `"allow" \| "ask" \| "deny"` | **async.** Returns the **effective** permission after clamping, so with safe mode on (the default) a request for `allow` on a sensitive tool returns **`ask`**, not `allow`. |
+| 88 | `mcp_set_all_permissions` | `serverId: string`, `permission: Permission \| null` | `void` | **async.** `null` resets every tool of the server to its `defaultPermission`. |
+| 89 | `mcp_safe_mode` | — | `boolean` | sync. Safe mode **resets to on at every launch**, so it can never persist as off across a restart. |
+| 90 | `mcp_set_safe_mode` | `enabled: boolean` | `void` | **async. The one OS-verification gate in the whole API.** Turning safe mode **off** requires Windows Hello via an HWND-parented `UserConsentVerifier` prompt ("Confirm it's you to turn off MCP safe mode"); turning it **on** never does, so the fail-safe direction is cheap. `Cancelled` if the user dismisses the prompt; `PermissionDenied` if Windows Hello is not set up or verification fails — **and on non-Windows it always denies** (fail-closed, never a silent bypass). This is the only command that takes a `WebviewWindow` rather than an `AppHandle`. |
+| 91 | `mcp_import_preview` | — | `ImportCandidate[]` | sync. Reads LM Studio's `mcp.json`. A **missing file is not an error** — an empty list is returned. `alreadyConfigured` uses a case-insensitive name match. **`envKeys` contains only the key names, never the values** — a deliberate secret-safety rule. |
+| 92 | `mcp_import` | `names: string[]` | `number` | sync. Imports the selected candidates, **always disabled** with `source: "lmstudio"`. Skips candidates not in `names` and those whose lowercase name already exists; saves only those passing `validate()`. Returns the **count actually saved**, so the user can tell that some were rejected. A missing `mcp.json` **is** an error here (`not_found`). |
+| 93 | `search_public_instances` | `refresh: boolean` | `PublicSearxInstance[]` | **async.** Public SearXNG instances from **searx.space**: `{ url, searchSuccess, searchTime, version }`. `refresh` forces a reload instead of using the cache. |
+| 94 | `search_test` | — | `{ engine: string; count: number; firstTitle: string \| null }` | **async.** Runs **one real, uncached** search with the hard-coded probe query `"open source search engine"`, bypassing the cache. Doubles as a connectivity test and a label check. `engine` names the engine that actually answered, e.g. `"SearXNG (https://searx.be/)"` or `"Built-in search (DuckDuckGo)"`. |
 
 ---
 
@@ -769,6 +770,7 @@ dictationInsertNow(): Promise<void>
 dictationConfirm(text: string): Promise<void>
 dictationRetry(): Promise<void>
 dictationSetLanguage(language: string): Promise<void>
+dictationSetProfile(profile: string): Promise<void>
 dictationHistory(): Promise<DictationEntry[]>
 dictationHistoryDelete(id: string): Promise<void>
 dictationHistoryClear(): Promise<void>

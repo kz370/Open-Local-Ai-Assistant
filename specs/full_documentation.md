@@ -448,6 +448,20 @@ menu.
   in `chat.css`, and `.overlay-lang-menu` reuses `fade-in` from `base.css`.
 - **Chevron direction:** `.overlay-lang.open:not(.up) .overlay-lang-chevron` rotates
   180deg, so the chevron always points the way the menu actually opened.
+- **Header width budget (dictation overlay):** the card is a fixed
+  `OVERLAY_W = 480`, so the header is a shrinking flex row with a priority
+  order — the status label and the pill group give way first (both truncate),
+  the spectrum sheds bars down to a 56px minimum, and only then does anything
+  clip. `.overlay-pills` is the only shrinking wrapper; each `.overlay-lang`
+  is `white-space: nowrap` with a truncating `.overlay-lang-current`. A pill with
+  no text (the profile pill with nothing selected) renders icon-only rather
+  than the words "No profile". Both pills share **one** window clip rectangle
+  (`MENU_RECT` in `window.rs`), tracked in a module-level `menuOwner` so only
+  the pill that opened it may take it away — otherwise a close-then-open pair
+  can arrive out of order and leave a menu invisible.
+- **Searchable profile list:** from `profileSearchThreshold` profiles (default
+  10) the profile dropdown grows a filter row above its options. The row counts
+  as one row in the menu height so the widened window clip still matches.
 - The six `.swatch` gradients are literal hexes mirroring the `ACCENTS` map in
   `settingsStore.ts` — a second place to update when a palette changes.
 
@@ -580,9 +594,17 @@ is identified by the caller-supplied id and cancelled via `chatStop`);
 `lastConversationId` and `version`. Rust field counts per section (verified
 against `settings/mod.rs`): `GeneralSettings` 21, `AiSettings` 20,
 `SttSettings` 13, `TtsSettings` 12 (3 of them legacy `voiceEn`/`voiceAr`/
-`voiceDe`), `DictationSettings` 12, `SearchSettings` 7, `LanguageSettings` 4.
+`voiceDe`), `DictationSettings` 15, `SearchSettings` 7, `LanguageSettings` 4.
+
+**Dictation profiles:** `DictationProfile { id, title, prompt }` — `title` is what
+the overlay's profile pill shows, `prompt` is appended to the built-in
+correction prompt. `sanitize` drops entries with an empty id or title and
+duplicate ids, trims id (40) / title (60) / prompt (4000), **caps no list
+length**, clears an `activeProfile` that matches nothing, and clamps
+`profileSearchThreshold` to 2..=100.
 
 **Other interfaces:** `ProviderProfile`, `WindowGeometry`, `LanguageEntry`,
+`DictationProfile`,
 `AppErrorPayload`, `ModelInfo`, `ModelSelection`, `ConnectionStatus`,
 `Conversation`, `Attachment`, `AttachResult`, `Source`, `ActivityRecord`,
 `Message`, `MessageStats`, `SearchHit`, `GpuStatus`, `MemoryItem`, `GpuProgress`,
@@ -2075,7 +2097,7 @@ history, TTS playback control, model catalogue/download/delete, and the optional
 GPU (CUDA) pack lifecycle.
 
 ### Summary
-376 lines, **34 commands** (5 async, 29 sync), three response structs. The
+376 lines, **35 commands** (5 async, 30 sync), three response structs. The
 largest command module.
 
 ### Technical Details
@@ -2087,7 +2109,7 @@ pack.
 
 **Commands:** `audio_devices`, `voice_start`, `voice_stop`, `dictation_cancel`,
 `dictation_insert_now`, `dictation_confirm`, `dictation_retry`,
-`dictation_set_language`, `dictation_history`, `dictation_history_delete`,
+`dictation_set_language`, `dictation_set_profile`, `dictation_history`, `dictation_history_delete`,
 `dictation_history_clear`, `dictation_reset_overlay_position`,
 `dictation_overlay_menu`, `voice_status`, `voice_set_muted`, `voice_muted`,
 `tts_voices`, `tts_speak`, `tts_test`, `tts_stop`, `tts_set_paused`, `tts_state`,
@@ -2190,7 +2212,7 @@ pub struct DictationResult { raw, inserted: String, corrected: bool, correction_
 pub struct ReviewPending   { raw: String, corrected: bool, correction_error: Option<String> }
 pub struct LiveTyper { current: Mutex<String>, target: Mutex<Option<String>>, busy: AtomicBool, desynced: AtomicBool }
 
-pub async fn correct_text(ai: &dyn AiService, model: &str, text: &str) -> AppResult<String>
+pub async fn correct_text(ai: &dyn AiService, model: &str, text: &str, profile: Option<&str>) -> AppResult<String>
 impl LiveTyper { snapshot(), reset(), set_target(app, text), finish(final_text), retract() }
 fn committed_prefix(text: &str) -> &str   // cut at the last word boundary
 fn is_word_char(c: char) -> bool         // alphanumeric or an apostrophe form
@@ -2223,6 +2245,29 @@ phrase it replaced (`EMOJI_PHRASE_CHARS = 10`). Failure is
 `sanitize_correction` trims, strips leaked `<transcript>` tags, a
 `"Corrected text:"` prefix, and surrounding quotation marks, and collapses
 whitespace runs so malformed model spacing cannot reach review or insertion.
+
+### Business Logic — dictation profiles
+`correct_text`'s fourth argument is the **active profile's prompt**, if any. When
+present it is appended to `CORRECTION_PROMPT` under an
+"Additional instructions from the user's active dictation profile" heading, so the
+built-in grammar and emoji rules always apply and the profile only adds what the
+dictated text should become.
+
+Two guards are relaxed for a profile, because both exist to catch a model that
+"answers" instead of correcting — which is exactly what a profile may ask for:
+
+- the **length-ratio check is skipped** (a profile may summarise, reformat or
+  expand the text); a blank/whitespace-only profile counts as no profile;
+- `sanitize_correction(text, profiling)` **keeps line breaks** and each line's
+  leading indent instead of collapsing all whitespace, dropping blank lines and
+  trimming trailing spaces, so lists and code blocks survive. Without a profile
+  the output is still forced onto one line.
+
+`run_dictation` (in `lib.rs`) resolves the prompt from
+`dictation.profiles[activeProfile]` at take time. **A non-empty profile prompt
+forces the model pass on even when `correction_enabled` is false**, since the
+prompt is the whole point; with no `correction_model` the take falls back to the
+raw transcript and reports `AppError::NoModel`, exactly like correction does.
 
 **Timeout:** 45 s, enforced by a spawned task that cancels the `CancellationToken`.
 
