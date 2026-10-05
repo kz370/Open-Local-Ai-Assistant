@@ -1825,7 +1825,10 @@ Every branch is guarded by an **actual change** in the old/new settings:
   **warn-only** and never fails the save.
 - `general.always_on_top` changed → `set_always_on_top` + `keep_off_taskbar`.
 - `general.window_position` changed **and** `!= "custom"` → `window::apply_position`
-  (`"custom"` is a sentinel meaning "leave it alone").
+  (`"custom"` is a sentinel meaning "leave it alone") and
+  `window::sync_bubble_to_window_position`, which clears an old dragged bubble
+  position and aligns the launcher with the selected chat preset. The bubble's
+  next manual drag is persisted again; changing a preset realigns it.
 - `general.accent` changed → `icon::apply_accent`.
 - **Always** emits `settings://changed` and returns the saved document.
 
@@ -3302,7 +3305,15 @@ orchestration, and raw `windows`-crate FFI.
 `440..=760` logical px at a fixed `170` px height, `BUBBLE_SIZE = 144.0`
 (the transparent bubble window leaves room around the 60px circular launcher
 for its soft glow). Default placement compensates for the added transparent
-margin and clamps the larger window onto the monitor work area.
+margin and places the visible circle at the selected chat preset's 16px margin;
+the transparent glow window may extend beyond the work area while the launcher
+circle remains on-screen. The center preset centers the circle. For a custom
+chat position, the bubble aligns with the chat window's bottom-right corner. A
+the launcher is locked to the selected chat preset and cannot be dragged while
+that preset is active. In custom chat positioning, the launcher tracks the
+chat's bottom-right corner by default and can be dragged independently. Moving
+the chat or changing its position preset clears an old launcher drag so it
+realigns.
 
 **Key geometry constants:**
 

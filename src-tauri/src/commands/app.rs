@@ -101,6 +101,9 @@ pub async fn save_settings(
             window::apply_position(&win, &g.window_position, &g.window);
         }
     }
+    if g_before.window_position != g.window_position {
+        window::sync_bubble_to_window_position(&app, &g.window_position);
+    }
     if g_before.accent != g.accent {
         icon::apply_accent(&app, &g.accent);
     }

@@ -1283,6 +1283,12 @@ html.launcher-window #root {
   transition: transform 180ms var(--ease), box-shadow 180ms var(--ease);
   touch-action: none;
 }
+.launcher.draggable {
+  cursor: grab;
+}
+.launcher.draggable:active {
+  cursor: grabbing;
+}
 .launcher:hover {
   transform: scale(1.07);
 }

@@ -1,15 +1,17 @@
 import { useEffect, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ipc, on } from "../../app/ipc";
+import { useSettings } from "../../app/settingsStore";
 import { t } from "../../app/strings";
 import type { DictationStateEvent, TtsEvent, VoiceEvent } from "../../app/types";
 
 type Activity = "idle" | "listening" | "speaking";
 
-/** Floating launcher bubble. Click opens the chat; drag moves it. */
+/** Floating launcher bubble. Drag is available only with custom chat positioning. */
 export function Bubble() {
   const [activity, setActivity] = useState<Activity>("idle");
   const press = useRef<{ x: number; y: number; dragging: boolean } | null>(null);
+  const canDrag = useSettings((s) => s.settings?.general.windowPosition === "custom");
 
   useEffect(() => {
     document.documentElement.classList.add("launcher-window");
@@ -35,7 +37,7 @@ export function Bubble() {
     <div className="launcher-stage">
       <button
         type="button"
-        className={`launcher ${activity}`}
+        className={`launcher ${activity}${canDrag ? " draggable" : ""}`}
         aria-label={label}
         title={label}
         onPointerDown={(e) => {
@@ -47,7 +49,7 @@ export function Bubble() {
           if (!p || p.dragging || (e.buttons & 1) === 0) return;
           if (Math.hypot(e.screenX - p.x, e.screenY - p.y) > 4) {
             p.dragging = true;
-            void getCurrentWindow().startDragging();
+            if (canDrag) void getCurrentWindow().startDragging();
           }
         }}
         onPointerUp={() => {

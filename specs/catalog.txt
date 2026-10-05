@@ -520,14 +520,15 @@ settings/backup.rs :: merge_import — `pub fn merge_import(current, imported) -
 ================================================================================
 
 desktop/window.rs :: MAIN / BUBBLE / SETTINGS / OVERLAY — Window labels, matching `capabilities/default.json` exactly.
-desktop/window.rs :: COMPACT_SIZE / COMPACT_MIN_WIDTH / COMPACT_MAX_WIDTH / BUBBLE_SIZE — `(440.0, 170.0)`; compact width `440..=760` at fixed height; bubble window `144.0` for a 60px circle and glow margin, clamped to the work area.
+desktop/window.rs :: COMPACT_SIZE / COMPACT_MIN_WIDTH / COMPACT_MAX_WIDTH / BUBBLE_SIZE — `(440.0, 170.0)`; compact width `440..=760` at fixed height; bubble window `144.0` for a 60px circle and glow margin.
 desktop/window.rs :: main_window — Resolves the chat window handle if it exists.
-desktop/window.rs :: preset_position — Pure geometry: `bottom-right | bottom-left | center` against the work area.
+desktop/window.rs :: preset_position / bubble_position_for_preset / bubble_position_at_bounds — Pure geometry for chat presets and the 60px launcher centered inside its transparent glow window.
+desktop/window.rs :: sync_bubble_to_window_position / align_bubble_to_window_position — Clears a saved launcher drag on chat-position changes and keeps it locked to presets; independent launcher drag is available only in custom chat positioning.
 desktop/window.rs :: clamp_into — Pure geometry: keeps a window inside a work area.
 desktop/window.rs :: apply_position — Applies a preset, or a saved custom geometry, honouring the 50 px monitor slack.
 desktop/window.rs :: keep_off_taskbar — Re-asserts `skipTaskbar` after unminimize / show / restore.
 desktop/window.rs :: restore — Restores saved geometry at startup, healing unusable or collapsed sizes.
-desktop/window.rs :: create_bubble / show_bubble / hide_bubble — The 84x84 always-on-top launcher bubble.
+desktop/window.rs :: create_bubble / show_bubble / hide_bubble — The 144x144 always-on-top transparent launcher window with a 60px visible circle.
 desktop/window.rs :: show_main — The bubble-to-chat morph: pre-arm `app://window-shown`, snap, hide, show, focus.
 desktop/window.rs :: hide_to_tray / minimize_to_bubble / toggle_main — Hide paths; minimize emits `app://window-closing` with the bubble centre.
 desktop/window.rs :: on_main_window_event — Persistence rules for `Moved`, `Resized` and `CloseRequested`.
@@ -734,7 +735,7 @@ src-tauri/src/services/mcp/sources.rs :: tests — 3 — source extraction from 
 src-tauri/src/services/search/mod.rs :: tests — 10 — result normalisation, base-URL rules, instance list parsing.
 src-tauri/src/services/dictation.rs :: tests — 3 — correction guards, text finalisation, and word-boundary live typing.
 src-tauri/src/services/hardware/mod.rs :: tests — 2 — thread budget and VRAM/NVIDIA helpers.
-src-tauri/src/desktop/window.rs :: tests — 4 — pure geometry (preset, clamp, monitor detection).
+src-tauri/src/desktop/window.rs :: tests — 6 — pure geometry (preset, launcher alignment, clamp, monitor detection) and dictation overlay dismissal.
 src-tauri/src/desktop/shortcuts.rs :: tests — 1 — accelerator/modifier-token classification.
 src-tauri/src/desktop/icon.rs :: tests — 2 — accent palette and rasteriser determinism.
 src-tauri/src/desktop/tray.rs :: (none) — 0.

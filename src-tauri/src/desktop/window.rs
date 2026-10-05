@@ -126,6 +126,61 @@ pub fn clamp_into(
     )
 }
 
+fn bubble_position_for_preset(
+    preset: &str,
+    work_pos: (i32, i32),
+    work_size: (u32, u32),
+    window_size: (u32, u32),
+    scale: f64,
+) -> (i32, i32) {
+    let window_size_i = (window_size.0, window_size.1);
+    if preset == "center" {
+        return preset_position(preset, work_pos, work_size, window_size_i);
+    }
+
+    let bounds_pos = work_pos;
+    let bounds_size = work_size;
+    bubble_position_at_bounds(preset, bounds_pos, bounds_size, window_size, scale)
+}
+
+fn bubble_position_at_bounds(
+    preset: &str,
+    bounds_pos: (i32, i32),
+    bounds_size: (u32, u32),
+    window_size: (u32, u32),
+    scale: f64,
+) -> (i32, i32) {
+    let scale = if scale.is_finite() && scale > 0.0 {
+        scale
+    } else {
+        1.0
+    };
+    let px = |v: f64| (v * scale).round() as i32;
+    let circle = px(60.0);
+    let center_offset_x = ((window_size.0 as i32 - circle) as f64 / 2.0).round() as i32;
+    let center_offset_y = ((window_size.1 as i32 - circle) as f64 / 2.0).round() as i32;
+    let margin = px(MARGIN as f64);
+    let right = bounds_pos.0 + bounds_size.0 as i32;
+    let bottom = bounds_pos.1 + bounds_size.1 as i32;
+    let x = if preset == "bottom-left" {
+        bounds_pos.0 + margin - center_offset_x
+    } else {
+        right - margin - circle - center_offset_x
+    };
+    let y = bottom - margin - circle - center_offset_y;
+    (x, y)
+}
+
+fn saved_bubble_position(
+    preset: &str,
+    saved_x: Option<i32>,
+    saved_y: Option<i32>,
+) -> Option<(i32, i32)> {
+    (preset == "custom")
+        .then(|| Some((saved_x?, saved_y?)))
+        .flatten()
+}
+
 fn on_any_monitor(window: &WebviewWindow, x: i32, y: i32) -> bool {
     window
         .available_monitors()
@@ -228,6 +283,11 @@ pub fn create_bubble(app: &AppHandle) -> tauri::Result<WebviewWindow> {
             if now_ms() < SUPPRESS_UNTIL.load(Ordering::Relaxed) {
                 return;
             }
+            let preset = h.state::<AppState>().settings.get().general.window_position;
+            if preset != "custom" {
+                align_bubble_to_window_position(&h, &preset);
+                return;
+            }
             let (x, y) = (pos.x, pos.y);
             let _ = h.state::<AppState>().settings.update(|s| {
                 s.general.bubble_x = Some(x);
@@ -246,32 +306,103 @@ fn place_bubble(app: &AppHandle, w: &WebviewWindow) {
     let size = w
         .outer_size()
         .unwrap_or(PhysicalSize::new(BUBBLE_SIZE as u32, BUBBLE_SIZE as u32));
-    if let (Some(x), Some(y)) = (s.bubble_x, s.bubble_y) {
+    if let Some((x, y)) = saved_bubble_position(&s.window_position, s.bubble_x, s.bubble_y) {
         if on_any_monitor(w, x, y) {
             let _ = w.set_position(PhysicalPosition::new(x, y));
             return;
         }
     }
-    if let Some(m) = w.primary_monitor().ok().flatten() {
+    if s.window_position == "custom" {
+        if let Some(main) = main_window(app) {
+            if let (Ok(position), Ok(main_size)) = (main.outer_position(), main.outer_size()) {
+                let pos = bubble_position_at_bounds(
+                    "bottom-right",
+                    (position.x, position.y),
+                    (main_size.width, main_size.height),
+                    (size.width, size.height),
+                    main.scale_factor().unwrap_or(1.0),
+                );
+                let _ = w.set_position(PhysicalPosition::new(pos.0, pos.1));
+                return;
+            }
+        }
+    }
+    let monitor = main_window(app)
+        .and_then(|main| main.current_monitor().ok().flatten())
+        .or_else(|| w.primary_monitor().ok().flatten());
+    if let Some(m) = monitor {
         let area = m.work_area();
-        let (mut x, mut y) = preset_position(
-            "bottom-right",
+        let preset = if s.window_position == "custom" {
+            "bottom-right"
+        } else {
+            &s.window_position
+        };
+        let (x, y) = bubble_position_for_preset(
+            preset,
             (area.position.x, area.position.y),
             (area.size.width, area.size.height),
             (size.width, size.height),
-        );
-        // The window grew around the same 60px launcher to make room for its
-        // glow. Keep the visible circle near its old edge position, then clamp
-        // the larger transparent window fully onto small work areas.
-        let scale = m.scale_factor();
-        let inset = (((BUBBLE_SIZE - 60.0) / 2.0 - 12.0) * scale).round() as i32;
-        (x, y) = clamp_into(
-            (area.position.x, area.position.y),
-            (area.size.width, area.size.height),
-            (x + inset, y + inset),
-            (size.width, size.height),
+            m.scale_factor(),
         );
         let _ = w.set_position(PhysicalPosition::new(x, y));
+    }
+}
+
+/// Re-aligns the bubble with a newly selected chat-window preset. Clearing its
+/// saved drag position means the preset takes effect now and after restart;
+/// subsequent user drags are still persisted as a custom bubble position.
+pub fn sync_bubble_to_window_position(app: &AppHandle, preset: &str) {
+    let state = app.state::<AppState>();
+    if let Err(error) = state.settings.update(|s| {
+        s.general.bubble_x = None;
+        s.general.bubble_y = None;
+    }) {
+        tracing::warn!(%error, "could not clear saved bubble position after chat position change");
+    }
+    align_bubble_to_window_position(app, preset);
+}
+
+fn align_bubble_to_window_position(app: &AppHandle, preset: &str) {
+    let Some(bubble) = app.get_webview_window(BUBBLE) else {
+        return;
+    };
+    let Some(main) = main_window(app) else {
+        return;
+    };
+    let size = bubble
+        .outer_size()
+        .unwrap_or(PhysicalSize::new(BUBBLE_SIZE as u32, BUBBLE_SIZE as u32));
+    if preset == "custom" {
+        let (Ok(position), Ok(main_size)) = (main.outer_position(), main.outer_size()) else {
+            return;
+        };
+        let pos = bubble_position_at_bounds(
+            "bottom-right",
+            (position.x, position.y),
+            (main_size.width, main_size.height),
+            (size.width, size.height),
+            main.scale_factor().unwrap_or(1.0),
+        );
+        suppress_persistence();
+        let _ = bubble.set_position(PhysicalPosition::new(pos.0, pos.1));
+        return;
+    }
+    if let Some(monitor) = main
+        .current_monitor()
+        .ok()
+        .flatten()
+        .or_else(|| bubble.primary_monitor().ok().flatten())
+    {
+        let area = monitor.work_area();
+        let pos = bubble_position_for_preset(
+            preset,
+            (area.position.x, area.position.y),
+            (area.size.width, area.size.height),
+            (size.width, size.height),
+            monitor.scale_factor(),
+        );
+        suppress_persistence();
+        let _ = bubble.set_position(PhysicalPosition::new(pos.0, pos.1));
     }
 }
 
@@ -517,7 +648,10 @@ pub fn on_main_window_event(app: &AppHandle, event: &tauri::WindowEvent) {
                 s.general.window.x = x;
                 s.general.window.y = y;
                 s.general.window_position = "custom".into();
+                s.general.bubble_x = None;
+                s.general.bubble_y = None;
             });
+            sync_bubble_to_window_position(app, "custom");
         }
         tauri::WindowEvent::Resized(size) => {
             if now_ms() < SUPPRESS_UNTIL.load(Ordering::Relaxed)
@@ -770,6 +904,27 @@ pub fn restore_target(app: &AppHandle) {
             .dictation_target
             .load(Ordering::Relaxed),
     );
+}
+
+#[test]
+fn saved_bubble_position_only_overrides_custom_chat_position() {
+    assert_eq!(
+        saved_bubble_position("bottom-right", Some(100), Some(200)),
+        None
+    );
+    assert_eq!(
+        saved_bubble_position("bottom-left", Some(100), Some(200)),
+        None
+    );
+    assert_eq!(
+        saved_bubble_position("center", Some(100), Some(200)),
+        None
+    );
+    assert_eq!(
+        saved_bubble_position("custom", Some(100), Some(200)),
+        Some((100, 200))
+    );
+    assert_eq!(saved_bubble_position("custom", Some(100), None), None);
 }
 
 /// Returns the remembered target window's title, when the handle is still
@@ -1219,9 +1374,27 @@ pub fn cancel_dictation(app: &AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::{
-        clamp_into, ease_out_cubic, lerp, overlay_hide_is_current_and_idle, preset_position,
-        rel_logical,
+        bubble_position_at_bounds, bubble_position_for_preset, clamp_into, ease_out_cubic, lerp,
+        overlay_hide_is_current_and_idle, preset_position, rel_logical, saved_bubble_position,
     };
+
+    #[test]
+    fn bubble_follows_chat_position_presets() {
+        let work = ((0, 0), (1920, 1040));
+        let size = (144, 144);
+        let right = bubble_position_for_preset("bottom-right", work.0, work.1, size, 1.0);
+        let left = bubble_position_for_preset("bottom-left", work.0, work.1, size, 1.0);
+        assert_eq!(right, (1802, 922));
+        assert_eq!(left, (-26, 922));
+        assert_eq!(
+            bubble_position_for_preset("center", work.0, work.1, size, 1.0),
+            (888, 448)
+        );
+        assert_eq!(
+            bubble_position_at_bounds("bottom-right", (200, 100), (800, 600), size, 1.0),
+            (882, 582)
+        );
+    }
 
     #[test]
     fn stale_auto_hide_cannot_dismiss_a_new_dictation_session() {

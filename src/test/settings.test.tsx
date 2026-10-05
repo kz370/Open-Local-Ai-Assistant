@@ -214,6 +214,18 @@ describe("bubble", () => {
     fireEvent.pointerUp(bubble, { button: 0, screenX: 10, screenY: 10 });
     await waitFor(() => expect(vi.mocked(invoke)).toHaveBeenCalledWith("bubble_open_chat"));
   });
+
+  it("does not move or open when dragged while a chat preset is locked", () => {
+    vi.mocked(invoke).mockReset();
+    mockBackend();
+    const { getByRole } = render(<Bubble />);
+    const bubble = getByRole("button", { name: /Open Local Assistant/i });
+    fireEvent.pointerDown(bubble, { button: 0, screenX: 10, screenY: 10 });
+    fireEvent.pointerMove(bubble, { buttons: 1, screenX: 24, screenY: 24 });
+    fireEvent.pointerUp(bubble, { button: 0, screenX: 24, screenY: 24 });
+    expect(bubble).not.toHaveClass("draggable");
+    expect(vi.mocked(invoke)).not.toHaveBeenCalledWith("bubble_open_chat");
+  });
 });
 
 describe("dictation profiles", () => {
