@@ -433,12 +433,15 @@ menu.
   scaled with `transform: scaleY()` on a 0.12 floor, so a normal speaking level
   moves every bar; integer-pixel heights in a 14px box stayed visually flat.
 - **Destination app tab:** `.overlay-app-tab` is a narrow, centered label above
-  the dictation card, using the card's `--popover` surface and `--hairline`
-  border, rounded upper corners and angled side edges, vertically centered
-  high-contrast text, and a lower edge 4px over the card. Long app names wrap
-  to two lines and grow the tab upward to a 48px cap, matching the native clip region. It
-  displays the current target window
-  title while listening, transcribing, correcting or reviewing; its native
+  the dictation card, using an inset `--popover` layer over a `--hairline`
+  outline so the angled side edges retain the same visible border as the top.
+  Its upper corners are rounded; the top is distinctly narrower than the full-width bottom, and the
+  full “Insert into: [app]” destination label appears in the tab. The lower
+  outline is covered where the tab meets the card, joining their surfaces
+  without a separate shadow. Long app names wrap to two lines
+  and grow the tab upward to a 48px cap, matching the native clip region. It
+  displays the current target process's friendly application name while
+  listening, transcribing, correcting or reviewing; its native
   rounded window region is merged with the card region so its overhang remains
   visible without making the surrounding transparent area interactive.
 
@@ -1538,7 +1541,7 @@ stays alive in the tray when all windows close.
   open, then restored when review closes. The two action shortcuts are registered
   globally for the review's lifetime, so they work while the dictated-into app is
   focused; Esc cancellation is observed globally while dictation is busy. The
-  review displays the remembered destination window title when available and
+  review displays the remembered destination application's name when available and
   always offers Copy as a fallback. Destination text uses the primary text token
   with a semibold weight rather than the faint hint treatment.
 - `ChatApp` continues to treat dictation as active during this new `"reviewing"`
@@ -3427,7 +3430,7 @@ or showing it again right after a hide."
 `remember_target` stores the foreground external window in
 `state.dictation_target`. A session-scoped watcher refreshes it while listening,
 transcribing, correcting and reviewing, ignoring this application's own windows;
-each change emits `dictation://target` with the new window title.
+each change emits `dictation://target` with the target process's friendly app name.
 `restore_target` refreshes once more before calling `SetForegroundWindow`, so a
 review insert targets the most recently focused external app.
 

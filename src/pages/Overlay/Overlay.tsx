@@ -462,10 +462,12 @@ export function Overlay() {
       {targetTracking && (
         <div
           className="overlay-app-tab"
-          title={targetApp ?? t("overlay.targetWaiting")}
-          aria-label={targetApp ? t("overlay.targetWindow", { app: targetApp }) : t("overlay.targetWaiting")}
+          title={targetApp ? t("overlay.targetWindow", { app: targetApp }) : t("overlay.targetUnknown")}
+          aria-label={targetApp ? t("overlay.targetWindow", { app: targetApp }) : t("overlay.targetUnknown")}
         >
-          {targetApp ?? t("overlay.targetWaiting")}
+          <span className="overlay-app-tab-label">
+            {targetApp ? t("overlay.targetWindow", { app: targetApp }) : t("overlay.targetUnknown")}
+          </span>
         </div>
       )}
       {/* Header: what is happening, the language, and close. Drag to move;
@@ -534,10 +536,8 @@ export function Overlay() {
             }}
           />
           <div className="overlay-actions">
-            <span className="overlay-hint overlay-target" title={targetApp ? t("overlay.targetWindow", { app: targetApp }) : t("overlay.targetUnknown")}>
-              {error ?? (reviewReady
-                ? targetApp ? t("overlay.targetWindow", { app: targetApp }) : t("overlay.targetUnknown")
-                : t("overlay.reviewPending"))}
+            <span className="overlay-hint">
+              {error ?? (!reviewReady ? t("overlay.reviewPending") : "")}
             </span>
             <button type="button" className="btn btn-sm btn-ghost" title={t("overlay.copyHint")} disabled={!reviewReady || !draft} onClick={copyDraft}>
               <Copy size={13} /> {copied ? t("app.copied") : t("app.copy")}

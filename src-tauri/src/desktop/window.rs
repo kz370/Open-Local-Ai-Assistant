@@ -940,11 +940,15 @@ pub fn restore_target(app: &AppHandle) {
     );
 }
 
-/// Returns the remembered target window's title, when the handle is still
-/// valid and the target exposes a title.
+/// Returns the remembered target process's friendly app name when available.
 #[cfg(windows)]
 pub fn dictation_target_name(app: &AppHandle) -> Option<String> {
-    use windows::Win32::UI::WindowsAndMessaging::{GetWindowTextLengthW, GetWindowTextW, IsWindow};
+    use windows::Win32::Foundation::CloseHandle;
+    use windows::Win32::System::Threading::{
+        OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32,
+        PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+    use windows::Win32::UI::WindowsAndMessaging::{GetWindowThreadProcessId, IsWindow};
 
     let raw = app
         .state::<AppState>()
@@ -954,31 +958,55 @@ pub fn dictation_target_name(app: &AppHandle) -> Option<String> {
         return None;
     }
     let hwnd = hwnd_of(raw);
-    // SAFETY: the handle is checked with IsWindow before querying its title.
+    // SAFETY: the handle is checked before querying its owner and process path.
     unsafe {
         if !IsWindow(Some(hwnd)).as_bool() {
             return None;
         }
-        let length = GetWindowTextLengthW(hwnd);
-        if length <= 0 {
+        let mut process_id = 0;
+        GetWindowThreadProcessId(hwnd, Some(&mut process_id));
+        if process_id == 0 {
             return None;
         }
-        let mut title = vec![0u16; length as usize + 1];
-        let written = GetWindowTextW(hwnd, &mut title);
-        if written <= 0 {
+        let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, process_id).ok()?;
+        let mut image = vec![0u16; 32_768];
+        let mut length = image.len() as u32;
+        let result = QueryFullProcessImageNameW(
+            process,
+            PROCESS_NAME_WIN32,
+            windows::core::PWSTR(image.as_mut_ptr()),
+            &mut length,
+        );
+        let _ = CloseHandle(process);
+        if result.is_err() || length == 0 {
             return None;
         }
-        title.truncate(written as usize);
-        String::from_utf16(&title)
-            .ok()
-            .map(|s| s.trim().to_owned())
-            .filter(|s| !s.is_empty())
+        let executable = String::from_utf16_lossy(&image[..length as usize]);
+        let stem = std::path::Path::new(&executable)
+            .file_stem()
+            .and_then(|name| name.to_str())?;
+        Some(application_display_name(stem))
     }
 }
 
 #[cfg(not(windows))]
 pub fn dictation_target_name(_app: &AppHandle) -> Option<String> {
     None
+}
+
+fn application_display_name(executable_stem: &str) -> String {
+    match executable_stem.to_ascii_lowercase().as_str() {
+        "code" => "Visual Studio Code".into(),
+        "notepad" => "Notepad".into(),
+        "notepad++" => "Notepad++".into(),
+        "winword" => "Microsoft Word".into(),
+        "excel" => "Microsoft Excel".into(),
+        "powerpnt" => "Microsoft PowerPoint".into(),
+        "chrome" => "Google Chrome".into(),
+        "msedge" => "Microsoft Edge".into(),
+        "firefox" => "Firefox".into(),
+        _ => executable_stem.to_owned(),
+    }
 }
 
 /// Invisible room kept above and below the overlay card (logical px) so the
@@ -1400,9 +1428,18 @@ pub fn cancel_dictation(app: &AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::{
-        bubble_position_at_bounds, bubble_position_for_preset, clamp_into, ease_out_cubic, lerp,
-        overlay_hide_is_current_and_idle, preset_position, rel_logical, saved_bubble_position,
+        application_display_name, bubble_position_at_bounds, bubble_position_for_preset,
+        clamp_into, ease_out_cubic, lerp, overlay_hide_is_current_and_idle, preset_position,
+        rel_logical, saved_bubble_position,
     };
+
+    #[test]
+    fn destination_uses_a_friendly_application_name() {
+        assert_eq!(application_display_name("Code"), "Visual Studio Code");
+        assert_eq!(application_display_name("NOTEPAD"), "Notepad");
+        assert_eq!(application_display_name("notepad++"), "Notepad++");
+        assert_eq!(application_display_name("my-editor"), "my-editor");
+    }
 
     #[test]
     fn bubble_follows_chat_position_presets() {

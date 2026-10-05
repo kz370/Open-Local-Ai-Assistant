@@ -790,11 +790,11 @@ src/pages/Overlay/Overlay | uses | src/components/voice/VoiceBars
 src/pages/Overlay/Overlay | invokes | ipc.dictationCancel / ipc.dictationConfirm / ipc.dictationRetry (review keyboard shortcuts)
 src/pages/Overlay/Overlay | invokes | ipc.shortcutsCapture(true/false) (suspend global app shortcuts during review editing)
 desktop::shortcuts::handle | emits_to | overlay | dictation://review-shortcut (global insert / retry / cancel action)
-commands::dictation_insert_now / lib::run_dictation | emits | dictation://state { targetApp } (remembered destination window title)
+commands::dictation_insert_now / lib::run_dictation | emits | dictation://state { targetApp } (remembered destination app name)
 desktop::shortcuts::start_dictation | increments | state::AppState.dictation_session_generation
 desktop::shortcuts::start_dictation | starts | desktop::shortcuts::watch_dictation_target (refreshes destination until dictation and review finish)
 desktop::shortcuts::watch_dictation_target | calls | desktop::window::refresh_dictation_target / publish_dictation_target
-desktop::window::publish_dictation_target | emits | dictation://target { targetApp } (current external foreground window title)
+desktop::window::publish_dictation_target | emits | dictation://target { targetApp } (current external foreground app name)
 src/pages/Overlay/Overlay.tsx | subscribes_to | dictation://target (updates the destination-app tab during listening and review)
 desktop::window::restore_target | calls | desktop::window::refresh_dictation_target before restoring latest external foreground window
 lib::hide_overlay_later | captures | state::AppState.dictation_session_generation

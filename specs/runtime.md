@@ -342,6 +342,10 @@ coverage completeness but are **not** deep-analysed: they carry no code semantic
 - Dictation now tracks foreground app changes throughout Auto Insert and review, refreshing the insertion destination before review confirmation. The overlay displays that destination in a narrow, subtly angled tab above the card, styled with the card's own surface and border tokens; its native window region includes the tab.
 - Improved destination tab readability: vertically centered high-contrast text, moved the tab 4px higher, rounded its top corners, and restored angled side edges.
 - Long destination titles now wrap onto two lines and grow the tab upward to 48px while keeping its lower edge anchored above the card; the native clip region follows the same maximum height.
+- Simplified the tab's top corners and preserved the angled sides with a full-width outline via an inset surface layer.
+- Increased the tab taper so its top is clearly narrower than its bottom, and moved the full “Insert into: [app]” destination label into the tab.
+- Integrated the app tab into the overlay border by aligning its lower edge with the card, removing the tab shadow, and hiding the seam.
+- The destination tab now shows the target process's friendly app name instead of its potentially long document/window title; eased the top taper to keep the inset subtle.
 
 - [2026-09-27T21:50:21Z] Initialisation started. Structured reasoning mode enabled; 9-phase plan created.
 - [2026-09-27T21:50:44Z] `specs/` and `specs/diagrams/` created.
