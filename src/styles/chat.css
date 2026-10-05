@@ -1242,10 +1242,27 @@ html.launcher-window #root {
   overflow: hidden;
 }
 .launcher-stage {
+  position: relative;
   width: 100%;
   height: 100%;
   display: grid;
   place-items: center;
+  isolation: isolate;
+}
+.launcher-stage::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 50%;
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 48%, transparent);
+  filter: blur(20px);
+  opacity: 0.75;
+  transform: translate(-50%, -50%) scale(1.12);
+  pointer-events: none;
+  transition: opacity 180ms var(--ease), transform 180ms var(--ease);
 }
 .launcher {
   position: relative;
@@ -1258,7 +1275,6 @@ html.launcher-window #root {
   color: var(--accent-contrast, #fff);
   background: var(--brand-gradient, linear-gradient(145deg, #34e0c8 0%, #14b8a6 40%, #0f766e 100%));
   box-shadow:
-    0 10px 24px color-mix(in srgb, var(--accent) 42%, transparent),
     0 2px 6px rgba(0, 0, 0, 0.25),
     inset 0 1px 0 rgba(255, 255, 255, 0.35),
     inset 0 -6px 14px rgba(0, 0, 0, 0.22);
@@ -1270,8 +1286,16 @@ html.launcher-window #root {
 .launcher:hover {
   transform: scale(1.07);
 }
+.launcher-stage:has(.launcher:hover)::before {
+  opacity: 0.9;
+  transform: translate(-50%, -50%) scale(1.2);
+}
 .launcher:active {
   transform: scale(0.95);
+}
+.launcher-stage:has(.launcher:active)::before {
+  opacity: 0.6;
+  transform: translate(-50%, -50%) scale(1.04);
 }
 .launcher:focus-visible {
   outline: 2px solid var(--focus, #fff);
@@ -1294,6 +1318,12 @@ html.launcher-window #root {
 }
 .launcher.listening {
   background: linear-gradient(145deg, #fb7185 0%, #e11d48 100%);
+}
+.launcher-stage:has(.launcher.listening)::before {
+  background: color-mix(in srgb, var(--danger, #f43f5e) 50%, transparent);
+}
+.launcher-stage:has(.launcher.speaking)::before {
+  opacity: 0.9;
 }
 .launcher.listening .launcher-ring,
 .launcher.speaking .launcher-ring {

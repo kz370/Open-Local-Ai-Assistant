@@ -3298,7 +3298,8 @@ orchestration, and raw `windows`-crate FFI.
 
 ### Technical Details
 **Public constants:** `MAIN = "main"`, `BUBBLE = "bubble"`, `SETTINGS = "settings"`,
-`OVERLAY = "overlay"`, `COMPACT_SIZE = (380.0, 170.0)`, `BUBBLE_SIZE = 84.0`.
+`OVERLAY = "overlay"`, `COMPACT_SIZE = (440.0, 170.0)`, compact width bounds
+`440..=760` logical px at a fixed `170` px height, `BUBBLE_SIZE = 84.0`.
 
 **Key geometry constants:**
 
@@ -3365,7 +3366,10 @@ fire a `Moved` at some OS-default position.
   last case the move is **undone** by re-applying the preset, which also re-snaps
   Win+arrow and stray drags.
 - `Resized` is skipped when suppressed, when a dimension is `0`, when maximized
-  (restoring brings back the saved size), and in compact mode.
+  (restoring brings back the saved size), and in compact mode. Compact mode
+  defaults to `440×170` logical px and is width-resizable between `440` and
+  `760` px while keeping its height fixed, so the model, MCP, microphone and
+  send controls do not overlap.
 
 ### Business Logic — the settings window is never destroyed
 `ensure_settings`'s `CloseRequested` handler calls **`prevent_close()`**, then

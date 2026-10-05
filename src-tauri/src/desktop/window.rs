@@ -23,7 +23,9 @@ const SETTINGS_H: f64 = 820.0;
 pub const OVERLAY: &str = "overlay";
 
 const MARGIN: i32 = 16;
-pub const COMPACT_SIZE: (f64, f64) = (380.0, 170.0);
+pub const COMPACT_SIZE: (f64, f64) = (440.0, 170.0);
+const COMPACT_MIN_WIDTH: f64 = 440.0;
+const COMPACT_MAX_WIDTH: f64 = 760.0;
 /// Logical size of the bubble window (the visible circle is smaller, leaving room for its shadow).
 pub const BUBBLE_SIZE: f64 = 84.0;
 /// Chat window bounds outside compact mode: narrow/short enough and the
@@ -32,13 +34,12 @@ const CHAT_MIN_WIDTH: f64 = 480.0;
 const CHAT_MAX_WIDTH: f64 = 760.0;
 const CHAT_MIN_HEIGHT: f64 = 480.0;
 
-/// Locks the window to an exact size in compact mode, or applies the normal
-/// chat size bounds otherwise (drag-resize can never go smaller/larger than
-/// the layout can actually render).
+/// Keeps compact mode at its fixed height with enough width for the composer
+/// controls, or applies the normal chat size bounds otherwise.
 fn apply_size_bounds(win: &WebviewWindow, compact: bool) {
     if compact {
-        let _ = win.set_min_size(Some(LogicalSize::new(COMPACT_SIZE.0, COMPACT_SIZE.1)));
-        let _ = win.set_max_size(Some(LogicalSize::new(COMPACT_SIZE.0, COMPACT_SIZE.1)));
+        let _ = win.set_min_size(Some(LogicalSize::new(COMPACT_MIN_WIDTH, COMPACT_SIZE.1)));
+        let _ = win.set_max_size(Some(LogicalSize::new(COMPACT_MAX_WIDTH, COMPACT_SIZE.1)));
     } else {
         let _ = win.set_min_size(Some(LogicalSize::new(CHAT_MIN_WIDTH, CHAT_MIN_HEIGHT)));
         let _ = win.set_max_size(Some(LogicalSize::new(CHAT_MAX_WIDTH, 4000.0)));
