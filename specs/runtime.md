@@ -1,6 +1,6 @@
 # RUNTIME
 
-Documentation pipeline state for **Open Local Assistant** (`local-ai-assistant` v1.1.0).
+Documentation pipeline state for **Open Local Assistant** (`local-ai-assistant` v1.2.0).
 
 - **Repository root:** `I:\Development\repos\Open-Local-Ai-Assistant`
 - **Tracked files (git):** 232
@@ -398,3 +398,4 @@ coverage completeness but are **not** deep-analysed: they carry no code semantic
 - [2026-10-05T19:42:00Z] Made the “Insert into:” prefix heavier than the app name using its dedicated CSS class; documented the typography distinction.
 - [2026-10-05T19:47:00Z] Reworked the destination tab's upper corner points in both clip paths to make the rounding read clearly and flow into continuously widening trapezoid sides.
 - [2026-10-05T19:52:00Z] Replaced hard-coded destination-tab text colors with the active theme's `--accent` token.
+- [2026-10-05T19:53:00Z] Bumped the app version from 1.1.0 to 1.2.0 across the npm, Cargo and Tauri manifests and lockfiles; synchronized specification version headers. GitHub's Windows release build is triggered by pushing tag `v1.2.0`.

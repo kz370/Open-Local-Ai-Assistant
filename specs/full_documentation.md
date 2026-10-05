@@ -1,6 +1,6 @@
 # FULL DOCUMENTATION
 
-**Project:** Open Local Assistant (`local-ai-assistant` v1.1.0)
+**Project:** Open Local Assistant (`local-ai-assistant` v1.2.0)
 **License:** GPL-3.0-only
 **Type:** Tauri 2 desktop application — Rust backend + React 19 / TypeScript frontend
 **Platform:** Windows 10/11 x64 (primary); code is written to also build on macOS and Linux
@@ -4041,6 +4041,9 @@ back to a **stale `0.1.0`**. Output therefore lands in a **per-release folder**
 `release\v<version>\`, so rebuilding an old version never overwrites the current release's
 files. `JOBS` is half
 the processor count, overridable by `BUILD_JOBS`. `CACHE_LIMIT_GB = 8`.
+The release version is kept in sync across the npm, Cargo and Tauri manifests
+and lockfiles; `v1.2.0` is the current version. The GitHub release workflow
+builds when a `v*` tag is pushed.
 
 **Four build phases:**
 0. **Preflight** — `where cargo`; then inline PowerShell measures
