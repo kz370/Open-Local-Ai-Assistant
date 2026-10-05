@@ -1515,6 +1515,14 @@ stays alive in the tray when all windows close.
   a processing hint and keeps Insert disabled until the final review result arrives;
   the final text replaces the preview unless the user has already edited it. The
   listening control and shortcut hint say "Review" instead of "Insert" in this mode.
+  In the completed review, Esc or Ctrl+Shift+Backspace cancels, Ctrl+Enter
+  inserts the edited text, and Ctrl+Shift+Enter retries dictation; Alt+Enter is not intercepted. Configured
+  global app shortcuts are temporarily unregistered while the review editor is
+  open, then restored when review closes. The two action shortcuts are registered
+  globally for the review's lifetime, so they work while the dictated-into app is
+  focused; Esc cancellation is observed globally while dictation is busy. The
+  review displays the remembered destination window title when available and
+  always offers Copy as a fallback.
 - `ChatApp` continues to treat dictation as active during this new `"reviewing"`
   preparation state, so its dictation-related UI does not resume prematurely.
 - `correction_enabled` with an empty correction model records `AppError::NoModel`
@@ -1824,7 +1832,9 @@ Every branch is guarded by an **actual change** in the old/new settings:
   **does not persist**. The UI must round-trip the result through
   `save_settings` so the side effects apply.
 - `shortcuts_capture(true)` unregisters all shortcuts so the recorder's keys are
-  not swallowed by the registered global shortcuts; `false` re-registers.
+  not swallowed by the registered global shortcuts; `reviewShortcuts: true`
+  instead registers review-specific insert/retry/cancel actions globally;
+  `false` re-registers configured shortcuts.
 - `open_folder` uses a strict allow-list of exactly `"logs" | "models" | "data"`;
   anything else is `AppError::Invalid("unknown folder")`. Only directories
   reachable through `AppPaths` can be opened.

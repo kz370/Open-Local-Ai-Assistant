@@ -56,6 +56,9 @@ pub struct AppState {
     pub dictation_review: Mutex<Option<crate::services::dictation::ReviewPending>>,
     /// Window that had focus when dictation started (native handle, 0 = none).
     pub dictation_target: AtomicIsize,
+    /// Review-only global shortcuts temporarily replace the user's configured
+    /// shortcuts while the dictation editor is open.
+    pub review_shortcuts_active: AtomicBool,
     pub shortcut_errors: Mutex<Vec<String>>,
 }
 

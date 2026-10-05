@@ -222,7 +222,9 @@ fn trigger_modifier_watch(app: &AppHandle) {
             let esc = esc_pressed();
             if esc && !last_esc && esc_watch {
                 let st = app.state::<AppState>();
-                if st.voice.active_mode() == Some(ListenMode::Dictation) {
+                if st.voice.active_mode() == Some(ListenMode::Dictation)
+                    || st.dictation_busy.load(std::sync::atomic::Ordering::Relaxed)
+                {
                     super::window::cancel_dictation(&app);
                 }
             }
@@ -235,12 +237,53 @@ fn trigger_modifier_watch(app: &AppHandle) {
 /// Temporarily releases all global shortcuts so the key combination reaches
 /// the settings window while the user is recording a new one.
 pub fn unregister_all(app: &AppHandle) {
+    app.state::<AppState>()
+        .review_shortcuts_active
+        .store(false, std::sync::atomic::Ordering::Relaxed);
     let _ = app.global_shortcut().unregister_all();
+}
+
+/// Replaces configured shortcuts with review actions, so the hotkeys are
+/// handled even while the dictated-into application owns keyboard focus.
+pub fn register_review_shortcuts(app: &AppHandle) -> Result<(), String> {
+    let gs = app.global_shortcut();
+    gs.unregister_all().map_err(|e| e.to_string())?;
+    app.state::<AppState>()
+        .review_shortcuts_active
+        .store(false, std::sync::atomic::Ordering::Relaxed);
+
+    for keys in [
+        "CommandOrControl+Shift+Backspace",
+        "CommandOrControl+Enter",
+        "CommandOrControl+Shift+Enter",
+    ] {
+        let shortcut = match keys.parse::<Shortcut>() {
+            Ok(shortcut) => shortcut,
+            Err(error) => {
+                register_all(app);
+                return Err(format!("could not parse review shortcut {keys}: {error}"));
+            }
+        };
+        if let Err(error) = gs.register(shortcut) {
+            register_all(app);
+            return Err(format!(
+                "could not register review shortcut {keys}: {error}"
+            ));
+        }
+    }
+
+    app.state::<AppState>()
+        .review_shortcuts_active
+        .store(true, std::sync::atomic::Ordering::Relaxed);
+    Ok(())
 }
 
 /// (Re-)registers all shortcuts; failures (e.g. taken by another app) are
 /// recorded for the settings UI instead of aborting.
 pub fn register_all(app: &AppHandle) {
+    app.state::<AppState>()
+        .review_shortcuts_active
+        .store(false, std::sync::atomic::Ordering::Relaxed);
     let gs = app.global_shortcut();
     let _ = gs.unregister_all();
     let mut errors = Vec::new();
@@ -282,6 +325,35 @@ pub fn register_all(app: &AppHandle) {
 }
 
 pub fn handle(app: &AppHandle, shortcut: &Shortcut, event: ShortcutEvent) {
+    let state = app.state::<AppState>();
+    if state
+        .review_shortcuts_active
+        .load(std::sync::atomic::Ordering::Relaxed)
+    {
+        for (keys, action) in [
+            ("CommandOrControl+Shift+Backspace", "cancel"),
+            ("CommandOrControl+Enter", "insert"),
+            ("CommandOrControl+Shift+Enter", "retry"),
+        ] {
+            if keys
+                .parse::<Shortcut>()
+                .map(|s| s.id() == shortcut.id())
+                .unwrap_or(false)
+            {
+                if event.state() == ShortcutState::Pressed {
+                    if let Err(error) = app.emit_to(
+                        super::window::OVERLAY,
+                        "dictation://review-shortcut",
+                        action,
+                    ) {
+                        tracing::warn!(action, %error, "failed to deliver dictation review shortcut");
+                    }
+                }
+                return;
+            }
+        }
+    }
+
     let Some(action) = configured(app)
         .into_iter()
         .find(|(_, keys)| {

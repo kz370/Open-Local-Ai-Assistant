@@ -58,7 +58,11 @@ pub fn dictation_insert_now(app: AppHandle, state: State<'_, AppState>, text: St
             crate::desktop::window::set_overlay_review(&app, true);
             let _ = app.emit(
                 "dictation://state",
-                serde_json::json!({ "state": "reviewing", "text": text }),
+                serde_json::json!({
+                    "state": "reviewing",
+                    "text": text,
+                    "targetApp": crate::desktop::window::dictation_target_name(&app),
+                }),
             );
         }
         state.voice.stop(false);

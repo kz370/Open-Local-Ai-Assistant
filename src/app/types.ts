@@ -528,6 +528,7 @@ export interface DictationEntry {
 export interface DictationStateEvent {
   state: "listening" | "transcribing" | "idle" | "correcting" | "reviewing" | "review" | "inserted" | "empty" | "cancelled" | "error";
   text?: string;
+  targetApp?: string | null;
   error?: AppErrorPayload;
   result?: { raw: string; inserted: string; corrected: boolean; correctionError: string | null };
 }

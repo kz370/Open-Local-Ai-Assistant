@@ -135,14 +135,24 @@ pub fn settings_import(state: State<'_, AppState>, path: String) -> CmdResult<Se
     ))
 }
 
-/// While the user records a shortcut, global shortcuts must not swallow the keys.
+/// Temporarily releases configured shortcuts while recording a shortcut or
+/// installs review actions that must work while another app has focus.
 #[tauri::command]
-pub fn shortcuts_capture(app: AppHandle, capturing: bool) {
+pub fn shortcuts_capture(
+    app: AppHandle,
+    capturing: bool,
+    review_shortcuts: Option<bool>,
+) -> CmdResult<()> {
     if capturing {
-        shortcuts::unregister_all(&app);
+        if review_shortcuts.unwrap_or(false) {
+            shortcuts::register_review_shortcuts(&app).map_err(AppError::Other)?;
+        } else {
+            shortcuts::unregister_all(&app);
+        }
     } else {
         shortcuts::register_all(&app);
     }
+    Ok(())
 }
 
 #[tauri::command]

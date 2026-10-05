@@ -49,7 +49,8 @@ export const ipc = {
   getSettings: () => invoke<Settings>("get_settings"),
   saveSettings: (settings: Settings) => invoke<Settings>("save_settings", { settings }),
   shortcutErrors: () => invoke<string[]>("shortcut_errors"),
-  shortcutsCapture: (capturing: boolean) => invoke<void>("shortcuts_capture", { capturing }),
+  shortcutsCapture: (capturing: boolean, reviewShortcuts?: boolean) =>
+    invoke<void>("shortcuts_capture", { capturing, reviewShortcuts: reviewShortcuts ?? false }),
   appInfo: () => invoke<AppInfo>("app_info"),
   openFolder: (which: "logs" | "models" | "data") => invoke<void>("open_folder", { which }),
   readLogTail: (lines?: number) => invoke<string>("read_log_tail", { lines }),

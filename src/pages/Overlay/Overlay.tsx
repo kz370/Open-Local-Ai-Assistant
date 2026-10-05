@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, CheckCircle2, ChevronDown, Globe, Mic, Pencil, RotateCcw, SlidersHorizontal, X, XCircle } from "lucide-react";
+import { Check, CheckCircle2, ChevronDown, Copy, Globe, Mic, Pencil, RotateCcw, SlidersHorizontal, X, XCircle } from "lucide-react";
 import { getCurrentWindow, PhysicalPosition } from "@tauri-apps/api/window";
 import { ipc, on } from "../../app/ipc";
 import { useSettings } from "../../app/settingsStore";
@@ -254,6 +254,8 @@ export function Overlay() {
   const [error, setError] = useState<string | null>(null);
   const [text, setText] = useState("");
   const [draft, setDraft] = useState("");
+  const [targetApp, setTargetApp] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
   const [reviewPreview, setReviewPreview] = useState(false);
   const [bands, setBands] = useState<number[]>([]);
   const [level, setLevel] = useState(0);
@@ -263,6 +265,8 @@ export function Overlay() {
   const editRef = useRef<HTMLTextAreaElement>(null);
   const previewRef = useRef(false);
   const reviewDoneRef = useRef(false);
+  const reviewReadyRef = useRef(false);
+  const draftRef = useRef("");
   const draftDirty = useRef(false);
   const drag = useOverlayDrag();
 
@@ -273,13 +277,18 @@ export function Overlay() {
         if (e.state === "idle" && (previewRef.current || reviewDoneRef.current)) return;
         if (e.state === "reviewing" && reviewDoneRef.current) return;
         setState(e.state);
+        if (e.targetApp !== undefined) setTargetApp(e.targetApp);
+        reviewReadyRef.current = e.state === "review";
         if (e.state === "listening") {
           setText("");
           setError(null);
           setBands([]);
           setLevel(0);
+          setTargetApp(null);
+          setCopied(false);
           previewRef.current = false;
           reviewDoneRef.current = false;
+          draftRef.current = "";
           draftDirty.current = false;
           setReviewPreview(false);
         }
@@ -287,13 +296,17 @@ export function Overlay() {
           previewRef.current = true;
           draftDirty.current = false;
           setReviewPreview(true);
-          setDraft(e.text ?? "");
+          draftRef.current = e.text ?? "";
+          setDraft(draftRef.current);
         }
         if (e.state === "review") {
           previewRef.current = false;
           reviewDoneRef.current = true;
           setReviewPreview(false);
-          if (!draftDirty.current) setDraft(e.result?.inserted ?? "");
+          if (!draftDirty.current) {
+            draftRef.current = e.result?.inserted ?? "";
+            setDraft(draftRef.current);
+          }
         }
         if (["inserted", "empty", "cancelled", "error"].includes(e.state)) {
           previewRef.current = false;
@@ -312,6 +325,15 @@ export function Overlay() {
         if (e.type === "partial") setText(e.text);
         if (e.type === "transcript" && e.text) setText(e.text);
       }),
+      on<string>("dictation://review-shortcut", (action) => {
+        if (action === "cancel") {
+          void ipc.dictationCancel().catch(quiet);
+          return;
+        }
+        if (!reviewReadyRef.current) return;
+        if (action === "insert") void ipc.dictationConfirm(draftRef.current).catch(quiet);
+        if (action === "retry") void ipc.dictationRetry().catch(quiet);
+      }),
     ];
     return () => subs.forEach((s) => void s.then((u) => u()));
   }, []);
@@ -322,6 +344,16 @@ export function Overlay() {
 
   const reviewEditorOpen = reviewPreview || state === "review";
   const reviewReady = state === "review";
+  useEffect(() => {
+    if (!reviewEditorOpen) return;
+    void ipc.shortcutsCapture(true, true).catch((error) => {
+      setError(`Review keyboard shortcuts could not be registered: ${String(error)}`);
+    });
+    return () => {
+      void ipc.shortcutsCapture(false).catch(quiet);
+    };
+  }, [reviewEditorOpen]);
+
   useEffect(() => {
     if (!reviewEditorOpen) return;
     // The window only just became focusable; give it a beat before typing focus.
@@ -411,6 +443,12 @@ export function Overlay() {
   const confirm = () => {
     if (reviewReady) void ipc.dictationConfirm(draft).catch(quiet);
   };
+  const copyDraft = () => {
+    void navigator.clipboard
+      .writeText(draft)
+      .then(() => setCopied(true))
+      .catch((e: unknown) => setError(`Could not copy dictation text: ${String(e)}`));
+  };
 
   return (
     <div className={`overlay-card${state === "inserted" ? " done" : ""}`} role="status" aria-live="polite">
@@ -459,20 +497,35 @@ export function Overlay() {
             spellCheck
             onChange={(e) => {
               draftDirty.current = true;
+              draftRef.current = e.target.value;
+              setCopied(false);
               setDraft(e.target.value);
             }}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+              if (e.key === "Enter" && !e.altKey && (e.ctrlKey || e.metaKey)) {
                 e.preventDefault();
-                confirm();
+                e.stopPropagation();
+                if (e.shiftKey) {
+                  if (reviewReady) void ipc.dictationRetry().catch(quiet);
+                } else {
+                  confirm();
+                }
               } else if (e.key === "Escape") {
                 e.preventDefault();
+                e.stopPropagation();
                 void ipc.dictationCancel().catch(quiet);
               }
             }}
           />
           <div className="overlay-actions">
-            <span className="overlay-hint">{reviewReady ? t("overlay.insertHint") : t("overlay.reviewPending")}</span>
+            <span className="overlay-hint" title={targetApp ? t("overlay.targetWindow", { app: targetApp }) : t("overlay.targetUnknown")}>
+              {error ?? (reviewReady
+                ? targetApp ? t("overlay.targetWindow", { app: targetApp }) : t("overlay.targetUnknown")
+                : t("overlay.reviewPending"))}
+            </span>
+            <button type="button" className="btn btn-sm btn-ghost" title={t("overlay.copyHint")} disabled={!reviewReady || !draft} onClick={copyDraft}>
+              <Copy size={13} /> {copied ? t("app.copied") : t("app.copy")}
+            </button>
             <button type="button" className="btn btn-sm btn-ghost" title={t("overlay.retryHint")} disabled={!reviewReady} onClick={() => void ipc.dictationRetry().catch(quiet)}>
               <RotateCcw size={13} /> {t("overlay.retry")}
             </button>

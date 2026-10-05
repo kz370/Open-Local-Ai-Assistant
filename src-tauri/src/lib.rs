@@ -145,6 +145,7 @@ fn init_state(app: &AppHandle) -> Result<AppState, Box<dyn std::error::Error>> {
         dictation_live_typer: Default::default(),
         dictation_review: Mutex::new(None),
         dictation_target: std::sync::atomic::AtomicIsize::new(0),
+        review_shortcuts_active: AtomicBool::new(false),
         shortcut_errors: Mutex::new(Vec::new()),
     })
 }
@@ -365,7 +366,11 @@ async fn run_dictation(app: AppHandle, raw: String) {
             };
             let _ = app.emit(
                 "dictation://state",
-                serde_json::json!({ "state": "review", "result": result }),
+                serde_json::json!({
+                    "state": "review",
+                    "result": result,
+                    "targetApp": window::dictation_target_name(&app),
+                }),
             );
             return;
         }

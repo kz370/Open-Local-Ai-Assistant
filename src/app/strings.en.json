@@ -800,11 +800,14 @@
         "reviewNow": "Review",
         "reviewNowHint": "Stop listening and review what you said",
     "retry": "Retry",
-    "retryHint": "Throw this away and dictate again",
+    "retryHint": "Throw this away and dictate again (Ctrl+Shift+Enter)",
     "review": "Review — edit if needed",
     "insert": "Insert",
-    "insertHint": "Ctrl+Enter to insert · Esc discards",
-    "reviewPending": "Finalizing dictation; you can edit now and insert when ready."
+    "insertHint": "Ctrl+Enter insert · Ctrl+Shift+Enter retry · Ctrl+Shift+Backspace cancel",
+    "reviewPending": "Finalizing dictation; you can edit now and insert when ready.",
+    "targetWindow": "Insert into: {{app}}",
+    "targetUnknown": "Insert target unavailable · Copy text instead",
+    "copyHint": "Copy reviewed text to the clipboard"
   },
   "languages": {
     "en": "English",

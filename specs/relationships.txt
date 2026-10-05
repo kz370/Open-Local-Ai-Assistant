@@ -316,8 +316,7 @@ commands::app::settings_export | writes | <user-chosen absolute path>
 commands::app::settings_import | calls | settings::backup::decrypt
 commands::app::settings_import | calls | settings::backup::merge_import
 commands::app::settings_import | reads | <user-chosen absolute path>
-commands::app::shortcuts_capture | calls | desktop::shortcuts::unregister_all
-commands::app::shortcuts_capture | calls | desktop::shortcuts::register_all
+commands::app::shortcuts_capture | calls | desktop::shortcuts::unregister_all / register_all / register_review_shortcuts
 commands::app::shortcut_errors | reads | state::AppState.shortcut_errors
 commands::app::app_info | produces | commands::app::AppInfo
 commands::app::open_folder | calls | desktop::window (show/explore through AppPaths)
@@ -783,6 +782,10 @@ src/pages/Overlay/Overlay | uses | src/app/strings
 src/pages/Overlay/Overlay | uses | src/app/types
 src/pages/Overlay/Overlay | uses | src/components/common/controls
 src/pages/Overlay/Overlay | uses | src/components/voice/VoiceBars
+src/pages/Overlay/Overlay | invokes | ipc.dictationCancel / ipc.dictationConfirm / ipc.dictationRetry (review keyboard shortcuts)
+src/pages/Overlay/Overlay | invokes | ipc.shortcutsCapture(true/false) (suspend global app shortcuts during review editing)
+desktop::shortcuts::handle | emits_to | overlay | dictation://review-shortcut (global insert / retry / cancel action)
+commands::dictation_insert_now / lib::run_dictation | emits | dictation://state { targetApp } (remembered destination window title)
 src/pages/Settings/SettingsApp | uses | src/app/ipc
 src/pages/Settings/SettingsApp | uses | src/app/settingsHighlight
 src/pages/Settings/SettingsApp | uses | src/app/strings

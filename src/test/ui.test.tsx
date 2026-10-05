@@ -370,6 +370,46 @@ describe("Overlay review preview", () => {
     expect(screen.getByRole("textbox")).toHaveValue("final words");
   });
 
+  it("supports cancel, retry, and insert shortcuts without taking Alt+Enter", () => {
+    render(<Overlay />);
+    emit("dictation://state", {
+      state: "review",
+      result: { raw: "spoken words", inserted: "spoken words", corrected: false, correctionError: null },
+      targetApp: "Notepad",
+    });
+    expect(invoke).toHaveBeenCalledWith("shortcuts_capture", { capturing: true, reviewShortcuts: true });
+    expect(screen.getByText("Insert into: Notepad")).toBeInTheDocument();
+    const editor = screen.getByRole("textbox");
+
+    fireEvent.keyDown(editor, { key: "Enter", altKey: true });
+    expect(invoke).not.toHaveBeenCalledWith("dictation_confirm", expect.anything());
+
+    const clipboard = Object.getOwnPropertyDescriptor(navigator, "clipboard");
+    const writeText = vi.fn(async () => undefined);
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    fireEvent.click(screen.getByRole("button", { name: "Copy" }));
+    expect(writeText).toHaveBeenCalledWith("spoken words");
+
+    emit("dictation://review-shortcut", "cancel");
+    expect(invoke).toHaveBeenCalledWith("dictation_cancel");
+    emit("dictation://review-shortcut", "retry");
+    expect(invoke).toHaveBeenCalledWith("dictation_retry");
+
+    emit("dictation://review-shortcut", "insert");
+    expect(invoke).toHaveBeenCalledWith("dictation_confirm", { text: "spoken words" });
+
+    fireEvent.keyDown(editor, { key: "Enter", ctrlKey: true });
+    expect(invoke).toHaveBeenCalledWith("dictation_confirm", { text: "spoken words" });
+    fireEvent.keyDown(editor, { key: "Enter", ctrlKey: true, shiftKey: true });
+    expect(invoke).toHaveBeenCalledWith("dictation_retry");
+    fireEvent.keyDown(editor, { key: "Escape" });
+    expect(invoke).toHaveBeenCalledWith("dictation_cancel");
+    if (clipboard) Object.defineProperty(navigator, "clipboard", clipboard);
+    else Reflect.deleteProperty(navigator, "clipboard");
+    emit("dictation://state", { state: "cancelled" });
+    expect(invoke).toHaveBeenCalledWith("shortcuts_capture", { capturing: false, reviewShortcuts: false });
+  });
+
   it("moves the spectrum bars while the microphone is picked up", () => {
     render(<Overlay />);
     emit("dictation://state", { state: "listening" });

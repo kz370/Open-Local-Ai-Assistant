@@ -75,7 +75,7 @@ commands/app.rs :: get_settings — SYNC `(state) -> Settings` — returns a clo
 commands/app.rs :: save_settings — ASYNC `(app, state, settings) -> CmdResult<Settings>` — sanitises, persists, applies the diff-driven side-effect table, emits `settings://changed`.
 commands/app.rs :: settings_export — SYNC `(state, path, include_keys) -> CmdResult<()>` — optionally strips API keys, encrypts and writes the backup to an absolute path.
 commands/app.rs :: settings_import — SYNC `(state, path) -> CmdResult<Settings>` — decrypts and returns `merge_import(current, imported)`; does NOT persist.
-commands/app.rs :: shortcuts_capture — SYNC `(app, capturing) -> ()` — unregisters/re-registers all global shortcuts so the recorder is not swallowed.
+commands/app.rs :: shortcuts_capture — SYNC `(app, capturing, review_shortcuts) -> CmdResult<()>` — unregisters configured global shortcuts while recording; in review mode registers global insert/retry/cancel keys, and re-registers configured keys when finished.
 commands/app.rs :: shortcut_errors — SYNC `(state) -> Vec<String>` — non-fatal registration failures for the settings UI.
 commands/app.rs :: app_info — SYNC `(app, state) -> AppInfo` — version, resolved paths, hardware inventory, OS string.
 commands/app.rs :: open_folder — SYNC `(state, which) -> CmdResult<()>` — opens `logs | models | data`; any other key is `AppError::Invalid`.
@@ -671,7 +671,7 @@ src/components/voice/VoiceBars.tsx :: VoiceBars — 24-band spectrum bars for th
 
 src/pages/Bubble/Bubble.tsx :: Bubble — The 60x60 draggable launcher circle; morphs into the chat window and mirrors voice/dictation state.
 src/pages/Chat/ChatApp.tsx :: ChatApp — The chat window: header, message list, composer, history, call view, tool confirmation, selection menu; holds dictation-active state through review preparation.
-src/pages/Overlay/Overlay.tsx :: Overlay — The always-on-top dictation card: live voice spectrum (VoiceBars from the `level` event's `bands`), review-aware action labels, immediate editable preview, transcription feedback, and final text update unless edited.
+src/pages/Overlay/Overlay.tsx :: Overlay — The always-on-top dictation card: live voice spectrum (VoiceBars from the `level` event's `bands`), review-aware action labels, immediate editable preview, transcription feedback, target window title when available, Copy fallback, globally handled review shortcuts, and temporary suspension of configured global shortcuts during review.
 src/pages/Settings/SettingsApp.tsx :: SettingsApp — The 13-section dashboard shell with sidebar live search, jump highlighting and `app://navigate` routing.
 src/pages/Settings/searchIndex.ts :: SEARCH_INDEX — The search index built from `strings.en.json` label and hint keys.
 src/pages/Settings/sections/About.tsx :: AboutSection — Version, licence, build and repository links.

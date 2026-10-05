@@ -757,6 +757,47 @@ pub fn restore_target(app: &AppHandle) {
     );
 }
 
+/// Returns the remembered target window's title, when the handle is still
+/// valid and the target exposes a title.
+#[cfg(windows)]
+pub fn dictation_target_name(app: &AppHandle) -> Option<String> {
+    use windows::Win32::UI::WindowsAndMessaging::{GetWindowTextLengthW, GetWindowTextW, IsWindow};
+
+    let raw = app
+        .state::<AppState>()
+        .dictation_target
+        .load(Ordering::Relaxed);
+    if raw == 0 {
+        return None;
+    }
+    let hwnd = hwnd_of(raw);
+    // SAFETY: the handle is checked with IsWindow before querying its title.
+    unsafe {
+        if !IsWindow(Some(hwnd)).as_bool() {
+            return None;
+        }
+        let length = GetWindowTextLengthW(hwnd);
+        if length <= 0 {
+            return None;
+        }
+        let mut title = vec![0u16; length as usize + 1];
+        let written = GetWindowTextW(hwnd, &mut title);
+        if written <= 0 {
+            return None;
+        }
+        title.truncate(written as usize);
+        String::from_utf16(&title)
+            .ok()
+            .map(|s| s.trim().to_owned())
+            .filter(|s| !s.is_empty())
+    }
+}
+
+#[cfg(not(windows))]
+pub fn dictation_target_name(_app: &AppHandle) -> Option<String> {
+    None
+}
+
 /// Invisible room kept above and below the overlay card (logical px) so the
 /// language menu can hang outside the card without the window ever moving or
 /// resizing while it is on screen: a move always shows the card jumping for a
