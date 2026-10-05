@@ -436,7 +436,7 @@ menu.
   the dictation card, using the card's `--popover` surface and `--hairline`
   border, rounded upper corners and angled side edges, vertically centered
   high-contrast text, and a lower edge 4px over the card. Long app names wrap
-  and grow the tab upward to a 72px cap, matching the native clip region. It
+  to two lines and grow the tab upward to a 48px cap, matching the native clip region. It
   displays the current target window
   title while listening, transcribing, correcting or reviewing; its native
   rounded window region is merged with the card region so its overhang remains
@@ -3351,7 +3351,7 @@ launcher drag so it realigns.
 | `MENU_ROOM` | `240.0` | Invisible room above **and** below the card so the language menu can hang outside without moving the window; sized for 8 rows + gap |
 | `CARD_MARGIN` | `8.0` | **Must match CSS `.overlay-card`** |
 | `CARD_RADIUS` / `MENU_RADIUS` / `MENU_SHADOW` | `18.0` / `10.0` / `14.0` | Must match the CSS radii and leave room for the menu shadow |
-| `APP_TAB_HEIGHT` / `APP_TAB_WIDTH_INSET` / `APP_TAB_OVERLAP` | `72.0` / `36.0` / `4.0` | Maximum native clip height, horizontal inset and overlap for the growing destination tab |
+| `APP_TAB_HEIGHT` / `APP_TAB_WIDTH_INSET` / `APP_TAB_OVERLAP` | `48.0` / `36.0` / `4.0` | Maximum native clip height, horizontal inset and overlap for the growing destination tab |
 
 **Statics:** `SUPPRESS_UNTIL: AtomicU64` (ms epoch) and
 `MENU_RECT: Mutex<Option<[f64; 4]>>` (logical rect of the open overlay menu).

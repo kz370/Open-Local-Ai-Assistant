@@ -536,7 +536,7 @@ desktop/window.rs :: toggle_maximize / set_compact — Window chrome operations.
 desktop/window.rs :: ensure_settings / open_settings — The settings window is created once and never destroyed; navigation goes through `app://navigate`.
 desktop/window.rs :: remember_target / refresh_dictation_target / restore_target / publish_dictation_target — Tracks the latest external foreground app for Auto Insert and review confirmation, publishes its window title, and restores focus before inserting.
 desktop/window.rs :: set_overlay_menu / set_overlay_review / discard_review / create_overlay / show_overlay / hide_overlay / reset_overlay_position / cancel_dictation — Dictation overlay lifecycle and window-region clipping.
-desktop/window.rs :: SETTINGS_H / MARGIN / OVERLAY_W / OVERLAY_H / OVERLAY_BOTTOM_GAP / MENU_ROOM / CARD_MARGIN / CARD_RADIUS / APP_TAB_HEIGHT / APP_TAB_WIDTH_INSET / APP_TAB_OVERLAP — Private geometry constants mirrored by `settings.css`; native tab clip tracks the 408px-wide tab growing up to 72px.
+desktop/window.rs :: SETTINGS_H / MARGIN / OVERLAY_W / OVERLAY_H / OVERLAY_BOTTOM_GAP / MENU_ROOM / CARD_MARGIN / CARD_RADIUS / APP_TAB_HEIGHT / APP_TAB_WIDTH_INSET / APP_TAB_OVERLAP — Private geometry constants mirrored by `settings.css`; native tab clip tracks the 408px-wide tab growing up to 48px.
 desktop/window.rs :: SUPPRESS_UNTIL / MENU_RECT — Statics: the 700 ms programmatic-move suppression window and the open overlay-menu rect.
 desktop/window.rs :: app://window-shown — Emitted to `MAIN` before the webview is shown: `{origin, animated, fx, fy}`.
 desktop/window.rs :: app://window-closing — Emitted to `MAIN`: `{fx, fy}`.

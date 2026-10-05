@@ -996,7 +996,7 @@ static MENU_RECT: Mutex<Option<[f64; 4]>> = Mutex::new(None);
 /// .overlay-card / .overlay-lang-menu).
 const CARD_MARGIN: f64 = 8.0;
 const CARD_RADIUS: f64 = 18.0;
-const APP_TAB_HEIGHT: f64 = 72.0;
+const APP_TAB_HEIGHT: f64 = 48.0;
 const APP_TAB_WIDTH_INSET: f64 = 36.0;
 const APP_TAB_OVERLAP: f64 = 4.0;
 const MENU_RADIUS: f64 = 10.0;
@@ -1119,7 +1119,7 @@ fn set_overlay_region(app: &AppHandle, w: &WebviewWindow, clip: bool) {
             );
             let tab = CreateRoundRectRgn(
                 px(APP_TAB_WIDTH_INSET),
-                room + px(CARD_MARGIN - APP_TAB_OVERLAP - APP_TAB_HEIGHT),
+                room + px(CARD_MARGIN + APP_TAB_OVERLAP - APP_TAB_HEIGHT),
                 size.width as i32 - px(APP_TAB_WIDTH_INSET) + 1,
                 room + px(CARD_MARGIN - APP_TAB_OVERLAP) + 1,
                 px(10.0) * 2,

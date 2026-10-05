@@ -341,7 +341,7 @@ coverage completeness but are **not** deep-analysed: they carry no code semantic
 - Fixed launcher startup precedence so chat position presets override stale saved drag coordinates; regression tests cover preset/custom placement and drag availability. Reduced the circular launcher halo from a 20px blur to 12px and softened its hover expansion.
 - Dictation now tracks foreground app changes throughout Auto Insert and review, refreshing the insertion destination before review confirmation. The overlay displays that destination in a narrow, subtly angled tab above the card, styled with the card's own surface and border tokens; its native window region includes the tab.
 - Improved destination tab readability: vertically centered high-contrast text, moved the tab 4px higher, rounded its top corners, and restored angled side edges.
-- Long destination titles now wrap and grow the tab upward to 72px while keeping its lower edge anchored above the card; the native clip region follows the same maximum height.
+- Long destination titles now wrap onto two lines and grow the tab upward to 48px while keeping its lower edge anchored above the card; the native clip region follows the same maximum height.
 
 - [2026-09-27T21:50:21Z] Initialisation started. Structured reasoning mode enabled; 9-phase plan created.
 - [2026-09-27T21:50:44Z] `specs/` and `specs/diagrams/` created.
