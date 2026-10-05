@@ -395,7 +395,9 @@ describe("Overlay review preview", () => {
       targetApp: "Notepad",
     });
     expect(invoke).toHaveBeenCalledWith("shortcuts_capture", { capturing: true, reviewShortcuts: true });
-    expect(screen.getByText("Insert into: Notepad")).toBeInTheDocument();
+    expect(document.querySelector(".overlay-app-tab-prefix")).toHaveTextContent("Insert into:");
+    expect(document.querySelector(".overlay-app-tab-app")).toHaveTextContent("Notepad");
+    expect(document.querySelector(".overlay-app-tab")).toHaveAccessibleName("Insert into: Notepad");
     const editor = screen.getByRole("textbox");
 
     fireEvent.keyDown(editor, { key: "Enter", altKey: true });

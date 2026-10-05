@@ -466,7 +466,14 @@ export function Overlay() {
           aria-label={targetApp ? t("overlay.targetWindow", { app: targetApp }) : t("overlay.targetUnknown")}
         >
           <span className="overlay-app-tab-label">
-            {targetApp ? t("overlay.targetWindow", { app: targetApp }) : t("overlay.targetUnknown")}
+            {targetApp ? (
+              <>
+                <span className="overlay-app-tab-prefix">{t("overlay.targetPrefix")}</span>{" "}
+                <span className="overlay-app-tab-app">{targetApp}</span>
+              </>
+            ) : (
+              <span className="overlay-app-tab-unknown">{t("overlay.targetUnknown")}</span>
+            )}
           </span>
         </div>
       )}

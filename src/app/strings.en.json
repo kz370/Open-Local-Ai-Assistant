@@ -806,6 +806,7 @@
     "insertHint": "Ctrl+Enter insert · Ctrl+Shift+Enter retry · Ctrl+Shift+Backspace cancel",
     "reviewPending": "Finalizing dictation; you can edit now and insert when ready.",
     "targetWindow": "Insert into: {{app}}",
+    "targetPrefix": "Insert into:",
     "targetUnknown": "Insert target unavailable · Copy text instead",
     "targetWaiting": "Waiting for an app…",
     "copyHint": "Copy reviewed text to the clipboard"

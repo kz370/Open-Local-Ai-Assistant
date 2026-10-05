@@ -436,9 +436,11 @@ menu.
   the dictation card, using an inset `--popover` layer over a `--hairline`
   outline. Its rounded upper corners lead into angled sides that widen from a
   distinctly narrower top to the full-width bottom; the full “Insert into:
-  [app]” destination label appears in the tab with slightly roomier vertical
-  padding. The complete bottom outline, including the angled edges, remains
-  visible. Long app names wrap to two lines
+  [app]” destination label appears in the tab as separate prefix and app-name
+  spans for independent styling; the “Insert into:” prefix is heavier than the
+  app name. The tab has slightly roomier vertical padding. The complete bottom
+  outline, including the angled edges, remains visible. Long app names wrap to
+  two lines
   and grow the tab upward to a 48px cap, matching the native clip region. It
   displays the current target process's friendly application name while
   listening, transcribing, correcting or reviewing; its native
