@@ -220,7 +220,7 @@ API.
 | --- | --- | --- | --- | --- |
 | 18 | `window_set_compact` | `compact: boolean` | `void` | sync. Shrinks the chat window to 380×170 and disables geometry persistence. |
 | 19 | `window_hide` | — | `void` | sync. `hide_to_tray` — the window closes to the system tray; the process stays alive. |
-| 20 | `window_minimize` | — | `void` | sync. `minimize_to_bubble` — emits `app://window-closing {fx, fy}` to `main`, sleeps 190 ms (the CSS shrink), hides, then shows the 84×84 bubble. |
+| 20 | `window_minimize` | — | `void` | sync. `minimize_to_bubble` — emits `app://window-closing {fx, fy}` to `main`, sleeps 190 ms (the CSS shrink), hides, then shows the 144×144 transparent bubble window with a 60px circular launcher and room for its glow. |
 | 21 | `window_toggle_maximize` | — | `boolean` | sync. Returns whether the window is now maximized. |
 | 22 | `window_show_main` | — | `void` | sync. `show_main(app, focus_input = true)`. Pre-arms `app://window-shown` **while hidden**, snaps the position, hides the bubble and shows the chat in the same tick. Emits `app://window-shown {origin, animated, fx, fy}` to `main` and, because `focus_input` is true, `app://focus-input` to `main`. |
 | 23 | `bubble_open_chat` | — | `void` | sync. Called by the bubble when clicked; identical to `window_show_main`. |

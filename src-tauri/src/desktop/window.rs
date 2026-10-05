@@ -26,8 +26,9 @@ const MARGIN: i32 = 16;
 pub const COMPACT_SIZE: (f64, f64) = (440.0, 170.0);
 const COMPACT_MIN_WIDTH: f64 = 440.0;
 const COMPACT_MAX_WIDTH: f64 = 760.0;
-/// Logical size of the bubble window (the visible circle is smaller, leaving room for its shadow).
-pub const BUBBLE_SIZE: f64 = 84.0;
+/// Logical size of the bubble window, including transparent space for the
+/// circular glow around the 60px launcher.
+pub const BUBBLE_SIZE: f64 = 144.0;
 /// Chat window bounds outside compact mode: narrow/short enough and the
 /// header, messages and composer start overlapping instead of stacking.
 const CHAT_MIN_WIDTH: f64 = 480.0;
@@ -242,7 +243,9 @@ pub fn create_bubble(app: &AppHandle) -> tauri::Result<WebviewWindow> {
 fn place_bubble(app: &AppHandle, w: &WebviewWindow) {
     suppress_persistence();
     let s = app.state::<AppState>().settings.get().general;
-    let size = w.outer_size().unwrap_or(PhysicalSize::new(84, 84));
+    let size = w
+        .outer_size()
+        .unwrap_or(PhysicalSize::new(BUBBLE_SIZE as u32, BUBBLE_SIZE as u32));
     if let (Some(x), Some(y)) = (s.bubble_x, s.bubble_y) {
         if on_any_monitor(w, x, y) {
             let _ = w.set_position(PhysicalPosition::new(x, y));
@@ -251,10 +254,21 @@ fn place_bubble(app: &AppHandle, w: &WebviewWindow) {
     }
     if let Some(m) = w.primary_monitor().ok().flatten() {
         let area = m.work_area();
-        let (x, y) = preset_position(
+        let (mut x, mut y) = preset_position(
             "bottom-right",
             (area.position.x, area.position.y),
             (area.size.width, area.size.height),
+            (size.width, size.height),
+        );
+        // The window grew around the same 60px launcher to make room for its
+        // glow. Keep the visible circle near its old edge position, then clamp
+        // the larger transparent window fully onto small work areas.
+        let scale = m.scale_factor();
+        let inset = (((BUBBLE_SIZE - 60.0) / 2.0 - 12.0) * scale).round() as i32;
+        (x, y) = clamp_into(
+            (area.position.x, area.position.y),
+            (area.size.width, area.size.height),
+            (x + inset, y + inset),
             (size.width, size.height),
         );
         let _ = w.set_position(PhysicalPosition::new(x, y));

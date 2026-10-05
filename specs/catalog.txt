@@ -520,7 +520,7 @@ settings/backup.rs :: merge_import — `pub fn merge_import(current, imported) -
 ================================================================================
 
 desktop/window.rs :: MAIN / BUBBLE / SETTINGS / OVERLAY — Window labels, matching `capabilities/default.json` exactly.
-desktop/window.rs :: COMPACT_SIZE / COMPACT_MIN_WIDTH / COMPACT_MAX_WIDTH / BUBBLE_SIZE — `(440.0, 170.0)`; compact width `440..=760` at fixed height; `84.0`.
+desktop/window.rs :: COMPACT_SIZE / COMPACT_MIN_WIDTH / COMPACT_MAX_WIDTH / BUBBLE_SIZE — `(440.0, 170.0)`; compact width `440..=760` at fixed height; bubble window `144.0` for a 60px circle and glow margin, clamped to the work area.
 desktop/window.rs :: main_window — Resolves the chat window handle if it exists.
 desktop/window.rs :: preset_position — Pure geometry: `bottom-right | bottom-left | center` against the work area.
 desktop/window.rs :: clamp_into — Pure geometry: keeps a window inside a work area.

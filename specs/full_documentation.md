@@ -3299,7 +3299,10 @@ orchestration, and raw `windows`-crate FFI.
 ### Technical Details
 **Public constants:** `MAIN = "main"`, `BUBBLE = "bubble"`, `SETTINGS = "settings"`,
 `OVERLAY = "overlay"`, `COMPACT_SIZE = (440.0, 170.0)`, compact width bounds
-`440..=760` logical px at a fixed `170` px height, `BUBBLE_SIZE = 84.0`.
+`440..=760` logical px at a fixed `170` px height, `BUBBLE_SIZE = 144.0`
+(the transparent bubble window leaves room around the 60px circular launcher
+for its soft glow). Default placement compensates for the added transparent
+margin and clamps the larger window onto the monitor work area.
 
 **Key geometry constants:**
 
@@ -3328,7 +3331,7 @@ orchestration, and raw `windows`-crate FFI.
 | Window | Created where | Key flags | URL |
 | --- | --- | --- | --- |
 | `main` | `tauri.conf.json` (declarative, hidden) | `480×640`, min `380×160`, max `760`, `decorations:false`, `transparent:true`, `shadow:false`, `skipTaskbar:true`, `visible:false` | `index.html#/` |
-| `bubble` | `create_bubble` (lazy, idempotent) | `84×84`, undecorated, transparent, `always_on_top`, `skip_taskbar`, `focused:false` | `index.html#/bubble` |
+| `bubble` | `create_bubble` (lazy, idempotent) | `144×144`, undecorated, transparent, `always_on_top`, `skip_taskbar`, `focused:false`; centered 60px circular launcher with soft circular glow | `index.html#/bubble` |
 | `settings` | `ensure_settings` (startup, hidden, idempotent) | `1000×h`, min `720×520`, max `1400×1000`, centered, transparent, `visible:false` | `index.html#/settings/general` |
 | `overlay` | `create_overlay` (startup + on demand) | `480×656` (= `176 + 2×240`), undecorated, transparent, `always_on_top`, `skip_taskbar`, **`focusable:false`** | `index.html#/overlay` |
 
