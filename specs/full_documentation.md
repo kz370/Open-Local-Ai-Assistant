@@ -432,6 +432,15 @@ menu.
   spectrum, 148×18px, 2px bars), not the rolling `.meter`. Spectrum bars are
   scaled with `transform: scaleY()` on a 0.12 floor, so a normal speaking level
   moves every bar; integer-pixel heights in a 14px box stayed visually flat.
+- **Destination app tab:** `.overlay-app-tab` is a narrow, centered label above
+  the dictation card, using the card's `--popover` surface and `--hairline`
+  border, rounded upper corners and angled side edges, vertically centered
+  high-contrast text, and a lower edge 4px over the card. Long app names wrap
+  and grow the tab upward to a 72px cap, matching the native clip region. It
+  displays the current target window
+  title while listening, transcribing, correcting or reviewing; its native
+  rounded window region is merged with the card region so its overhang remains
+  visible without making the surrounding transparent area interactive.
 
 ### Business Logic
 - **The single breakpoint:**
@@ -462,6 +471,11 @@ menu.
   (`MENU_RECT` in `window.rs`), tracked in a module-level `menuOwner` so only
   the pill that opened it may take it away — otherwise a close-then-open pair
   can arrive out of order and leave a menu invisible.
+- **Live target tracking:** `dictation://target` updates the tab when focus
+  moves to another external application. A session-scoped watcher ignores
+  Open Local Assistant's own windows and continues through review; review
+  confirmation refreshes the foreground destination before restoring focus and
+  inserting.
 - **Searchable profile list:** from `profileSearchThreshold` profiles (default
   10) the profile dropdown grows a filter row above its options. The row counts
   as one row in the menu height so the widened window clip still matches.
@@ -615,7 +629,7 @@ length**, clears an `activeProfile` that matches nothing, and clamps
 `IncompatibleModel`, `DownloadProgress`, `McpServerConfig`, `ToolView`,
 `ServerStatus`, `PublicSearxInstance`, `SearchTestResult`, `ImportCandidate`,
 `GpuInfo`, `HardwareInfo`, `CapabilityReport`, `AppInfo`, `PrivacyStatus`,
-`DictationEntry`, `DictationStateEvent`.
+`DictationEntry`, `DictationStateEvent`, `DictationTargetEvent`.
 
 ### Business Logic
 - **Nullability convention:** the prevailing style is **required property +
@@ -1064,7 +1078,7 @@ a **command router**, and asserts on accessible names and IPC argument tuples.
 | File | Cases | Focus |
 | --- | --- | --- |
 | `src/test/setup.ts` | — | Global mocks |
-| `src/test/ui.test.tsx` | 18 | Text direction, `SpokenText`, `MessageBubble`, chat store streaming, `Composer`, `CallView`, shortcuts |
+| `src/test/ui.test.tsx` | 19 | Text direction, `SpokenText`, `MessageBubble`, chat store streaming, `Composer`, `CallView`, dictation destination-tab updates, shortcuts |
 | `src/test/mcpDropdown.test.tsx` | 6 | The composer MCP dropdown: only Settings-enabled servers listed, chip hidden when none are enabled, switches off by default and per-chat, `mcp://changed` handled live (including a server enabled mid-conversation), the gear opening the MCP settings section |
 | `src/test/settings.test.tsx` | 18 + 13 | Every settings section mounts; model manager; model picker; bubble click and custom-drag behavior; web search round-trip |
 | `src/test/selection.test.tsx` | 5 | Right-click selection menu and the explain pop-up |
@@ -3337,6 +3351,7 @@ launcher drag so it realigns.
 | `MENU_ROOM` | `240.0` | Invisible room above **and** below the card so the language menu can hang outside without moving the window; sized for 8 rows + gap |
 | `CARD_MARGIN` | `8.0` | **Must match CSS `.overlay-card`** |
 | `CARD_RADIUS` / `MENU_RADIUS` / `MENU_SHADOW` | `18.0` / `10.0` / `14.0` | Must match the CSS radii and leave room for the menu shadow |
+| `APP_TAB_HEIGHT` / `APP_TAB_WIDTH_INSET` / `APP_TAB_OVERLAP` | `72.0` / `36.0` / `4.0` | Maximum native clip height, horizontal inset and overlap for the growing destination tab |
 
 **Statics:** `SUPPRESS_UNTIL: AtomicU64` (ms epoch) and
 `MENU_RECT: Mutex<Option<[f64; 4]>>` (logical rect of the open overlay menu).
@@ -3348,7 +3363,7 @@ launcher drag so it realigns.
 | `main` | `tauri.conf.json` (declarative, hidden) | `480×640`, min `380×160`, max `760`, `decorations:false`, `transparent:true`, `shadow:false`, `skipTaskbar:true`, `visible:false` | `index.html#/` |
 | `bubble` | `create_bubble` (lazy, idempotent) | `144×144`, undecorated, transparent, `always_on_top`, `skip_taskbar`, `focused:false`; centered 60px circular launcher with soft circular glow | `index.html#/bubble` |
 | `settings` | `ensure_settings` (startup, hidden, idempotent) | `1000×h`, min `720×520`, max `1400×1000`, centered, transparent, `visible:false` | `index.html#/settings/general` |
-| `overlay` | `create_overlay` (startup + on demand) | `480×656` (= `176 + 2×240`), undecorated, transparent, `always_on_top`, `skip_taskbar`, **`focusable:false`** | `index.html#/overlay` |
+| `overlay` | `create_overlay` (startup + on demand) | `480×656` (= `176 + 2×240`), undecorated, transparent, `always_on_top`, `skip_taskbar`, **`focusable:false`**; native region includes the destination-app tab above the card | `index.html#/overlay` |
 
 **Overlay construction order matters:** `suppress_persistence()` is called
 **before** attaching the `Moved` listener, because window construction itself can
@@ -3409,9 +3424,12 @@ navigation is dead. It is invisible when healthy.
 the window style is rebuilt — restoring it from minimized, toggling always-on-top,
 or showing it again right after a hide."
 
-`remember_target` stores `GetForegroundWindow()` into `state.dictation_target`
-unless it is `0` or the overlay's own HWND; `restore_target` calls
-`SetForegroundWindow` on it.
+`remember_target` stores the foreground external window in
+`state.dictation_target`. A session-scoped watcher refreshes it while listening,
+transcribing, correcting and reviewing, ignoring this application's own windows;
+each change emits `dictation://target` with the new window title.
+`restore_target` refreshes once more before calling `SetForegroundWindow`, so a
+review insert targets the most recently focused external app.
 
 ### Platform-specific code — Win32 usage
 
@@ -3559,7 +3577,8 @@ press (Alt+Tab, etc)."
 clear the cancel flag ("a fresh session owns the cancel flag, clearing a stale
 Esc"); `remember_target`; then `voice.start(Dictation)`. On failure it **still
 shows the overlay** and emits `dictation://state` with the error, so the overlay
-shows the failure rather than nothing happening.
+shows the failure rather than nothing happening. On success, a generation-bound
+watcher tracks the focused app until dictation and any review are complete.
 
 ### Platform-specific code — the modifier watcher (Windows only)
 There is **no non-Windows counterpart**: modifier-only shortcuts are refused with

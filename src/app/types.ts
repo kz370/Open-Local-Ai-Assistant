@@ -532,3 +532,7 @@ export interface DictationStateEvent {
   error?: AppErrorPayload;
   result?: { raw: string; inserted: string; corrected: boolean; correctionError: string | null };
 }
+
+export interface DictationTargetEvent {
+  targetApp: string | null;
+}

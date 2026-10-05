@@ -5,7 +5,7 @@ use crate::services::stt::session::ListenMode;
 use crate::state::AppState;
 use std::collections::HashMap;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutEvent, ShortcutState};
 
@@ -140,16 +140,20 @@ pub fn start_dictation(app: &AppHandle) {
     {
         return;
     }
-    state
+    let generation = state
         .dictation_session_generation
-        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        + 1;
     // Fresh session owns the cancel flag (clears a stale Esc).
     state
         .dictation_cancel
         .store(false, std::sync::atomic::Ordering::Relaxed);
     window::remember_target(app);
     match state.voice.start(ListenMode::Dictation) {
-        Ok(_) => window::show_overlay(app),
+        Ok(_) => {
+            window::show_overlay(app);
+            watch_dictation_target(app.clone(), generation);
+        }
         Err(e) => {
             window::show_overlay(app);
             let _ = app.emit(
@@ -158,6 +162,44 @@ pub fn start_dictation(app: &AppHandle) {
             );
         }
     }
+}
+
+fn watch_dictation_target(app: AppHandle, generation: u64) {
+    thread::spawn(move || {
+        let mut last_active = Instant::now();
+        let mut publish_initial = true;
+        loop {
+            let state = app.state::<AppState>();
+            if state
+                .dictation_session_generation
+                .load(std::sync::atomic::Ordering::Relaxed)
+                != generation
+            {
+                break;
+            }
+            let reviewing = state
+                .dictation_review
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .is_some();
+            let active = state.voice.active_mode() == Some(ListenMode::Dictation)
+                || state
+                    .dictation_busy
+                    .load(std::sync::atomic::Ordering::Relaxed)
+                || reviewing;
+            if active {
+                last_active = Instant::now();
+                let changed = window::refresh_dictation_target(&app);
+                if publish_initial || changed {
+                    window::publish_dictation_target(&app);
+                    publish_initial = false;
+                }
+            } else if last_active.elapsed() >= Duration::from_secs(2) {
+                break;
+            }
+            thread::sleep(Duration::from_millis(100));
+        }
+    });
 }
 
 /// Tray entry: start dictation, or stop and insert if already listening.

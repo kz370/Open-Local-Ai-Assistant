@@ -534,9 +534,9 @@ desktop/window.rs :: hide_to_tray / minimize_to_bubble / toggle_main — Hide pa
 desktop/window.rs :: on_main_window_event — Persistence rules for `Moved`, `Resized` and `CloseRequested`.
 desktop/window.rs :: toggle_maximize / set_compact — Window chrome operations.
 desktop/window.rs :: ensure_settings / open_settings — The settings window is created once and never destroyed; navigation goes through `app://navigate`.
-desktop/window.rs :: remember_target / restore_target — Win32 `GetForegroundWindow` / `SetForegroundWindow` for dictation.
+desktop/window.rs :: remember_target / refresh_dictation_target / restore_target / publish_dictation_target — Tracks the latest external foreground app for Auto Insert and review confirmation, publishes its window title, and restores focus before inserting.
 desktop/window.rs :: set_overlay_menu / set_overlay_review / discard_review / create_overlay / show_overlay / hide_overlay / reset_overlay_position / cancel_dictation — Dictation overlay lifecycle and window-region clipping.
-desktop/window.rs :: SETTINGS_H / MARGIN / OVERLAY_W / OVERLAY_H / OVERLAY_BOTTOM_GAP / MENU_ROOM / CARD_MARGIN / CARD_RADIUS — Private geometry constants mirrored by `settings.css`.
+desktop/window.rs :: SETTINGS_H / MARGIN / OVERLAY_W / OVERLAY_H / OVERLAY_BOTTOM_GAP / MENU_ROOM / CARD_MARGIN / CARD_RADIUS / APP_TAB_HEIGHT / APP_TAB_WIDTH_INSET / APP_TAB_OVERLAP — Private geometry constants mirrored by `settings.css`; native tab clip tracks the 408px-wide tab growing up to 72px.
 desktop/window.rs :: SUPPRESS_UNTIL / MENU_RECT — Statics: the 700 ms programmatic-move suppression window and the open overlay-menu rect.
 desktop/window.rs :: app://window-shown — Emitted to `MAIN` before the webview is shown: `{origin, animated, fx, fy}`.
 desktop/window.rs :: app://window-closing — Emitted to `MAIN`: `{fx, fy}`.
@@ -588,7 +588,7 @@ src/app/types.ts :: AudioDevice / VoiceInfo / CatalogEntry / InstalledModel / In
 src/app/types.ts :: McpServerConfig / ToolView / ServerStatus / ImportCandidate — MCP payloads.
 src/app/types.ts :: PublicSearxInstance / SearchTestResult — SearXNG payloads.
 src/app/types.ts :: GpuInfo / HardwareInfo / CapabilityReport / AppInfo / PrivacyStatus — Machine and privacy payloads.
-src/app/types.ts :: DictationEntry / DictationStateEvent — Dictation payloads; `DictationStateEvent` includes the `reviewing` preview state and has the only 3 optional properties besides `Message`/`Source`.
+src/app/types.ts :: DictationEntry / DictationStateEvent / DictationTargetEvent — Dictation payloads; state events include the `reviewing` preview state, while target events carry the current focused window title.
 
 src/app/chatStore.ts :: useChat — Zustand store: 12 state fields, 17 actions, the send queue, the confirmation dialog and error banners.
 src/app/chatStore.ts :: ToolStatus / UiToolActivity / UiMessage / QueuedMessage — View-model types.
@@ -674,7 +674,7 @@ src/components/voice/VoiceBars.tsx :: VoiceBars — 24-band spectrum bars for th
 
 src/pages/Bubble/Bubble.tsx :: Bubble — The 60x60 launcher circle; draggable only with custom chat positioning, morphs into the chat window and mirrors voice/dictation state.
 src/pages/Chat/ChatApp.tsx :: ChatApp — The chat window: header, message list, composer, history, call view, tool confirmation, selection menu; holds dictation-active state through review preparation.
-src/pages/Overlay/Overlay.tsx :: Overlay — The always-on-top dictation card: live voice spectrum (VoiceBars from the `level` event's `bands`), review-aware action labels, immediate editable preview, transcription feedback, readable target window title when available, Copy fallback, globally handled review shortcuts, and temporary suspension of configured global shortcuts during review.
+src/pages/Overlay/Overlay.tsx :: Overlay — The always-on-top dictation card with a clipped destination-app tab updated on foreground changes, live voice spectrum, review-aware actions, immediate editable preview, Copy fallback, global review shortcuts, and temporary suspension of configured global shortcuts during review.
 src/pages/Settings/SettingsApp.tsx :: SettingsApp — The 13-section dashboard shell with sidebar live search, jump highlighting and `app://navigate` routing.
 src/pages/Settings/searchIndex.ts :: SEARCH_INDEX — The search index built from `strings.en.json` label and hint keys.
 src/pages/Settings/sections/About.tsx :: AboutSection — Version, licence, build and repository links.
@@ -755,7 +755,7 @@ src-tauri/src/bin/gpu_probe.rs :: (diagnostic) — Standalone CUDA speech probe;
 
 --- Frontend tests in src/test/ ---
 src/test/setup.ts :: (harness) — Mocks `@tauri-apps/api/core`, `api/event`, `plugin-opener`, `plugin-dialog` and stubs `window.matchMedia`.
-src/test/ui.test.tsx :: 26 cases — text direction, SpokenText, MessageBubble (incl. the no-raw-HTML guard), chat-store streaming and queueing, Composer, CallView, live dictation review preview, accelerator building, and the Tauri capability file.
+src/test/ui.test.tsx :: 27 cases — text direction, SpokenText, MessageBubble (incl. the no-raw-HTML guard), chat-store streaming and queueing, Composer, CallView, live dictation review preview and destination-app tab updates, accelerator building, and the Tauri capability file.
 src/test/settings.test.tsx :: 20 cases — every section mounts, model manager, model picker, bubble click and custom-drag behavior, web-search round trip.
 src/test/selection.test.tsx :: 5 cases — right-click selection menu and the explain pop-up.
 src/test/history.test.tsx :: 4 cases — recency grouping, empty state, delete resets the last-conversation pointer, a DB failure is not shown as empty.

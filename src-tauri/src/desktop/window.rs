@@ -887,19 +887,52 @@ fn overlay_hwnd(app: &AppHandle) -> isize {
         .unwrap_or(0)
 }
 
-/// Remembers which window had focus when dictation started, so a reviewed
-/// result can be typed back into it after the overlay took focus.
-pub fn remember_target(app: &AppHandle) {
-    let fg = foreground_window();
-    if fg != 0 && fg != overlay_hwnd(app) {
-        app.state::<AppState>()
-            .dictation_target
-            .store(fg, Ordering::Relaxed);
+fn is_own_window(app: &AppHandle, raw: isize) -> bool {
+    [MAIN, BUBBLE, SETTINGS, OVERLAY].iter().any(|label| {
+        app.get_webview_window(label)
+            .and_then(|window| window.hwnd().ok())
+            .is_some_and(|hwnd| hwnd.0 as isize == raw)
+    })
+}
+
+/// Captures the newly focused external window, ignoring this application's
+/// own surfaces. Returns whether the destination handle changed.
+pub fn refresh_dictation_target(app: &AppHandle) -> bool {
+    let foreground = foreground_window();
+    if foreground == 0 || is_own_window(app, foreground) {
+        return false;
     }
+    app.state::<AppState>()
+        .dictation_target
+        .swap(foreground, Ordering::Relaxed)
+        != foreground
+}
+
+/// Publishes the current destination app to the dictation overlay.
+pub fn publish_dictation_target(app: &AppHandle) {
+    let _ = app.emit(
+        "dictation://target",
+        serde_json::json!({ "targetApp": dictation_target_name(app) }),
+    );
+}
+
+/// Remembers the external window focused when dictation starts, clearing stale
+/// destinations if dictation was started from one of this app's own windows.
+pub fn remember_target(app: &AppHandle) {
+    let foreground = foreground_window();
+    let target = if foreground != 0 && !is_own_window(app, foreground) {
+        foreground
+    } else {
+        0
+    };
+    app.state::<AppState>()
+        .dictation_target
+        .store(target, Ordering::Relaxed);
 }
 
 /// Gives keyboard focus back to the window dictation started in.
 pub fn restore_target(app: &AppHandle) {
+    refresh_dictation_target(app);
     focus_hwnd(
         app.state::<AppState>()
             .dictation_target
@@ -963,6 +996,9 @@ static MENU_RECT: Mutex<Option<[f64; 4]>> = Mutex::new(None);
 /// .overlay-card / .overlay-lang-menu).
 const CARD_MARGIN: f64 = 8.0;
 const CARD_RADIUS: f64 = 18.0;
+const APP_TAB_HEIGHT: f64 = 72.0;
+const APP_TAB_WIDTH_INSET: f64 = 36.0;
+const APP_TAB_OVERLAP: f64 = 4.0;
 const MENU_RADIUS: f64 = 10.0;
 const MENU_SHADOW: f64 = 14.0;
 
@@ -1044,7 +1080,7 @@ fn set_overlay_activatable(_app: &AppHandle, w: &WebviewWindow, activatable: boo
 }
 
 /// Clips the overlay window to the card plus its shadow margin, and the open
-/// language menu plus its shadow, each with rounded corners following the
+/// language menu plus its shadow and destination-app tab, each with rounded corners following the
 /// element's own (`clip`); or removes the clip while the overlay is hidden.
 /// Nothing else of the window is drawn or clickable: its transparent room
 /// would otherwise show as a dim box and block clicks to the app behind.
@@ -1081,6 +1117,16 @@ fn set_overlay_region(app: &AppHandle, w: &WebviewWindow, clip: bool) {
                 d,
                 d,
             );
+            let tab = CreateRoundRectRgn(
+                px(APP_TAB_WIDTH_INSET),
+                room + px(CARD_MARGIN - APP_TAB_OVERLAP - APP_TAB_HEIGHT),
+                size.width as i32 - px(APP_TAB_WIDTH_INSET) + 1,
+                room + px(CARD_MARGIN - APP_TAB_OVERLAP) + 1,
+                px(10.0) * 2,
+                px(10.0) * 2,
+            );
+            CombineRgn(Some(card), Some(card), Some(tab), RGN_OR);
+            let _ = DeleteObject(HGDIOBJ(tab.0));
             if let Some([x, y, mw, mh]) = menu {
                 let s = MENU_SHADOW;
                 let d = px(MENU_RADIUS + s) * 2;

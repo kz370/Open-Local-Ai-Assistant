@@ -648,10 +648,37 @@ html.overlay {
   /* Small enough to fade out inside the 8px margin: the window is clipped just
      outside it (CARD_MARGIN in window.rs), so a bigger shadow gets cut off. */
   box-shadow: 0 1px 6px rgba(0, 0, 0, 0.3);
-  overflow: hidden;
+  overflow: visible;
 }
 .overlay-card.done {
   border-color: color-mix(in srgb, var(--success) 50%, var(--hairline));
+}
+.overlay-app-tab {
+  position: absolute;
+  z-index: 2;
+  bottom: calc(100% - 4px);
+  left: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: calc(100% - 56px);
+  min-height: 24px;
+  max-height: 72px;
+  padding: 4px 14px;
+  overflow: hidden;
+  transform: translateX(-50%);
+  clip-path: polygon(6% 0, 94% 0, 100% 100%, 0 100%);
+  border: 1px solid var(--hairline);
+  border-radius: 14px 14px 3px 3px;
+  background: var(--popover);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+  color: var(--text);
+  font-size: var(--text-xs);
+  font-weight: 650;
+  line-height: 1.2;
+  text-align: center;
+  overflow-wrap: anywhere;
+  pointer-events: none;
 }
 .overlay-head {
   display: flex;

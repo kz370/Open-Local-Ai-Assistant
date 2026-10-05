@@ -4,7 +4,7 @@ import { getCurrentWindow, PhysicalPosition } from "@tauri-apps/api/window";
 import { ipc, on } from "../../app/ipc";
 import { useSettings } from "../../app/settingsStore";
 import { errorMessage, t } from "../../app/strings";
-import type { DictationProfile, DictationStateEvent, LanguageEntry, VoiceEvent } from "../../app/types";
+import type { DictationProfile, DictationStateEvent, DictationTargetEvent, LanguageEntry, VoiceEvent } from "../../app/types";
 import { textDir } from "../../components/common/controls";
 import { VoiceBars } from "../../components/voice/VoiceBars";
 
@@ -273,6 +273,9 @@ export function Overlay() {
   useEffect(() => {
     document.documentElement.classList.add("overlay");
     const subs = [
+      on<DictationTargetEvent>("dictation://target", (e) => {
+        setTargetApp(e.targetApp);
+      }),
       on<DictationStateEvent>("dictation://state", (e) => {
         if (e.state === "idle" && (previewRef.current || reviewDoneRef.current)) return;
         if (e.state === "reviewing" && reviewDoneRef.current) return;
@@ -367,6 +370,10 @@ export function Overlay() {
   }, [reviewEditorOpen]);
 
   const listening = state === "listening";
+  const targetTracking = listening
+    || state === "transcribing"
+    || state === "correcting"
+    || reviewEditorOpen;
   let icon = (
     <span className="overlay-rec" aria-hidden>
       <Mic size={12} />
@@ -452,6 +459,15 @@ export function Overlay() {
 
   return (
     <div className={`overlay-card${state === "inserted" ? " done" : ""}`} role="status" aria-live="polite">
+      {targetTracking && (
+        <div
+          className="overlay-app-tab"
+          title={targetApp ?? t("overlay.targetWaiting")}
+          aria-label={targetApp ? t("overlay.targetWindow", { app: targetApp }) : t("overlay.targetWaiting")}
+        >
+          {targetApp ?? t("overlay.targetWaiting")}
+        </div>
+      )}
       {/* Header: what is happening, the language, and close. Drag to move;
           double-click puts the overlay back in its default spot. */}
       <div

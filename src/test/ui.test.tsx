@@ -370,6 +370,23 @@ describe("Overlay review preview", () => {
     expect(screen.getByRole("textbox")).toHaveValue("final words");
   });
 
+  it("shows and updates the focused destination app tab while listening and reviewing", () => {
+    render(<Overlay />);
+    emit("dictation://state", { state: "listening" });
+    emit("dictation://target", { targetApp: "Notepad" });
+    expect(document.querySelector(".overlay-app-tab")).toHaveTextContent("Notepad");
+
+    emit("dictation://target", { targetApp: "Visual Studio Code" });
+    expect(document.querySelector(".overlay-app-tab")).toHaveTextContent("Visual Studio Code");
+
+    emit("dictation://state", {
+      state: "review",
+      result: { raw: "spoken words", inserted: "spoken words", corrected: false, correctionError: null },
+    });
+    emit("dictation://target", { targetApp: "Word" });
+    expect(document.querySelector(".overlay-app-tab")).toHaveTextContent("Word");
+  });
+
   it("supports cancel, retry, and insert shortcuts without taking Alt+Enter", () => {
     render(<Overlay />);
     emit("dictation://state", {
