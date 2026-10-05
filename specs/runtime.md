@@ -271,11 +271,12 @@ coverage completeness but are **not** deep-analysed: they carry no code semantic
 - `/src-tauri/icons/android/values/ic_launcher_background.xml`
 - `/src-tauri/models/` sample `.onnx` model file
 
-### 18. Release Notes (3)
+### 18. Release Notes (4)
 
 - `/release-notes/v0.1.0.md`
 - `/release-notes/v1.0.0.md`
 - `/release-notes/v1.1.0.md`
+- `/release-notes/v1.2.0.md`
 
 ---
 
@@ -331,8 +332,9 @@ coverage completeness but are **not** deep-analysed: they carry no code semantic
 
 ### 17. Binary Assets (64) — INVENTORIED (excluded from line analysis)
 
-### 18. Release Notes (3) — COMPLETE
-`release-notes/v0.1.0.md`, `release-notes/v1.0.0.md`, `release-notes/v1.1.0.md`
+### 18. Release Notes (4) — COMPLETE
+`release-notes/v0.1.0.md`, `release-notes/v1.0.0.md`, `release-notes/v1.1.0.md`,
+`release-notes/v1.2.0.md`
 
 ---
 
@@ -399,3 +401,4 @@ coverage completeness but are **not** deep-analysed: they carry no code semantic
 - [2026-10-05T19:47:00Z] Reworked the destination tab's upper corner points in both clip paths to make the rounding read clearly and flow into continuously widening trapezoid sides.
 - [2026-10-05T19:52:00Z] Replaced hard-coded destination-tab text colors with the active theme's `--accent` token.
 - [2026-10-05T19:53:00Z] Bumped the app version from 1.1.0 to 1.2.0 across the npm, Cargo and Tauri manifests and lockfiles; synchronized specification version headers. GitHub's Windows release build is triggered by pushing tag `v1.2.0`.
+- [2026-10-05T20:32:00Z] Added `release-notes/v1.2.0.md` covering dictation destination tracking and global review shortcuts, launcher alignment and glow, compact chat resizing, and the 1.2.0 download/requirements guidance. Updated the release-note inventory and count in this file.

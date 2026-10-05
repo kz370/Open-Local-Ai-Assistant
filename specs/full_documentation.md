@@ -1381,13 +1381,13 @@ Gemini, Hugging Face, SearXNG (own instance), searx.space (public instance
 list), DuckDuckGo, GitHub, NVIDIA, plus user-configured MCP servers. Each
 third-party privacy policy is linked explicitly.
 
-#### File: `/release-notes/v0.1.0.md`, `/release-notes/v1.0.0.md` and `/release-notes/v1.1.0.md`
+#### File: `/release-notes/v0.1.0.md`, `/release-notes/v1.0.0.md`, `/release-notes/v1.1.0.md` and `/release-notes/v1.2.0.md`
 
 ### Purpose
 Published release notes.
 
 ### Summary
-27, 29 and 33 lines. Each states the version, licence and provider
+27, 29, 33 and 27 lines. Each states the version, licence and provider
 requirements, names the two download artefacts, and repeats the not-code-signed
 SmartScreen guidance with the `Get-FileHash` verification instruction.
 
@@ -1401,9 +1401,11 @@ changes are claimed between 0.1.0 and 1.0.0.**
 dictation profiles and lists the Windows dictation fixes (scancode injection, the
 live-typing desync, the capture restart handshake, the frozen meter, the header
 overflow) under **Fixed**, and states that profiles need a correction model.
-Downloads are named for `1.1.0`; the installer and release scripts read the
-version from `Cargo.toml`, so the file name and `tauri.conf.json` must agree
-with it.
+`v1.2.0` adds foreground-app destination tracking in the dictation overlay,
+global review shortcuts, launcher alignment with chat positioning, and
+horizontal compact-chat resizing. Downloads are named for each version; the
+installer and release scripts read the version from `Cargo.toml`, so the file
+name and `tauri.conf.json` must agree with it.
 
 #### File: `/src-tauri/icons/android/mipmap-anydpi-v26/ic_launcher.xml` and `/src-tauri/icons/android/values/ic_launcher_background.xml`
 
