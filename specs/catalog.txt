@@ -694,7 +694,7 @@ src/main.tsx :: (root) — Hash route selection, settings/voice bootstrap, first
 === FRONTEND: styles/ ===
 ================================================================================
 
-src/styles/settings.css :: .overlay-app-tab — Centered destination tab with rounded upper corners, a narrower top, angled widening sides and a visible full bottom outline.
+src/styles/settings.css :: .overlay-app-tab — Centered destination tab with rounded upper corners, a narrower top, angled widening sides, visible full bottom outline, separately styled labels, and text colored by the active theme's `--accent`.
 
 ================================================================================
 === TESTS ===

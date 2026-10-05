@@ -396,3 +396,5 @@ coverage completeness but are **not** deep-analysed: they carry no code semantic
 - [2026-10-05T19:35:00Z] Increased the destination tab's vertical text padding slightly for more breathing room. Updated `settings.css` and `full_documentation.md`.
 - [2026-10-05T19:40:00Z] Split the destination tab's “Insert into:” prefix and app name into separately classed spans, while preserving the combined accessible label and unknown-target fallback. Added a separate localized prefix string and updated UI coverage and specs.
 - [2026-10-05T19:42:00Z] Made the “Insert into:” prefix heavier than the app name using its dedicated CSS class; documented the typography distinction.
+- [2026-10-05T19:47:00Z] Reworked the destination tab's upper corner points in both clip paths to make the rounding read clearly and flow into continuously widening trapezoid sides.
+- [2026-10-05T19:52:00Z] Replaced hard-coded destination-tab text colors with the active theme's `--accent` token.

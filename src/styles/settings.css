@@ -769,16 +769,26 @@ html.overlay {
   padding: 10px 16px;
   overflow: hidden;
   transform: translateX(-50%);
-  clip-path: polygon(8% 0,
-      6% 1%,
-      4% 3%,
-      2% 6%,
-      0 100%,
-      100% 100%,
-      98% 6%,
-      96% 3%,
-      94% 1%,
-      92% 0);
+  clip-path: polygon(
+    11% 0,
+    10.8% 2%,
+    10.2% 5%,
+    9.2% 8%,
+    8.3% 11%,
+    7.8% 14%,
+    7.3% 17%,
+    7% 20%,
+    0 100%,
+    100% 100%,
+    93% 20%,
+    92.7% 17%,
+    92.2% 14%,
+    91.7% 11%,
+    90.8% 8%,
+    89.8% 5%,
+    89.2% 2%,
+    89% 0
+  );
   background: var(--hairline);
   color: var(--text);
   font-size: var(--text-xs);
@@ -794,16 +804,26 @@ html.overlay {
   position: absolute;
   z-index: 0;
   inset: 1px;
-  clip-path: polygon(8% 0,
-      6% 1%,
-      4% 3%,
-      2% 6%,
-      0 100%,
-      100% 100%,
-      98% 6%,
-      96% 3%,
-      94% 1%,
-      92% 0);
+  clip-path: polygon(
+    11% 0,
+    10.8% 2%,
+    10.2% 5%,
+    9.2% 8%,
+    8.3% 11%,
+    7.8% 14%,
+    7.3% 17%,
+    7% 20%,
+    0 100%,
+    100% 100%,
+    93% 20%,
+    92.7% 17%,
+    92.2% 14%,
+    91.7% 11%,
+    90.8% 8%,
+    89.8% 5%,
+    89.2% 2%,
+    89% 0
+  );
   background: var(--popover);
 }
 
@@ -818,13 +838,13 @@ html.overlay {
   -webkit-line-clamp: 2;
   display: -webkit-box;
   font-style: italic;
-  color: #ca7b14;
-    font-weight: 400;
+  color: var(--accent);
+  font-weight: 400;
 }
 
 .overlay-app-tab-prefix {
   font-weight: 750;
-  color: #ca7b14
+  color: var(--accent);
 }
 
 .overlay-head {
