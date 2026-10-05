@@ -786,6 +786,9 @@ src/pages/Overlay/Overlay | invokes | ipc.dictationCancel / ipc.dictationConfirm
 src/pages/Overlay/Overlay | invokes | ipc.shortcutsCapture(true/false) (suspend global app shortcuts during review editing)
 desktop::shortcuts::handle | emits_to | overlay | dictation://review-shortcut (global insert / retry / cancel action)
 commands::dictation_insert_now / lib::run_dictation | emits | dictation://state { targetApp } (remembered destination window title)
+desktop::shortcuts::start_dictation | increments | state::AppState.dictation_session_generation
+lib::hide_overlay_later | captures | state::AppState.dictation_session_generation
+desktop::window::hide_overlay_if_session_idle | checks | state::AppState.dictation_session_generation / dictation_busy before hiding
 src/pages/Settings/SettingsApp | uses | src/app/ipc
 src/pages/Settings/SettingsApp | uses | src/app/settingsHighlight
 src/pages/Settings/SettingsApp | uses | src/app/strings

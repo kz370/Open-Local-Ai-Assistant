@@ -1141,11 +1141,45 @@ pub fn hide_overlay(app: &AppHandle) {
     if let Some(w) = app.get_webview_window(OVERLAY) {
         let app2 = app.clone();
         on_main(app, move || {
-            let _ = w.hide();
-            // Showing it again changes its styles; that must not happen while clipped.
-            set_overlay_region(&app2, &w, false);
+            hide_overlay_window(&app2, &w);
         });
     }
+}
+
+/// Hides only if the delayed dismissal still belongs to the current, idle
+/// dictation session. The check runs on the UI thread with the hide itself, so
+/// an old timer cannot hide an overlay a newer session has reopened.
+pub fn hide_overlay_if_session_idle(app: &AppHandle, generation: u64) {
+    if let Some(w) = app.get_webview_window(OVERLAY) {
+        let app2 = app.clone();
+        on_main(app, move || {
+            let state = app2.state::<AppState>();
+            if !overlay_hide_is_current_and_idle(
+                generation,
+                state.dictation_session_generation.load(Ordering::Relaxed),
+                state.voice.active_mode() == Some(ListenMode::Dictation),
+                state.dictation_busy.load(Ordering::Relaxed),
+            ) {
+                return;
+            }
+            hide_overlay_window(&app2, &w);
+        });
+    }
+}
+
+fn overlay_hide_is_current_and_idle(
+    scheduled_generation: u64,
+    current_generation: u64,
+    dictation_active: bool,
+    busy: bool,
+) -> bool {
+    scheduled_generation == current_generation && !dictation_active && !busy
+}
+
+fn hide_overlay_window(app: &AppHandle, w: &WebviewWindow) {
+    let _ = w.hide();
+    // Showing it again changes its styles; that must not happen while clipped.
+    set_overlay_region(app, w, false);
 }
 
 /// Closes the overlay right away (Esc / overlay X). Whatever is in flight is
@@ -1169,7 +1203,18 @@ pub fn cancel_dictation(app: &AppHandle) {
 
 #[cfg(test)]
 mod tests {
-    use super::{clamp_into, ease_out_cubic, lerp, preset_position, rel_logical};
+    use super::{
+        clamp_into, ease_out_cubic, lerp, overlay_hide_is_current_and_idle, preset_position,
+        rel_logical,
+    };
+
+    #[test]
+    fn stale_auto_hide_cannot_dismiss_a_new_dictation_session() {
+        assert!(!overlay_hide_is_current_and_idle(4, 5, false, false));
+        assert!(!overlay_hide_is_current_and_idle(5, 5, true, false));
+        assert!(!overlay_hide_is_current_and_idle(5, 5, false, true));
+        assert!(overlay_hide_is_current_and_idle(5, 5, false, false));
+    }
 
     #[test]
     fn presets() {

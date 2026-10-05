@@ -15,7 +15,7 @@ use crate::services::tts::TtsService;
 use crate::settings::SettingsStore;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicIsize};
+use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU64};
 use std::sync::{Arc, Mutex};
 use tokio_util::sync::CancellationToken;
 
@@ -49,6 +49,9 @@ pub struct AppState {
     pub dictation_busy: AtomicBool,
     /// Set by Esc/X cancel; consumed by run_dictation before any insert.
     pub dictation_cancel: AtomicBool,
+    /// Monotonically identifies dictation sessions so a delayed hide from an
+    /// older take cannot dismiss a newer session's overlay.
+    pub dictation_session_generation: AtomicU64,
     /// Tracks what dictation has live-typed so far this session (insert
     /// method "type" only); see `services::dictation::LiveTyper`.
     pub dictation_live_typer: crate::services::dictation::LiveTyper,

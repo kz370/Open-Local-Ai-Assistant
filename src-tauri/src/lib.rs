@@ -142,6 +142,7 @@ fn init_state(app: &AppHandle) -> Result<AppState, Box<dyn std::error::Error>> {
         model_loading: Mutex::new(Default::default()),
         dictation_busy: AtomicBool::new(false),
         dictation_cancel: AtomicBool::new(false),
+        dictation_session_generation: std::sync::atomic::AtomicU64::new(0),
         dictation_live_typer: Default::default(),
         dictation_review: Mutex::new(None),
         dictation_target: std::sync::atomic::AtomicIsize::new(0),
@@ -254,15 +255,14 @@ const LINGER_OK_MS: u64 = 800;
 const LINGER_MSG_MS: u64 = 2200;
 
 fn hide_overlay_later(app: &AppHandle, ms: u64) {
+    let generation = app
+        .state::<AppState>()
+        .dictation_session_generation
+        .load(Ordering::Relaxed);
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(std::time::Duration::from_millis(ms)).await;
-        let state = app.state::<AppState>();
-        if state.voice.active_mode() != Some(ListenMode::Dictation)
-            && !state.dictation_busy.load(Ordering::Relaxed)
-        {
-            window::hide_overlay(&app);
-        }
+        window::hide_overlay_if_session_idle(&app, generation);
     });
 }
 

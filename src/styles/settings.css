@@ -1017,6 +1017,11 @@ html.overlay {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.overlay-target {
+  color: var(--text);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
 .overlay-text {
   flex: 1;
   min-height: 0;

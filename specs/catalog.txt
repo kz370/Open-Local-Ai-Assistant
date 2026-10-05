@@ -25,6 +25,8 @@ src-tauri/src/state.rs :: AppState — Managed Tauri state: paths, Db, SettingsS
 src-tauri/src/state.rs :: AppState.downloads — `Mutex<HashMap<String, CancellationToken>>`; shared reserve table for model ids and the literal `"gpu-pack"`.
 src-tauri/src/state.rs :: AppState.model_loading — `Mutex<HashSet<String>>`; the `memory://` key namespace while a model loads.
 src-tauri/src/state.rs :: AppState.dictation_busy / dictation_cancel — `AtomicBool`; busy covers the whole take, cancel is swap-consumed.
+src-tauri/src/state.rs :: AppState.dictation_session_generation — `AtomicU64`; guards delayed overlay hides against newer dictation sessions.
+src-tauri/src/state.rs :: AppState.review_shortcuts_active — `AtomicBool`; routes temporary global review shortcut events.
 src-tauri/src/state.rs :: AppState.dictation_live_typer — `LiveTyper`; incremental typing into the foreground application.
 src-tauri/src/state.rs :: AppState.dictation_review — `Mutex<Option<ReviewPending>>`; text awaiting user confirmation.
 src-tauri/src/state.rs :: AppState.dictation_target — `AtomicIsize`; remembered foreground HWND, `0` = none.
@@ -671,7 +673,7 @@ src/components/voice/VoiceBars.tsx :: VoiceBars — 24-band spectrum bars for th
 
 src/pages/Bubble/Bubble.tsx :: Bubble — The 60x60 draggable launcher circle; morphs into the chat window and mirrors voice/dictation state.
 src/pages/Chat/ChatApp.tsx :: ChatApp — The chat window: header, message list, composer, history, call view, tool confirmation, selection menu; holds dictation-active state through review preparation.
-src/pages/Overlay/Overlay.tsx :: Overlay — The always-on-top dictation card: live voice spectrum (VoiceBars from the `level` event's `bands`), review-aware action labels, immediate editable preview, transcription feedback, target window title when available, Copy fallback, globally handled review shortcuts, and temporary suspension of configured global shortcuts during review.
+src/pages/Overlay/Overlay.tsx :: Overlay — The always-on-top dictation card: live voice spectrum (VoiceBars from the `level` event's `bands`), review-aware action labels, immediate editable preview, transcription feedback, readable target window title when available, Copy fallback, globally handled review shortcuts, and temporary suspension of configured global shortcuts during review.
 src/pages/Settings/SettingsApp.tsx :: SettingsApp — The 13-section dashboard shell with sidebar live search, jump highlighting and `app://navigate` routing.
 src/pages/Settings/searchIndex.ts :: SEARCH_INDEX — The search index built from `strings.en.json` label and hint keys.
 src/pages/Settings/sections/About.tsx :: AboutSection — Version, licence, build and repository links.

@@ -410,6 +410,17 @@ describe("Overlay review preview", () => {
     expect(invoke).toHaveBeenCalledWith("shortcuts_capture", { capturing: false, reviewShortcuts: false });
   });
 
+  it("offers Copy when the destination window cannot be identified", () => {
+    render(<Overlay />);
+    emit("dictation://state", {
+      state: "review",
+      result: { raw: "spoken words", inserted: "spoken words", corrected: false, correctionError: null },
+    });
+
+    expect(screen.getByText("Insert target unavailable · Copy text instead")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Copy" })).toBeEnabled();
+  });
+
   it("moves the spectrum bars while the microphone is picked up", () => {
     render(<Overlay />);
     emit("dictation://state", { state: "listening" });

@@ -518,7 +518,7 @@ export function Overlay() {
             }}
           />
           <div className="overlay-actions">
-            <span className="overlay-hint" title={targetApp ? t("overlay.targetWindow", { app: targetApp }) : t("overlay.targetUnknown")}>
+            <span className="overlay-hint overlay-target" title={targetApp ? t("overlay.targetWindow", { app: targetApp }) : t("overlay.targetUnknown")}>
               {error ?? (reviewReady
                 ? targetApp ? t("overlay.targetWindow", { app: targetApp }) : t("overlay.targetUnknown")
                 : t("overlay.reviewPending"))}

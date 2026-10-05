@@ -1522,7 +1522,8 @@ stays alive in the tray when all windows close.
   globally for the review's lifetime, so they work while the dictated-into app is
   focused; Esc cancellation is observed globally while dictation is busy. The
   review displays the remembered destination window title when available and
-  always offers Copy as a fallback.
+  always offers Copy as a fallback. Destination text uses the primary text token
+  with a semibold weight rather than the faint hint treatment.
 - `ChatApp` continues to treat dictation as active during this new `"reviewing"`
   preparation state, so its dictation-related UI does not resume prematurely.
 - `correction_enabled` with an empty correction model records `AppError::NoModel`
@@ -1534,7 +1535,9 @@ stays alive in the tray when all windows close.
 - `retry_dictation` returns early when transcribing or correcting (not retryable);
   otherwise it discards the review (150 ms) or stops listening, then re-arms.
 - `hide_overlay_later(ms)` hides only if no dictation session is active and the
-  machine is not busy.
+  machine is not busy, and the session generation still matches the one that
+  scheduled the hide. The generation check and hide are serialized on the UI
+  thread, preventing a stale completion timer from hiding a newer overlay.
 - `insert_and_report` distinguishes a service error (`Ok(Err(e))` → serialised
   `AppError`) from a join error (`Err(join)` → `{code: "other", detail}`), and
   writes history only when `history_enabled`, with `inserted` reflecting the real
@@ -1587,9 +1590,11 @@ pub struct AppState {
     pub downloads: Mutex<HashMap<String, CancellationToken>>,
     pub model_loading: Mutex<HashSet<String>>,
     pub dictation_busy: AtomicBool,  pub dictation_cancel: AtomicBool,
+    pub dictation_session_generation: AtomicU64,
     pub dictation_live_typer: LiveTyper,
     pub dictation_review: Mutex<Option<ReviewPending>>,
     pub dictation_target: AtomicIsize,
+    pub review_shortcuts_active: AtomicBool,
     pub shortcut_errors: Mutex<Vec<String>>,
 }
 ```

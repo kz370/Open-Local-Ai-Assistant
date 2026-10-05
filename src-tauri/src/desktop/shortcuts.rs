@@ -140,6 +140,9 @@ pub fn start_dictation(app: &AppHandle) {
     {
         return;
     }
+    state
+        .dictation_session_generation
+        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     // Fresh session owns the cancel flag (clears a stale Esc).
     state
         .dictation_cancel
