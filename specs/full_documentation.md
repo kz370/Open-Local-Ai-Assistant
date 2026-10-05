@@ -434,11 +434,11 @@ menu.
   moves every bar; integer-pixel heights in a 14px box stayed visually flat.
 - **Destination app tab:** `.overlay-app-tab` is a narrow, centered label above
   the dictation card, using an inset `--popover` layer over a `--hairline`
-  outline so the angled side edges retain the same visible border as the top.
-  Its upper corners are rounded; the top is distinctly narrower than the full-width bottom, and the
-  full “Insert into: [app]” destination label appears in the tab. The lower
-  outline is covered where the tab meets the card, joining their surfaces
-  without a separate shadow. Long app names wrap to two lines
+  outline. Its rounded upper corners lead into angled sides that widen from a
+  distinctly narrower top to the full-width bottom; the full “Insert into:
+  [app]” destination label appears in the tab with slightly roomier vertical
+  padding. The complete bottom outline, including the angled edges, remains
+  visible. Long app names wrap to two lines
   and grow the tab upward to a 48px cap, matching the native clip region. It
   displays the current target process's friendly application name while
   listening, transcribing, correcting or reviewing; its native
