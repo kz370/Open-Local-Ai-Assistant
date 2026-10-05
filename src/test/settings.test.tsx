@@ -208,6 +208,7 @@ describe("bubble", () => {
   it("opens the chat when clicked without dragging", async () => {
     vi.mocked(invoke).mockReset();
     mockBackend();
+    useSettings.setState({ settings: SETTINGS });
     const { getByRole } = render(<Bubble />);
     const bubble = getByRole("button", { name: /Open Local Assistant/i });
     fireEvent.pointerDown(bubble, { button: 0, screenX: 10, screenY: 10 });
@@ -218,6 +219,7 @@ describe("bubble", () => {
   it("does not move or open when dragged while a chat preset is locked", () => {
     vi.mocked(invoke).mockReset();
     mockBackend();
+    useSettings.setState({ settings: SETTINGS });
     const { getByRole } = render(<Bubble />);
     const bubble = getByRole("button", { name: /Open Local Assistant/i });
     fireEvent.pointerDown(bubble, { button: 0, screenX: 10, screenY: 10 });
@@ -225,6 +227,17 @@ describe("bubble", () => {
     fireEvent.pointerUp(bubble, { button: 0, screenX: 24, screenY: 24 });
     expect(bubble).not.toHaveClass("draggable");
     expect(vi.mocked(invoke)).not.toHaveBeenCalledWith("bubble_open_chat");
+  });
+
+  it("allows dragging only with custom chat positioning", () => {
+    useSettings.setState({
+      settings: {
+        ...SETTINGS,
+        general: { ...SETTINGS.general, windowPosition: "custom" },
+      },
+    });
+    const { getByRole } = render(<Bubble />);
+    expect(getByRole("button", { name: /Open Local Assistant/i })).toHaveClass("draggable");
   });
 });
 

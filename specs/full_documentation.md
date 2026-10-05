@@ -47,7 +47,7 @@ frontend bundle selected through hash routing in `src/main.tsx`:
 | Chat window | `#/` (default) | The primary conversational window. Undecorated, transparent, always-on-top-capable, shown and hidden by the global hotkey. |
 | Settings dashboard | `#/settings` | Thirteen-section settings surface with live search and jump-to-setting highlighting. |
 | Dictation overlay | `#/overlay` | A small always-on-top card shown while dictating into another application. |
-| Launcher bubble | `#/bubble` | A 60×60 draggable floating circle that morphs into the chat window. |
+| Launcher bubble | `#/bubble` | A 60×60 floating circle that follows the chat position preset and is independently draggable in custom positioning. |
 | Setup wizard | (implicit) | First-run wizard, shown when `settings.general.firstRunComplete` is false. |
 
 ### 1.1 Scope of This Documentation
@@ -351,6 +351,9 @@ drop veil, level meter, voice bars, and the call screen.
   `.msg.assistant` uses **CSS Grid** (`26px minmax(0, 1fr)`) rather than flex,
   with a comment: "Grid (not flex) so long words can never squeeze the text
   column."
+- **Launcher halo:** `.launcher-stage::before` is a 60px circular accent layer
+  blurred by 12px at 65% opacity; hover scales it only to 1.08. The reduced
+  spread keeps the glow soft without surrounding the button with a large halo.
 - **RTL:** mirroring uses `[dir="rtl"]` and `:dir(rtl)` selectors and logical
   properties, not a separate stylesheet. The user bubble's asymmetric tail radius
   flips (`18px 18px 6px 18px` → `18px 18px 18px 6px`) and right-alignment via
@@ -1063,7 +1066,7 @@ a **command router**, and asserts on accessible names and IPC argument tuples.
 | `src/test/setup.ts` | — | Global mocks |
 | `src/test/ui.test.tsx` | 18 | Text direction, `SpokenText`, `MessageBubble`, chat store streaming, `Composer`, `CallView`, shortcuts |
 | `src/test/mcpDropdown.test.tsx` | 6 | The composer MCP dropdown: only Settings-enabled servers listed, chip hidden when none are enabled, switches off by default and per-chat, `mcp://changed` handled live (including a server enabled mid-conversation), the gear opening the MCP settings section |
-| `src/test/settings.test.tsx` | 17 + 13 | Every settings section mounts; model manager; model picker; bubble; web search round-trip |
+| `src/test/settings.test.tsx` | 18 + 13 | Every settings section mounts; model manager; model picker; bubble click and custom-drag behavior; web search round-trip |
 | `src/test/selection.test.tsx` | 5 | Right-click selection menu and the explain pop-up |
 | `src/test/history.test.tsx` | 4 | Recency grouping, empty state, delete resets the last-conversation pointer, DB failure is not shown as empty |
 | `src/test/shortcutinput.test.tsx` | 3 | Shortcut capture, modifier-release ordering, single-modifier rejection |
@@ -3308,12 +3311,13 @@ for its soft glow). Default placement compensates for the added transparent
 margin and places the visible circle at the selected chat preset's 16px margin;
 the transparent glow window may extend beyond the work area while the launcher
 circle remains on-screen. The center preset centers the circle. For a custom
-chat position, the bubble aligns with the chat window's bottom-right corner. A
-the launcher is locked to the selected chat preset and cannot be dragged while
-that preset is active. In custom chat positioning, the launcher tracks the
-chat's bottom-right corner by default and can be dragged independently. Moving
-the chat or changing its position preset clears an old launcher drag so it
-realigns.
+chat position, the bubble aligns with the chat window's bottom-right corner.
+The launcher is locked to the selected chat preset and cannot be dragged while
+that preset is active; previously saved drag coordinates are ignored in preset
+modes so they cannot override placement on startup. In custom chat positioning,
+the launcher tracks the chat's bottom-right corner by default and can be dragged
+independently. Moving the chat or changing its position preset clears an old
+launcher drag so it realigns.
 
 **Key geometry constants:**
 

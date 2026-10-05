@@ -1258,9 +1258,9 @@ html.launcher-window #root {
   height: 60px;
   border-radius: 50%;
   background: color-mix(in srgb, var(--accent) 48%, transparent);
-  filter: blur(20px);
-  opacity: 0.75;
-  transform: translate(-50%, -50%) scale(1.12);
+  filter: blur(12px);
+  opacity: 0.65;
+  transform: translate(-50%, -50%) scale(1.1);
   pointer-events: none;
   transition: opacity 180ms var(--ease), transform 180ms var(--ease);
 }
@@ -1293,8 +1293,8 @@ html.launcher-window #root {
   transform: scale(1.07);
 }
 .launcher-stage:has(.launcher:hover)::before {
-  opacity: 0.9;
-  transform: translate(-50%, -50%) scale(1.2);
+  opacity: 0.8;
+  transform: translate(-50%, -50%) scale(1.08);
 }
 .launcher:active {
   transform: scale(0.95);
@@ -1329,7 +1329,7 @@ html.launcher-window #root {
   background: color-mix(in srgb, var(--danger, #f43f5e) 50%, transparent);
 }
 .launcher-stage:has(.launcher.speaking)::before {
-  opacity: 0.9;
+  opacity: 0.8;
 }
 .launcher.listening .launcher-ring,
 .launcher.speaking .launcher-ring {

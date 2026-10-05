@@ -310,6 +310,7 @@ commands::app::save_settings | calls | desktop::shortcuts::register_all
 commands::app::save_settings | calls | desktop::autostart::set_enabled
 commands::app::save_settings | calls | desktop::window::apply_position
 commands::app::save_settings | calls | desktop::window::sync_bubble_to_window_position (window-position preset changed)
+desktop::window::create_bubble | reads | general.bubble_x / general.bubble_y (only while chat positioning is custom; preset positions override stale saved coordinates)
 desktop::window::create_bubble | persists | general.bubble_x / general.bubble_y (only while chat positioning is custom)
 desktop::window::on_main_window_event | calls | desktop::window::sync_bubble_to_window_position (custom chat drag)
 desktop::window::create_bubble | calls | desktop::window::align_bubble_to_window_position (reject launcher drags while a chat preset is locked)

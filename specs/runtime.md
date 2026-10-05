@@ -338,6 +338,8 @@ coverage completeness but are **not** deep-analysed: they carry no code semantic
 
 ## Log
 
+- Fixed launcher startup precedence so chat position presets override stale saved drag coordinates; regression tests cover preset/custom placement and drag availability. Reduced the circular launcher halo from a 20px blur to 12px and softened its hover expansion.
+
 - [2026-09-27T21:50:21Z] Initialisation started. Structured reasoning mode enabled; 9-phase plan created.
 - [2026-09-27T21:50:44Z] `specs/` and `specs/diagrams/` created.
 - [2026-09-28T00:51:44Z] File discovery completed. 232 tracked files enumerated: 168 analysable, 64 binary assets.

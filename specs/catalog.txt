@@ -523,7 +523,7 @@ desktop/window.rs :: MAIN / BUBBLE / SETTINGS / OVERLAY — Window labels, match
 desktop/window.rs :: COMPACT_SIZE / COMPACT_MIN_WIDTH / COMPACT_MAX_WIDTH / BUBBLE_SIZE — `(440.0, 170.0)`; compact width `440..=760` at fixed height; bubble window `144.0` for a 60px circle and glow margin.
 desktop/window.rs :: main_window — Resolves the chat window handle if it exists.
 desktop/window.rs :: preset_position / bubble_position_for_preset / bubble_position_at_bounds — Pure geometry for chat presets and the 60px launcher centered inside its transparent glow window.
-desktop/window.rs :: sync_bubble_to_window_position / align_bubble_to_window_position — Clears a saved launcher drag on chat-position changes and keeps it locked to presets; independent launcher drag is available only in custom chat positioning.
+desktop/window.rs :: sync_bubble_to_window_position / align_bubble_to_window_position — Clears a saved launcher drag on chat-position changes, ignores saved drag coordinates for presets, and keeps the launcher locked to presets; independent launcher drag is available only in custom chat positioning.
 desktop/window.rs :: clamp_into — Pure geometry: keeps a window inside a work area.
 desktop/window.rs :: apply_position — Applies a preset, or a saved custom geometry, honouring the 50 px monitor slack.
 desktop/window.rs :: keep_off_taskbar — Re-asserts `skipTaskbar` after unminimize / show / restore.
@@ -672,7 +672,7 @@ src/components/voice/VoiceBars.tsx :: VoiceBars — 24-band spectrum bars for th
 === FRONTEND: pages/ ===
 ================================================================================
 
-src/pages/Bubble/Bubble.tsx :: Bubble — The 60x60 draggable launcher circle; morphs into the chat window and mirrors voice/dictation state.
+src/pages/Bubble/Bubble.tsx :: Bubble — The 60x60 launcher circle; draggable only with custom chat positioning, morphs into the chat window and mirrors voice/dictation state.
 src/pages/Chat/ChatApp.tsx :: ChatApp — The chat window: header, message list, composer, history, call view, tool confirmation, selection menu; holds dictation-active state through review preparation.
 src/pages/Overlay/Overlay.tsx :: Overlay — The always-on-top dictation card: live voice spectrum (VoiceBars from the `level` event's `bands`), review-aware action labels, immediate editable preview, transcription feedback, readable target window title when available, Copy fallback, globally handled review shortcuts, and temporary suspension of configured global shortcuts during review.
 src/pages/Settings/SettingsApp.tsx :: SettingsApp — The 13-section dashboard shell with sidebar live search, jump highlighting and `app://navigate` routing.
@@ -735,7 +735,7 @@ src-tauri/src/services/mcp/sources.rs :: tests — 3 — source extraction from 
 src-tauri/src/services/search/mod.rs :: tests — 10 — result normalisation, base-URL rules, instance list parsing.
 src-tauri/src/services/dictation.rs :: tests — 3 — correction guards, text finalisation, and word-boundary live typing.
 src-tauri/src/services/hardware/mod.rs :: tests — 2 — thread budget and VRAM/NVIDIA helpers.
-src-tauri/src/desktop/window.rs :: tests — 6 — pure geometry (preset, launcher alignment, clamp, monitor detection) and dictation overlay dismissal.
+src-tauri/src/desktop/window.rs :: tests — 7 — pure geometry (preset, launcher alignment, clamp, monitor detection, saved-position precedence) and dictation overlay dismissal.
 src-tauri/src/desktop/shortcuts.rs :: tests — 1 — accelerator/modifier-token classification.
 src-tauri/src/desktop/icon.rs :: tests — 2 — accent palette and rasteriser determinism.
 src-tauri/src/desktop/tray.rs :: (none) — 0.
@@ -756,7 +756,7 @@ src-tauri/src/bin/gpu_probe.rs :: (diagnostic) — Standalone CUDA speech probe;
 --- Frontend tests in src/test/ ---
 src/test/setup.ts :: (harness) — Mocks `@tauri-apps/api/core`, `api/event`, `plugin-opener`, `plugin-dialog` and stubs `window.matchMedia`.
 src/test/ui.test.tsx :: 26 cases — text direction, SpokenText, MessageBubble (incl. the no-raw-HTML guard), chat-store streaming and queueing, Composer, CallView, live dictation review preview, accelerator building, and the Tauri capability file.
-src/test/settings.test.tsx :: 19 cases (6 `it` + 1 `it.each` over 13 sections) — every section mounts, model manager, model picker, bubble, web-search round trip.
+src/test/settings.test.tsx :: 20 cases — every section mounts, model manager, model picker, bubble click and custom-drag behavior, web-search round trip.
 src/test/selection.test.tsx :: 5 cases — right-click selection menu and the explain pop-up.
 src/test/history.test.tsx :: 4 cases — recency grouping, empty state, delete resets the last-conversation pointer, a DB failure is not shown as empty.
 src/test/shortcutinput.test.tsx :: 3 cases — capture, modifier-release ordering, single-modifier rejection.

@@ -176,9 +176,10 @@ fn saved_bubble_position(
     saved_x: Option<i32>,
     saved_y: Option<i32>,
 ) -> Option<(i32, i32)> {
-    (preset == "custom")
-        .then(|| Some((saved_x?, saved_y?)))
-        .flatten()
+    if preset != "custom" {
+        return None;
+    }
+    Some((saved_x?, saved_y?))
 }
 
 fn on_any_monitor(window: &WebviewWindow, x: i32, y: i32) -> bool {
@@ -906,27 +907,6 @@ pub fn restore_target(app: &AppHandle) {
     );
 }
 
-#[test]
-fn saved_bubble_position_only_overrides_custom_chat_position() {
-    assert_eq!(
-        saved_bubble_position("bottom-right", Some(100), Some(200)),
-        None
-    );
-    assert_eq!(
-        saved_bubble_position("bottom-left", Some(100), Some(200)),
-        None
-    );
-    assert_eq!(
-        saved_bubble_position("center", Some(100), Some(200)),
-        None
-    );
-    assert_eq!(
-        saved_bubble_position("custom", Some(100), Some(200)),
-        Some((100, 200))
-    );
-    assert_eq!(saved_bubble_position("custom", Some(100), None), None);
-}
-
 /// Returns the remembered target window's title, when the handle is still
 /// valid and the target exposes a title.
 #[cfg(windows)]
@@ -1394,6 +1374,24 @@ mod tests {
             bubble_position_at_bounds("bottom-right", (200, 100), (800, 600), size, 1.0),
             (882, 582)
         );
+    }
+
+    #[test]
+    fn saved_bubble_position_only_overrides_custom_chat_position() {
+        assert_eq!(
+            saved_bubble_position("bottom-right", Some(100), Some(200)),
+            None
+        );
+        assert_eq!(
+            saved_bubble_position("bottom-left", Some(100), Some(200)),
+            None
+        );
+        assert_eq!(saved_bubble_position("center", Some(100), Some(200)), None);
+        assert_eq!(
+            saved_bubble_position("custom", Some(100), Some(200)),
+            Some((100, 200))
+        );
+        assert_eq!(saved_bubble_position("custom", Some(100), None), None);
     }
 
     #[test]
