@@ -198,6 +198,8 @@
   "voice": {
     "listening": "Listening",
     "transcribing": "Transcribing…",
+    "audioCause": "The selected microphone or its driver failed to start a capture stream. This can happen even when microphone access is enabled.",
+    "audioFix": "In Windows Settings → Privacy & security → Microphone, allow desktop apps to access the microphone. Then choose an input in the app's Settings → Voice and retry. If it persists, try another microphone or reconnect this one.",
     "stop": "Stop",
     "cancel": "Cancel",
     "noSpeech": "No speech was detected.",

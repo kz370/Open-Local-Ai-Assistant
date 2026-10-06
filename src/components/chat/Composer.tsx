@@ -140,7 +140,19 @@ export const Composer = forwardRef<ComposerHandle, { onVoiceSetup: () => void; a
       )}
       {micError && (
         <div className="voice-notice" role="alert">
-          <span>{micError.code === "stt_unavailable" ? t("voice.setupNeeded") : errorMessage(micError.code)}</span>
+          <div className="voice-diagnostic">
+            <span>{micError.code === "stt_unavailable" ? t("voice.setupNeeded") : errorMessage(micError.code)}</span>
+            {micError.code === "audio" && (
+              <>
+                <p>{t("voice.audioCause")}</p>
+                <p>{t("voice.audioFix")}</p>
+                <details>
+                  <summary>{t("errors.details")}</summary>
+                  <code>{micError.detail}</code>
+                </details>
+              </>
+            )}
+          </div>
           <span style={{ display: "flex", gap: 4 }}>
             {micError.code === "stt_unavailable" && (
               <button className="btn btn-sm" onClick={onVoiceSetup}>

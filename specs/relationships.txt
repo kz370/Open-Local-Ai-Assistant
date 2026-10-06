@@ -664,7 +664,7 @@ src/components/chat/Composer | uses | src/app/attach
 src/components/chat/Composer | uses | src/app/chatStore
 src/components/chat/Composer | uses | src/app/ipc
 src/components/chat/Composer | uses | src/app/settingsStore
-src/components/chat/Composer | uses | src/app/strings
+src/components/chat/Composer | uses | src/app/strings (audio failure cause, recovery guidance and technical-detail labels)
 src/components/chat/Composer | uses | src/app/voiceStore
 src/components/chat/Composer | uses | src/components/chat/Attachments
 src/components/chat/Composer | uses | src/components/chat/ModelPicker

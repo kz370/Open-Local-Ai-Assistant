@@ -853,6 +853,10 @@ voice/TTS backend events.
 - **`toggleMuted` is the only explicitly optimistic action** ("the button must
   react at once") but still adopts the backend's returned state as authoritative,
   and rolls back on failure.
+- **Microphone startup diagnostics:** the composer keeps the friendly audio
+  error summary, explains that OS permission does not guarantee stream startup,
+  gives Windows desktop-app access and device-selection steps, and exposes the
+  backend error detail in a disclosure for troubleshooting.
 - **`interrupt()`** is the barge-in path: stops TTS, stops the chat turn, and
   clears all speaking state. It is synchronous and does not await I/O.
 - `voiceUnavailable` degrades gracefully through `languageName()` so the notice
@@ -1084,7 +1088,7 @@ a **command router**, and asserts on accessible names and IPC argument tuples.
 | File | Cases | Focus |
 | --- | --- | --- |
 | `src/test/setup.ts` | — | Global mocks |
-| `src/test/ui.test.tsx` | 19 | Text direction, `SpokenText`, `MessageBubble`, chat store streaming, `Composer`, `CallView`, dictation destination-tab updates, shortcuts |
+| `src/test/ui.test.tsx` | 20 | Text direction, `SpokenText`, `MessageBubble`, chat store streaming, `Composer` (including microphone startup diagnostics), `CallView`, dictation destination-tab updates, shortcuts |
 | `src/test/mcpDropdown.test.tsx` | 6 | The composer MCP dropdown: only Settings-enabled servers listed, chip hidden when none are enabled, switches off by default and per-chat, `mcp://changed` handled live (including a server enabled mid-conversation), the gear opening the MCP settings section |
 | `src/test/settings.test.tsx` | 18 + 13 | Every settings section mounts; model manager; model picker; bubble click and custom-drag behavior; web search round-trip |
 | `src/test/selection.test.tsx` | 5 | Right-click selection menu and the explain pop-up |

@@ -638,7 +638,7 @@ src/app/strings.en.json :: (data) — The only string table; dotted keys consume
 
 src/components/chat/Attachments.tsx :: AttachmentList — The staged attachment chips above the composer, with per-item removal.
 src/components/chat/Attachments.tsx :: attachmentSize — Exported size formatter used by the chips.
-src/components/chat/Composer.tsx :: Composer — Text input, attachment staging, drag-and-drop, paste handling, send/stop, mic and the model chip.
+src/components/chat/Composer.tsx :: Composer — Text input, attachment staging, drag-and-drop, paste handling, send/stop, mic and the model chip; audio errors show cause, recovery steps and expandable backend detail.
 src/components/chat/Composer.tsx :: MCP_STATE_KEY — `Record<ServerStatus["state"], string>` mapping each connection state to its `status.*` string key (a disabled server shows as "Not connected").
 src/components/chat/Composer.tsx :: MCP dropdown (inside Composer) — Chip plus popover listing only the servers **enabled in Settings**; the chip is not rendered when none are. Each row is a per-chat switch, **off by default**, held in `chatStore.sessionMcpEnabled` and sent as `mcpEnabled` on every turn. The list refreshes on the `mcp://changed` event, so enabling a server in Settings takes effect on the next message of the running conversation; the first load seeds the store, later loads merge through `syncSessionMcp` so a refresh never re-enables a server the user switched off. A gear in the popover header calls `open_settings_window { section: "mcp" }`; no server state is written from the chat window. The popover is anchored to the chip's **end** edge (`.picker-menu.mcp-menu`), because a start-anchored menu ran past the window's right edge.
 src/components/chat/Composer.tsx :: ComposerHandle — Imperative handle: focus, insert text, clear.
@@ -761,7 +761,7 @@ src-tauri/src/bin/gpu_probe.rs :: (diagnostic) — Standalone CUDA speech probe;
 
 --- Frontend tests in src/test/ ---
 src/test/setup.ts :: (harness) — Mocks `@tauri-apps/api/core`, `api/event`, `plugin-opener`, `plugin-dialog` and stubs `window.matchMedia`.
-src/test/ui.test.tsx :: 27 cases — text direction, SpokenText, MessageBubble (incl. the no-raw-HTML guard), chat-store streaming and queueing, Composer, CallView, live dictation review preview and destination-app tab updates, accelerator building, and the Tauri capability file.
+src/test/ui.test.tsx :: 28 cases — text direction, SpokenText, MessageBubble (incl. the no-raw-HTML guard), chat-store streaming and queueing, Composer (incl. microphone startup diagnostics), CallView, live dictation review preview and destination-app tab updates, accelerator building, and the Tauri capability file.
 src/test/settings.test.tsx :: 20 cases — every section mounts, model manager, model picker, bubble click and custom-drag behavior, web-search round trip.
 src/test/selection.test.tsx :: 5 cases — right-click selection menu and the explain pop-up.
 src/test/history.test.tsx :: 4 cases — recency grouping, empty state, delete resets the last-conversation pointer, a DB failure is not shown as empty.

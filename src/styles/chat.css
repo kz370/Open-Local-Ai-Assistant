@@ -619,6 +619,25 @@ html[data-route="chat"] .dialog-backdrop {
   justify-content: space-between;
   gap: 6px;
 }
+.voice-diagnostic {
+  display: grid;
+  flex: 1;
+  gap: 4px;
+  min-width: 0;
+}
+.voice-diagnostic p {
+  margin: 0;
+}
+.voice-diagnostic details {
+  overflow-wrap: anywhere;
+}
+.voice-diagnostic summary {
+  cursor: pointer;
+}
+.voice-diagnostic code {
+  display: block;
+  margin-top: 4px;
+}
 .queued-text {
   min-width: 0;
   overflow: hidden;

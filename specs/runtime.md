@@ -320,7 +320,8 @@ coverage completeness but are **not** deep-analysed: they carry no code semantic
 ### 12. Frontend App Layer (14) — COMPLETE
 `src/main.tsx`, `src/vite-env.d.ts`, `app/{ipc,types,chatStore,settingsStore,voiceStore,attach,vision,providers,knownLanguages,settingsHighlight,soundTags,strings}.ts`, `app/strings.en.json`
 
-### 13. Frontend Components (22) — PENDING
+### 13. Frontend Components (22) — PARTIAL
+`src/components/chat/Composer.tsx`
 
 ### 14. Frontend Pages (16) — PENDING
 
@@ -395,6 +396,7 @@ coverage completeness but are **not** deep-analysed: they carry no code semantic
 - [2026-10-05T18:44:00Z] Floating launcher glow changed from a clipped button box-shadow to a blurred circular layer centered behind the launcher. Increased the transparent bubble window from 84×84 to 144×144 so the glow can fade fully without touching rectangular WebView bounds; the visible launcher remains 60px. Default placement compensates for the extra transparent margin and clamps to the monitor work area. Specs updated: `api_reference.md`, `full_documentation.md`, `catalog.txt`, this log.
 - [2026-10-05T18:49:00Z] The floating launcher is locked to the chat window's bottom-right, bottom-left or center preset and snaps back if dragged; the visible circle uses the 16px edge margin even though the transparent glow window extends beyond it. In custom mode it sits at the chat window's bottom-right and can be dragged independently. Moving chat or changing its preset clears old launcher coordinates and realigns it. Added preset and custom geometry tests. Specs updated: `full_documentation.md`, `catalog.txt`, `relationships.txt`, this log.
 - [2026-10-05T19:34:00Z] Refined the dictation destination tab into a rounded-top trapezoid: its top is narrower than its bottom, the angled sides widen to full width, and the entire bottom outline remains visible instead of being masked. Updated `settings.css`, `full_documentation.md` and `catalog.txt`. Files Processed remains unchanged; the pre-existing pending sections still keep its count from matching Files to Process.
+- [2026-10-06T12:50:00Z] Microphone startup errors in the chat composer now explain that OS permission alone does not guarantee stream startup, give Windows access/device-selection recovery steps, and expose the backend error under Technical details. Added a UI regression case and updated the API, component, relationship, and full-documentation specs. The Files to Process inventory and file counts are unchanged; existing incomplete sections remain as previously recorded.
 - [2026-10-05T19:35:00Z] Increased the destination tab's vertical text padding slightly for more breathing room. Updated `settings.css` and `full_documentation.md`.
 - [2026-10-05T19:40:00Z] Split the destination tab's “Insert into:” prefix and app name into separately classed spans, while preserving the combined accessible label and unknown-target fallback. Added a separate localized prefix string and updated UI coverage and specs.
 - [2026-10-05T19:42:00Z] Made the “Insert into:” prefix heavier than the app name using its dedicated CSS class; documented the typography distinction.

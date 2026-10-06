@@ -224,6 +224,21 @@ function attachment(): Attachment {
 }
 
 describe("Composer", () => {
+  it("explains microphone startup failures and exposes the backend detail", () => {
+    useVoice.setState({
+      error: { code: "audio", detail: "Audio device error: could not open microphone: device unavailable" },
+    });
+    render(<Composer onVoiceSetup={() => {}} />);
+    expect(screen.getByText("The audio device could not be used.")).toBeInTheDocument();
+    expect(screen.getByText(/failed to start a capture stream/)).toBeInTheDocument();
+    expect(screen.getByText(/allow desktop apps to access the microphone/)).toBeInTheDocument();
+    const detail = screen.getByText(/device unavailable/).closest("details");
+    expect(detail).not.toHaveAttribute("open");
+    fireEvent.click(screen.getByText("Technical details"));
+    expect(detail).toHaveAttribute("open");
+    useVoice.setState({ error: null });
+  });
+
   it("sends on Enter, keeps Shift+Enter for newlines, and supports RTL input", () => {
     const send = vi.fn(async () => {});
     useChat.setState({ draft: "", turnId: null, send });
