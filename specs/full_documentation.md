@@ -3267,7 +3267,9 @@ Public API: `provider()`, `is_active()`, `provider_for(pref)`, `default_data_dir
   before the single-instance guard. When it returns `true` the process relaunched
   itself with the pack's DLLs staged next to a copied executable and `run()`
   returns immediately. The `RELAUNCH_MARKER` env var and an attempt-recording
-  file prevent a relaunch loop.
+  file prevent a relaunch loop. A leftover attempt marker is handled before the
+  NVIDIA-driver check: a failed prior GPU startup clears the marker and disables
+  GPU acceleration even on machines that currently lack a driver.
 - `restart_required` is true when the pack is installed and enabled but the
   current process has not activated it.
 - `mark_healthy()` is called by the STT and TTS engine constructors, which proves

@@ -333,17 +333,17 @@ pub fn activate(data_dir: &Path, enabled: bool) -> bool {
     if !enabled || !is_installed(data_dir) {
         return false;
     }
-    if !has_nvidia_driver() {
-        tracing::warn!(
-            "GPU acceleration is on but no NVIDIA driver is installed, staying on the CPU"
-        );
-        return false;
-    }
     let attempt = attempt_file(data_dir);
     if attempt.exists() {
         tracing::warn!("the last GPU start did not finish, staying on the CPU");
         let _ = std::fs::remove_file(&attempt);
         let _ = set_enabled(data_dir, false);
+        return false;
+    }
+    if !has_nvidia_driver() {
+        tracing::warn!(
+            "GPU acceleration is on but no NVIDIA driver is installed, staying on the CPU"
+        );
         return false;
     }
     let _ = std::fs::write(&attempt, b"1");
