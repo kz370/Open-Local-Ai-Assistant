@@ -414,8 +414,9 @@ What each one does and why it matters here:
 - `cargo test` also runs the dev-dependency test targets; the LM Studio mock server in
   `services/ai/lmstudio.rs` binds a loopback port. Nothing in the default gate touches
   the network — every network-touching test is either `#[ignore]`d or environment-gated.
-- **CI runs none of this.** `.github/workflows/build.yml` has a single `build` job and
-  no test or lint step. The gates are local-only; see [§12](#12-known-gaps-and-gotchas).
+- **CI repeats the core gates.** `.github/workflows/build.yml` runs frontend build,
+  Rust formatting, Clippy, Rust tests, and Vitest on Windows before packaging. Keep
+  the frontend build before Rust compilation: Tauri's context macro needs `dist/`.
 
 ---
 
@@ -1291,29 +1292,19 @@ Sequence:
 The maintainer checklist from `README.md`: write `release-notes\v<version>.md`, write
 `commit-message.txt`, run `upload-release.bat`.
 
-### 11.4 CI build artifact workflow
+### 11.4 CI build and release workflow
 
-`.github/workflows/build.yml`, name **Build Windows release**:
-
-- **Trigger:** `workflow_dispatch` only.
-- **Permissions:** `contents: read`; it never creates a GitHub Release.
-- **One build job** on `windows-latest`, `timeout-minutes: 90`; uploads the output of
-  `release/` as `open-local-assistant-windows`.
-
-This is a reproducible build artifact path, not the release publisher. Use the
-tag-triggered workflow below when the intended outcome is a GitHub Release.
-
-### 11.5 CI release workflow
-
-`.github/workflows/ci.yml` tests and builds this repository and publishes releases:
+`.github/workflows/build.yml` tests and builds this repository and publishes releases:
 
 - **Triggers:** push a `v<major>.<minor>.<patch>` tag, or run manually with
   `workflow_dispatch`. Manual runs build and upload an Actions artifact but do not
   publish.
 - **Version guard:** release tags must be strict semantic versions and match
   `src-tauri/Cargo.toml`.
-- **Jobs:** `test` runs formatting, Clippy, Rust tests, and frontend tests on
-  `windows-latest`; `build` runs the root `build-installer.bat noupload`, packages the
+- **Jobs:** `test` installs frontend dependencies and runs `npm run build` before
+  Rust checks so Tauri's `generate_context!()` can find `src-tauri/../dist`, then
+  runs formatting, Clippy, Rust tests, and frontend tests on `windows-latest`;
+  `build` runs the root `build-installer.bat noupload`, packages the
   five portable files, verifies the setup exe and writes SHA-256 checksums;
   `publish` runs only for pushed version tags and creates or updates the GitHub
   Release from those same build artifacts.
@@ -1334,10 +1325,15 @@ Ordered by consequence.
 
 ### 12.1 Installer compiler selection
 
-`build-installer.bat` now searches Inno Setup 7 and 6 locations, matching both the
-workflow's Chocolatey installation and the Inno Setup 6 script. The release workflow
-also requires the exact versioned setup exe; it cannot succeed with only the portable
+`build-installer.bat` searches Inno Setup 7 and 6 locations, matching the workflow's
+Chocolatey installation and the Inno Setup 6 script. The release workflow also
+requires the exact versioned setup exe; it cannot succeed with only the portable
 files.
+
+The test job must build the frontend after `npm ci` and before Clippy or Rust tests.
+Tauri's `generate_context!()` macro reads the configured `frontendDist` (`../dist`)
+while compiling; without the frontend build, CI fails with a proc-macro panic even
+though the same Rust checks pass after a frontend build locally.
 
 ### 12.2 The `window.rs` red-background probe
 

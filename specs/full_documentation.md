@@ -4150,49 +4150,26 @@ Builds the Windows setup exe and portable version from the repository so release
 files are traceable to their source (needed for SignPath code signing).
 
 ### Technical Details
-Trigger: `workflow_dispatch` only. Permissions: `contents: read` (least privilege —
-the workflow never writes to the repo). One `build` job on `windows-latest`,
-`timeout-minutes: 90`; this manual path uploads a build artifact and does not publish
-a GitHub Release.
+Triggers: `workflow_dispatch` and pushed version tags `v<major>.<minor>.<patch>`.
+Default permissions are `contents: read`; only the publish job receives
+`contents: write`. Three Windows jobs run in dependency order: `test`, `build`,
+then `publish` (only for a pushed version tag). Manual dispatch runs checks/build
+and uploads an Actions artifact without publishing a GitHub Release.
 
 | Step | Action | Detail |
 | --- | --- | --- |
-| 1–4 | checkout, `setup-node@v4` (Node 22, npm cache), `dtolnay/rust-toolchain@stable`, `Swatinem/rust-cache@v2` (`workspaces: src-tauri`) | |
-| 5 | `choco install innosetup` | **guarded** on `Test-Path` of the IS 6 path |
-| 6 | `npm ci` | repo root |
-| 7 | `set BUILD_JOBS=%NUMBER_OF_PROCESSORS%` then `call build-installer.bat noupload < NUL` | `cmd`; `< NUL` neutralises the script's trailing `pause` |
-| 8 | PowerShell verification of the required outputs | see below |
-| 9 | `actions/upload-artifact@v4` | `name: open-local-assistant-windows`, `path: release/`, `if-no-files-found: error` |
+| Test | checkout, Node 22, Rust stable, `npm ci`, `npm run build`, Rust format/Clippy/tests, frontend tests | The frontend build creates the configured Tauri `frontendDist` (`../dist`) before Rust compilation. |
+| Build | install Inno Setup, validate tag/version, run `build-installer.bat noupload < NUL`, verify and package outputs | Requires the exact versioned setup exe and all five portable files; creates the portable ZIP and SHA-256 checksum list. |
+| Publish | download this run's build artifact and create/update the GitHub Release | Only on pushed version tags; use `release-notes/<tag>.md` when present, otherwise generated notes. |
 
-**Step 8 requires exactly:** the **newest** `release\v<version>\` folder containing
-`Open Local Assistant.exe` (found by sorting `release` subfolders by `LastWriteTime`), the
-**four** speech DLLs beside it, and **at least one** `Open-Local-Assistant-*-setup.exe`;
-anything missing `throw`s. It then prints that folder as a table.
-
-`noupload` is passed and the workflow has only `contents: read`.
-
-#### File: `/.github/workflows/ci.yml`
-
-### Purpose
-Runs Windows quality checks and builds release packages for this application.
-Pushed `v<major>.<minor>.<patch>` tags publish GitHub Releases; manual dispatch
-only builds and stores an Actions artifact.
-
-### Technical Details
-Default permission is `contents: read`; only the `publish` job has `contents: write`.
-The `test` job checks Rust formatting and Clippy, runs the Rust test suite, and runs
-frontend tests. The `build` job validates the tag against `src-tauri/Cargo.toml`,
-installs Node and Rust dependencies plus Inno Setup, then calls
-`build-installer.bat noupload < NUL`. It verifies the exact versioned setup exe and
-all five portable files before making the portable ZIP and SHA-256 checksum list.
-Build outputs are uploaded as an Actions artifact and reused by `publish`, which
-creates or updates the release using `release-notes/<tag>.md` or generated notes.
+The manual path uploads the built release directory as an Actions artifact. A pushed
+tag must match `src-tauri/Cargo.toml` and publishes the same build artifact without
+rebuilding it.
 
 `build-installer.bat` searches for Inno Setup 7 and 6, so the setup compiler path
-accepted by the workflow is also accepted by the local build script.
-
-Also: **no `cargo test`, `cargo clippy` or `npm run lint` runs in CI** — the
-`AGENTS.md` quality gates are local-only. And the `.build-cache` sherpa-onnx
+accepted by the workflow is also accepted by the local build script. Do not remove
+the frontend build from the test job: `tauri::generate_context!()` panics at compile
+time when the configured `../dist` directory is absent.
 archive is not restored between runs, so a cold runner re-downloads it.
 
 ---

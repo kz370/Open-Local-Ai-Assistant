@@ -3,8 +3,8 @@
 Documentation pipeline state for **Open Local Assistant** (`local-ai-assistant` v1.2.1).
 
 - **Repository root:** `I:\Development\repos\Open-Local-Ai-Assistant`
-- **Tracked files (git):** 234
-- **Analysable source / config / doc files:** 170
+- **Tracked files (git):** 233
+- **Analysable source / config / doc files:** 169
 - **Binary assets (excluded from line-level analysis):** 64
 - **Documentation language:** English (100%)
 - **Started:** 2026-09-27T21:50:21Z
@@ -47,9 +47,8 @@ coverage completeness but are **not** deep-analysed: they carry no code semantic
 - `/vite.config.ts`
 - `/.gitignore`
 
-### 2. CI, Editor, Scripts, Installer (6)
+### 2. CI, Editor, Scripts, Installer (5)
 
-- `/.github/workflows/ci.yml`
 - `/.github/workflows/build.yml`
 - `/.vscode/extensions.json`
 - `/scripts/generate_icon.py`
@@ -289,8 +288,8 @@ coverage completeness but are **not** deep-analysed: they carry no code semantic
 `index.html`, `package.json`, `package-lock.json`, `tsconfig.json`,
 `tsconfig.node.json`, `upload-release.bat`, `vite.config.ts`, `.gitignore`
 
-### 2. CI, Editor, Scripts, Installer (6) — PARTIAL
-`.github/workflows/ci.yml`, `.github/workflows/build.yml`, `.vscode/extensions.json`, `scripts/generate_icon.py`,
+### 2. CI, Editor, Scripts, Installer (5) — PARTIAL
+`.github/workflows/build.yml`, `.vscode/extensions.json`, `scripts/generate_icon.py`,
 `installer/open-local-assistant.iss`, `src-tauri/.gitignore`
 
 ### 3. Rust Build & Manifest (5) — COMPLETE
@@ -402,6 +401,7 @@ coverage completeness but are **not** deep-analysed: they carry no code semantic
 - [2026-10-06T13:02:00Z] Replaced the unrelated `ci.yml` pipeline with this app's Windows test/build/release flow: pushed `v<version>` tags must match `src-tauri/Cargo.toml`, the workflow verifies setup and portable outputs, packages a ZIP with SHA-256 sums, and publishes the already-built assets with versioned release notes. Manual dispatch builds without publishing. The build script now detects Inno Setup 6 as well as 7, so the `.iss` compiler version and CI installation are compatible. Added the workflow and refreshed its catalog, developer guide, README, and full documentation. File inventory count includes the new workflow; existing incomplete inventory sections remain.
 - [2026-10-06T13:14:00Z] Bumped the application version to 1.2.1 in the npm, Cargo and Tauri manifests and lockfiles, synchronized current-version spec headers, and recorded the bump here. Release-note history for v1.2.0 remains unchanged; CI uses GitHub-generated notes until the version-specific release note is added.
 - [2026-10-06T13:16:00Z] Added `release-notes/v1.2.1.md` for improved microphone startup diagnostics and the verified Windows release pipeline. Updated the release-note inventory and file counts; the notes explicitly describe troubleshooting rather than claiming the app fixes underlying device or driver failures.
+- [2026-10-06T13:23:00Z] Fixed the release workflow test job: it now runs `npm run build` after installing frontend dependencies and before Clippy/Rust tests. Diagnostic run `37470618519` proved Tauri's `generate_context!()` panicked because configured `frontendDist = ../dist` did not exist; local Cargo runs had passed because `dist/` already existed. The build now creates `dist/` before Rust compilation. Updated workflow catalog and CI documentation; manual GitHub rerun is pending pushing this workflow change.
 - [2026-10-05T19:35:00Z] Increased the destination tab's vertical text padding slightly for more breathing room. Updated `settings.css` and `full_documentation.md`.
 - [2026-10-05T19:40:00Z] Split the destination tab's “Insert into:” prefix and app name into separately classed spans, while preserving the combined accessible label and unknown-target fallback. Added a separate localized prefix string and updated UI coverage and specs.
 - [2026-10-05T19:42:00Z] Made the “Insert into:” prefix heavier than the app name using its dedicated CSS class; documented the typography distinction.
