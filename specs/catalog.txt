@@ -813,15 +813,19 @@ src-tauri/tauri.conf.json :: bundle — `active: true`, `targets: ["nsis","msi"]
 src-tauri/capabilities/default.json :: windows — `["main","settings","overlay","bubble"]`; one capability for all windows, no per-window least-privilege split.
 src-tauri/capabilities/default.json :: permissions — `core:default`, three `core:window:allow-*` drag/position grants, `dialog:allow-open`, `dialog:allow-save`, `opener:allow-open-url`, `opener:allow-default-urls`, `global-shortcut:default`. No `fs`, `shell` or `http`.
 
-.github/workflows/build.yml :: triggers — `workflow_dispatch` and `push` on tags `v*`.
+.github/workflows/build.yml :: trigger — `workflow_dispatch` only; produces an Actions artifact, does not publish a release.
 .github/workflows/build.yml :: permissions — `contents: read`; the workflow never writes to the repository.
 .github/workflows/build.yml :: job build — `windows-latest`, `timeout-minutes: 90`, single job, no matrix, no lint/test job.
 .github/workflows/build.yml :: steps — checkout; `setup-node@v4` (Node 22, npm cache); `dtolnay/rust-toolchain@stable`; `Swatinem/rust-cache@v2` (`workspaces: src-tauri`); `choco install innosetup` guarded on the IS 6 path; `npm ci`; `build-installer.bat noupload < NUL`; PowerShell output verification (newest `release\v<version>\` folder); `upload-artifact@v4` (`release/`, `if-no-files-found: error`).
-.github/workflows/build.yml :: known gap — CI installs/checks Inno Setup 6 while the build script searches for Inno Setup 7, so the setup exe can be silently missing; no `cargo test`/`clippy`/`npm run lint` runs in CI.
+.github/workflows/build.yml :: installer check — current artifact build workflow installs/checks Inno Setup 6; `build-installer.bat` now accepts Inno Setup 6 or 7.
+.github/workflows/ci.yml :: triggers — `push` tags `v*` and `workflow_dispatch`; only a pushed version tag publishes.
+.github/workflows/ci.yml :: test — Windows formatting, Clippy, Rust tests and frontend tests.
+.github/workflows/ci.yml :: build — validate tag against `src-tauri/Cargo.toml`; run `build-installer.bat noupload`; require the versioned setup exe and five portable files; create portable ZIP and SHA-256SUMS; upload an Actions artifact.
+.github/workflows/ci.yml :: publish — separate `contents: write` job downloads the build artifact, creates or updates the matching GitHub Release, and uses `release-notes/<tag>.md` or generated notes.
 
 build-installer.bat :: modes — no argument (build + offer to publish), `install`, `upload`, `noupload` (what CI uses).
 build-installer.bat :: DIST — `release\v<version>` (one folder per release; never `dist\`, which is the embedded frontend folder).
-build-installer.bat :: phases — preflight cache trim (8 GB cap) -> `npm run build` -> `cargo build --release` + sherpa-onnx cache copy-back -> locate Inno Setup -> `ISCC` with `/D` defines.
+build-installer.bat :: phases — preflight cache trim (8 GB cap) -> `npm run build` -> `cargo build --release` + sherpa-onnx cache copy-back -> locate Inno Setup 7 or 6 -> `ISCC` with `/D` defines.
 build-installer.bat :: portable output — `Open Local Assistant.exe` plus 4 speech DLLs (`sherpa-onnx-c-api`, `sherpa-onnx-cxx-api`, `onnxruntime`, `onnxruntime_providers_shared`).
 upload-release.bat :: — Reads `release\v<version>\` (newest setup exe found recursively under `release\` wins when no tag is given, flat `release\` accepted as fallback); commits first, zips only the 5 portable files, then `gh release create` / `upload --clobber` with `release-notes/<tag>.md` when present.
 installer/open-local-assistant.iss :: — Inno Setup script receiving `AppVersion`, `SourceExe`, `LibDir`, `OutputDir` from the batch file.

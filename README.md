@@ -213,9 +213,14 @@ When the build finishes, it asks whether to upload it as GitHub release `v<versi
 
 ### Publish a release (maintainers)
 
-1. Write the release notes in `release-notes\v<version>.md`.
-2. Write the commit message in `commit-message.txt` (git-ignored).
-3. Run `upload-release.bat`. It commits and pushes this repo, updates the release tag to that commit (so GitHub's source-code archives are current), creates or updates the GitHub release `v<version>`, and uploads the setup exe and a zip of the portable version from `release\`.
+1. Update the version in `src-tauri/Cargo.toml` and write `release-notes\v<version>.md`.
+2. Commit and push the release changes to the repository.
+3. Push a matching `v<version>` tag, for example `git push origin v1.2.1`. The
+   `.github/workflows/ci.yml` workflow runs checks, builds and verifies the installer
+   and portable archive, then creates or updates the GitHub release with SHA-256 sums.
+   The tag must exactly match the Cargo version.
+
+For a local build and manual upload instead, run `upload-release.bat` after building.
 
 ## Architecture
 

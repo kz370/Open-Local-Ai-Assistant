@@ -1291,30 +1291,40 @@ Sequence:
 The maintainer checklist from `README.md`: write `release-notes\v<version>.md`, write
 `commit-message.txt`, run `upload-release.bat`.
 
-### 11.4 CI — one job
+### 11.4 CI build artifact workflow
 
 `.github/workflows/build.yml`, name **Build Windows release**:
 
-- **Triggers:** `workflow_dispatch` and `push` on tags `v*`.
-- **Permissions:** `contents: read` — the workflow never writes to the repository and
-  **never creates a GitHub Release**.
-- **Exactly one job**, `build`, on `windows-latest`, `timeout-minutes: 90`. No matrix,
-  no separate lint/test/release job.
+- **Trigger:** `workflow_dispatch` only.
+- **Permissions:** `contents: read`; it never creates a GitHub Release.
+- **One build job** on `windows-latest`, `timeout-minutes: 90`; uploads the output of
+  `release/` as `open-local-assistant-windows`.
 
-| # | Step | Detail |
-| --- | --- | --- |
-| 1 | `actions/checkout@v4` | |
-| 2 | `actions/setup-node@v4` | Node **22**, npm cache |
-| 3 | `dtolnay/rust-toolchain@stable` | |
-| 4 | `Swatinem/rust-cache@v2` | `workspaces: src-tauri` |
-| 5 | Install Inno Setup | `choco install innosetup`, guarded on `Test-Path "%{ProgramFiles(x86)%\Inno Setup 6\ISCC.exe"` |
-| 6 | `npm ci` | repo root |
-| 7 | `set BUILD_JOBS=%NUMBER_OF_PROCESSORS%` then `call build-installer.bat noupload < NUL` | `cmd`; `< NUL` neutralises the script's trailing `pause` |
-| 8 | PowerShell output check | requires the five portable files **and at least one** `*-setup.exe`; then prints `release\` as a table |
-| 9 | `actions/upload-artifact@v4` | `name: open-local-assistant-windows`, `path: release/`, `if-no-files-found: error` |
+This is a reproducible build artifact path, not the release publisher. Use the
+tag-triggered workflow below when the intended outcome is a GitHub Release.
 
-The workflow exists so release files are traceable to the source they came from (needed
-for SignPath code signing) and so anyone can reproduce a build.
+### 11.5 CI release workflow
+
+`.github/workflows/ci.yml` tests and builds this repository and publishes releases:
+
+- **Triggers:** push a `v<major>.<minor>.<patch>` tag, or run manually with
+  `workflow_dispatch`. Manual runs build and upload an Actions artifact but do not
+  publish.
+- **Version guard:** release tags must be strict semantic versions and match
+  `src-tauri/Cargo.toml`.
+- **Jobs:** `test` runs formatting, Clippy, Rust tests, and frontend tests on
+  `windows-latest`; `build` runs the root `build-installer.bat noupload`, packages the
+  five portable files, verifies the setup exe and writes SHA-256 checksums;
+  `publish` runs only for pushed version tags and creates or updates the GitHub
+  Release from those same build artifacts.
+- **Permissions:** default `contents: read`; only `publish` receives `contents: write`.
+- **Release assets:** `Open-Local-Assistant-<version>-setup.exe`,
+  `Open-Local-Assistant-<version>-portable-win-x64.zip`, and the matching
+  `-SHA256SUMS.txt`. Notes use `release-notes/<tag>.md` when present and GitHub
+  generated notes otherwise.
+
+`build-installer.bat` recognizes Inno Setup 6 and 7. The workflow verifies the exact
+setup exe before uploading or publishing, so a missing installer fails the build.
 
 ---
 
@@ -1322,40 +1332,12 @@ for SignPath code signing) and so anyone can reproduce a build.
 
 Ordered by consequence.
 
-### 12.1 The Inno Setup 6 vs 7 mismatch in CI — the installer is silently missing
+### 12.1 Installer compiler selection
 
-`.github/workflows/build.yml` installs and checks for **Inno Setup 6**:
-
-```pwsh
-if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) {
-  choco install innosetup --no-progress -y
-}
-```
-
-But `build-installer.bat` searches for **Inno Setup 7** in four locations
-(`C:\Program Files\Inno Setup 7\ISCC.exe`, `%ProgramFiles(x86)%\...`,
-`%ProgramFiles%\...`, `%LocalAppData%\Programs\Inno Setup 7\ISCC.exe`) and then falls
-back to `where iscc`. `installer/open-local-assistant.iss`'s own header comment says
-"**Inno Setup 6** script".
-
-If Chocolatey installs IS 6, the batch's search fails. It then prints
-`[!] Inno Setup 7 not found, so no setup file was made.` and jumps to `:done` with
-**exit code 0** — a warning, not a failure. Step 8 then runs:
-
-```pwsh
-$files += (Get-ChildItem (Join-Path $dist.FullName "Open-Local-Assistant-*-setup.exe")).FullName
-```
-
-With no setup exe, `Get-ChildItem` returns **nothing**, so `$files` still contains only
-the five hard-coded paths. All five exist, the loop does not throw, and **the check
-passes with no installer in the artifact.** `upload-artifact` then uploads a
-`release/` directory containing only the portable files.
-
-**Fix:** either install Inno Setup 7 in the workflow
-(`choco install innosetup --version=7.*`) and change the guard path to
-`Inno Setup 7\ISCC.exe`, or make `build-installer.bat` also accept IS 6. The
-independent check in step 8 should also **assert** the setup exe count is exactly 1,
-not merely `Test-Path` each name it found.
+`build-installer.bat` now searches Inno Setup 7 and 6 locations, matching both the
+workflow's Chocolatey installation and the Inno Setup 6 script. The release workflow
+also requires the exact versioned setup exe; it cannot succeed with only the portable
+files.
 
 ### 12.2 The `window.rs` red-background probe
 

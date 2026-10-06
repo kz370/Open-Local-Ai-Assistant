@@ -4146,10 +4146,10 @@ Builds the Windows setup exe and portable version from the repository so release
 files are traceable to their source (needed for SignPath code signing).
 
 ### Technical Details
-Triggers: `workflow_dispatch` and `push` on tags `v*`. Permissions:
-`contents: read` (least privilege — the workflow never writes to the repo).
-**Exactly one job**, `build`, on `windows-latest`, `timeout-minutes: 90`, no
-matrix and no separate lint/test/release job.
+Trigger: `workflow_dispatch` only. Permissions: `contents: read` (least privilege —
+the workflow never writes to the repo). One `build` job on `windows-latest`,
+`timeout-minutes: 90`; this manual path uploads a build artifact and does not publish
+a GitHub Release.
 
 | Step | Action | Detail |
 | --- | --- | --- |
@@ -4165,18 +4165,27 @@ matrix and no separate lint/test/release job.
 **four** speech DLLs beside it, and **at least one** `Open-Local-Assistant-*-setup.exe`;
 anything missing `throw`s. It then prints that folder as a table.
 
-**No GitHub Release is created** — `noupload` is passed and the workflow has only
-`contents: read`. Publishing is `upload-release.bat`'s job, run locally.
+`noupload` is passed and the workflow has only `contents: read`.
 
-### Business Logic — the CI gap
-The workflow installs and checks **Inno Setup 6**
-(`%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe`), but `build-installer.bat` searches
-for **`Inno Setup 7\ISCC.exe`** in four locations and then on `PATH`. If
-Chocolatey installs IS 6, the batch's search fails, prints the "not found" warning
-and exits 0 — so the **installer is silently missing**. Step 8's
-`Get-ChildItem … *-setup.exe` then yields an empty array, all five hard-coded
-files still exist, and **the check passes with no setup exe in the artifact**.
-This is the most consequential gap in CI.
+#### File: `/.github/workflows/ci.yml`
+
+### Purpose
+Runs Windows quality checks and builds release packages for this application.
+Pushed `v<major>.<minor>.<patch>` tags publish GitHub Releases; manual dispatch
+only builds and stores an Actions artifact.
+
+### Technical Details
+Default permission is `contents: read`; only the `publish` job has `contents: write`.
+The `test` job checks Rust formatting and Clippy, runs the Rust test suite, and runs
+frontend tests. The `build` job validates the tag against `src-tauri/Cargo.toml`,
+installs Node and Rust dependencies plus Inno Setup, then calls
+`build-installer.bat noupload < NUL`. It verifies the exact versioned setup exe and
+all five portable files before making the portable ZIP and SHA-256 checksum list.
+Build outputs are uploaded as an Actions artifact and reused by `publish`, which
+creates or updates the release using `release-notes/<tag>.md` or generated notes.
+
+`build-installer.bat` searches for Inno Setup 7 and 6, so the setup compiler path
+accepted by the workflow is also accepted by the local build script.
 
 Also: **no `cargo test`, `cargo clippy` or `npm run lint` runs in CI** — the
 `AGENTS.md` quality gates are local-only. And the `.build-cache` sherpa-onnx

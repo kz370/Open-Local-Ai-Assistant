@@ -1,19 +1,61 @@
-# Builds the Windows setup exe and the portable version from this repository,
-# so release files can be traced back to the source they came from (needed
-# for SignPath code signing). Uses the same build-installer.bat as local builds.
-name: Build Windows release
+name: CI and Windows release
 
 on:
   workflow_dispatch:
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: false
 
 permissions:
   contents: read
 
+env:
+  CARGO_TERM_COLOR: always
+
 jobs:
+  test:
+    name: Test
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Check formatting
+        run: cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
+
+      - name: Run Clippy
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --locked
+
+      - name: Run Rust tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml --locked
+
+      - name: Run frontend tests
+        run: npm test
+
   build:
+    name: Build Windows release
     runs-on: windows-latest
     timeout-minutes: 90
+    needs: test
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
     steps:
       - uses: actions/checkout@v4
 
@@ -28,39 +70,166 @@ jobs:
         with:
           workspaces: src-tauri
 
+      - name: Resolve and validate version
+        id: meta
+        shell: pwsh
+        env:
+          REF: ${{ github.ref }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          $manifest = Get-Content src-tauri/Cargo.toml
+          $match = [regex]::Match(($manifest -join "`n"), '(?m)^version\s*=\s*"([^"]+)"')
+          if (-not $match.Success) { throw "Could not read package version from src-tauri/Cargo.toml" }
+          $version = $match.Groups[1].Value
+          if ($env:REF -like "refs/tags/*") {
+            $tag = $env:REF_NAME
+            if ($tag -notmatch '^v(\d+\.\d+\.\d+)$') {
+              throw "Release tag '$tag' must use the v<major>.<minor>.<patch> format."
+            }
+            if ($Matches[1] -ne $version) {
+              throw "Release tag '$tag' does not match src-tauri/Cargo.toml version '$version'."
+            }
+          }
+          "version=$version" >> $env:GITHUB_OUTPUT
+
       - name: Install Inno Setup
         shell: pwsh
         run: |
-          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) {
-            choco install innosetup --no-progress -y
-          }
+          choco install innosetup --yes --no-progress
+          $compiler = @(
+            "${env:ProgramFiles(x86)}\Inno Setup 7\ISCC.exe",
+            "$env:ProgramFiles\Inno Setup 7\ISCC.exe",
+            "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+            "$env:ProgramFiles\Inno Setup 6\ISCC.exe"
+          ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $compiler) { throw "Inno Setup was not installed in a supported location." }
+          Write-Output "Using $compiler"
 
       - name: Install frontend dependencies
         run: npm ci
 
-      - name: Build exe and installer
+      - name: Build application and installer
         shell: cmd
-        run: |
-          set BUILD_JOBS=%NUMBER_OF_PROCESSORS%
-          call build-installer.bat noupload < NUL
+        env:
+          BUILD_JOBS: 4
+          CACHE_LIMIT_GB: 20
+        run: call build-installer.bat noupload < NUL
 
-      - name: Check build output
+      - name: Package and verify release files
         shell: pwsh
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
         run: |
-          # build-installer.bat writes to release\v<version>\, one folder per release.
-          $dist = Get-ChildItem release -Directory | Sort-Object LastWriteTime -Descending |
-                 Where-Object { Test-Path (Join-Path $_.FullName "Open Local Assistant.exe") } |
-                 Select-Object -First 1
-          if (-not $dist) { throw "No release\v<version>\ folder with build output found" }
-          $files = @("Open Local Assistant.exe", "onnxruntime.dll",
-                     "onnxruntime_providers_shared.dll", "sherpa-onnx-c-api.dll",
-                     "sherpa-onnx-cxx-api.dll") | ForEach-Object { Join-Path $dist.FullName $_ }
-          $files += (Get-ChildItem (Join-Path $dist.FullName "Open-Local-Assistant-*-setup.exe")).FullName
-          foreach ($f in $files) { if (-not (Test-Path $f)) { throw "Missing $f" } }
-          Get-ChildItem $dist.FullName | Format-Table Name, Length
+          $dist = Join-Path "release" "v$env:VERSION"
+          $required = @(
+            "Open Local Assistant.exe",
+            "sherpa-onnx-c-api.dll",
+            "sherpa-onnx-cxx-api.dll",
+            "onnxruntime.dll",
+            "onnxruntime_providers_shared.dll",
+            "Open-Local-Assistant-$env:VERSION-setup.exe"
+          )
+          foreach ($name in $required) {
+            $path = Join-Path $dist $name
+            if (-not (Test-Path $path -PathType Leaf)) { throw "Required release file is missing: $path" }
+          }
 
-      - uses: actions/upload-artifact@v4
+          $zip = "Open-Local-Assistant-$env:VERSION-portable-win-x64.zip"
+          $zipPath = Join-Path $dist $zip
+          $stage = Join-Path $env:RUNNER_TEMP "open-local-assistant-portable"
+          if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
+          New-Item -ItemType Directory $stage | Out-Null
+          foreach ($name in $required[0..4]) {
+            Copy-Item (Join-Path $dist $name) $stage
+          }
+          Compress-Archive -Path (Join-Path $stage "*") -DestinationPath $zipPath -Force
+          Remove-Item $stage -Recurse -Force
+
+          $sums = Join-Path $dist "Open-Local-Assistant-$env:VERSION-SHA256SUMS.txt"
+          $assets = @(
+            (Join-Path $dist "Open-Local-Assistant-$env:VERSION-setup.exe"),
+            $zipPath
+          )
+          $lines = foreach ($asset in $assets) {
+            "$((Get-FileHash $asset -Algorithm SHA256).Hash.ToLower())  $(Split-Path $asset -Leaf)"
+          }
+          Set-Content -Path $sums -Value $lines -Encoding utf8
+          Get-ChildItem $dist | Format-Table Name, Length
+
+      - name: Upload release files
+        uses: actions/upload-artifact@v4
         with:
-          name: open-local-assistant-windows
-          path: release/
+          name: open-local-assistant-v${{ steps.meta.outputs.version }}
+          path: release/v${{ steps.meta.outputs.version }}/*
           if-no-files-found: error
+
+  publish:
+    name: Publish GitHub release
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: windows-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download release files
+        uses: actions/download-artifact@v4
+        with:
+          name: open-local-assistant-v${{ needs.build.outputs.version }}
+          path: release/v${{ needs.build.outputs.version }}
+
+      - name: Create or update GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.build.outputs.version }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          $dist = Join-Path "release" "v$env:VERSION"
+          $assets = @(
+            (Join-Path $dist "Open-Local-Assistant-$env:VERSION-setup.exe"),
+            (Join-Path $dist "Open-Local-Assistant-$env:VERSION-portable-win-x64.zip"),
+            (Join-Path $dist "Open-Local-Assistant-$env:VERSION-SHA256SUMS.txt")
+          )
+          foreach ($asset in $assets) {
+            if (-not (Test-Path $asset -PathType Leaf)) { throw "Release asset is missing: $asset" }
+          }
+
+          $notes = Join-Path "release-notes" "${env:TAG}.md"
+          gh release view $env:TAG --json tagName *> $null
+          $exists = $LASTEXITCODE -eq 0
+          if (-not $exists) {
+            if (Test-Path $notes) {
+              gh release create $env:TAG --title $env:TAG --notes-file $notes @assets
+            } else {
+              gh release create $env:TAG --title $env:TAG --generate-notes @assets
+            }
+          } else {
+            gh release upload $env:TAG @assets --clobber
+            if (Test-Path $notes) { gh release edit $env:TAG --notes-file $notes }
+          }
+          if ($LASTEXITCODE -ne 0) { throw "GitHub release operation failed with exit code $LASTEXITCODE." }
+
+      - name: Write release summary
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          $dist = Join-Path "release" "v$env:VERSION"
+          $setup = Join-Path $dist "Open-Local-Assistant-$env:VERSION-setup.exe"
+          $sha = (Get-FileHash $setup -Algorithm SHA256).Hash.ToLower()
+          @(
+            "## $env:TAG published"
+            ""
+            "Windows installer and portable archive were built and verified in this run."
+            "https://github.com/${{ github.repository }}/releases/tag/$env:TAG"
+            ""
+            "| Asset | SHA-256 |"
+            "| --- | --- |"
+            "| $(Split-Path $setup -Leaf) | ``$sha`` |"
+            "| Open-Local-Assistant-$env:VERSION-portable-win-x64.zip | See the attached SHA256SUMS file |"
+          ) | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8
