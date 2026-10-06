@@ -767,7 +767,7 @@ src/test/selection.test.tsx :: 5 cases — right-click selection menu and the ex
 src/test/history.test.tsx :: 4 cases — recency grouping, empty state, delete resets the last-conversation pointer, a DB failure is not shown as empty.
 src/test/shortcutinput.test.tsx :: 3 cases — capture, modifier-release ordering, single-modifier rejection.
 src/test/strings.test.ts :: 5 cases — interpolation, error-code mapping, full-tree key coverage, dynamic key families, byte formatting.
-src/test/soundTags.test.ts :: 2 cases — tag stripping without touching maths; the UI default instruction equals the Rust prompt constant.
+src/test/soundTags.test.ts :: 2 cases — tag stripping without touching maths; the UI default instruction equals the Rust prompt constant, including Windows CRLF source line endings.
 src/test/voiceSessions.test.ts :: 2 cases — a late `idle` must not end a new session; a session that ended before its start returned stays ended.
 
 ================================================================================

@@ -15,7 +15,7 @@ describe("sound tags", () => {
     const rust = readFileSync("src-tauri/src/services/chat/prompt.rs", "utf8");
     const m = rust.match(/DEFAULT_EXPRESSIVE_INSTRUCTION: &str = "([\s\S]*?)";/);
     expect(m).not.toBeNull();
-    const text = m![1].replace(/\\r?\n\s*/g, "");
+    const text = m![1].replace(/\\\r?\n\s*/g, "");
     expect(t("settings.voice.expressiveInstructionDefault")).toBe(text);
   });
 });

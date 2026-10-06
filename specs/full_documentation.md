@@ -1198,7 +1198,8 @@ for `chat_explain`.
 - *settings show the same default instruction the model gets* — reads
   `src-tauri/src/services/chat/prompt.rs` **from disk**, regex-extracts
   `DEFAULT_EXPRESSIVE_INSTRUCTION`, strips the Rust line continuations, and
-  asserts it equals `t("settings.voice.expressiveInstructionDefault")`. This is
+  handles both LF and CRLF source files, then asserts it equals
+  `t("settings.voice.expressiveInstructionDefault")`. This is
   what keeps the user-visible default in the UI identical to the prompt the
   backend actually sends.
 - *are hidden from shown and copied text* — verifies `<laugh>` removal **without**
@@ -4794,7 +4795,7 @@ Your voice can perform three sound cues written as tags: <laugh>, <sigh> and <br
 ```
 (In Rust it is a `\` line-continued literal; the rendered text is one paragraph.)
 `src/test/soundTags.test.ts` reads this constant **from the Rust file on disk**,
-strips the continuations, and asserts it equals
+strips the LF or CRLF continuations, and asserts it equals
 `t("settings.voice.expressiveInstructionDefault")` — so the visible default in
 Settings is provably the prompt the model actually receives.
 
