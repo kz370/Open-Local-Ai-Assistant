@@ -2,9 +2,14 @@ name: CI and Windows release
 
 on:
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Optional version tag to build and publish, for example v1.2.1. Leave blank for an artifact-only build."
+        required: false
+        type: string
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ inputs.release_tag || github.ref }}
   cancel-in-progress: false
 
 permissions:
@@ -20,6 +25,8 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_tag || github.ref }}
 
       - uses: actions/setup-node@v4
         with:
@@ -61,6 +68,8 @@ jobs:
       version: ${{ steps.meta.outputs.version }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_tag || github.ref }}
 
       - uses: actions/setup-node@v4
         with:
@@ -79,13 +88,15 @@ jobs:
         env:
           REF: ${{ github.ref }}
           REF_NAME: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
           $manifest = Get-Content src-tauri/Cargo.toml
           $match = [regex]::Match(($manifest -join "`n"), '(?m)^version\s*=\s*"([^"]+)"')
           if (-not $match.Success) { throw "Could not read package version from src-tauri/Cargo.toml" }
           $version = $match.Groups[1].Value
-          if ($env:REF -like "refs/tags/*") {
-            $tag = $env:REF_NAME
+          $tag = $env:RELEASE_TAG
+          if (-not $tag -and $env:REF -like "refs/tags/*") { $tag = $env:REF_NAME }
+          if ($tag) {
             if ($tag -notmatch '^v(\d+\.\d+\.\d+)$') {
               throw "Release tag '$tag' must use the v<major>.<minor>.<patch> format."
             }
@@ -168,7 +179,7 @@ jobs:
 
   publish:
     name: Publish GitHub release
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name == 'workflow_dispatch' && (inputs.release_tag != '' || startsWith(github.ref, 'refs/tags/v'))
     needs: build
     runs-on: windows-latest
     timeout-minutes: 15
@@ -179,6 +190,8 @@ jobs:
         shell: pwsh
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_tag || github.ref }}
 
       - name: Download release files
         uses: actions/download-artifact@v4
@@ -190,7 +203,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.build.outputs.version }}
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ inputs.release_tag || github.ref_name }}
         run: |
           $dist = Join-Path "release" "v$env:VERSION"
           $assets = @(

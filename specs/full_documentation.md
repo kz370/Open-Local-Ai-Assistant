@@ -4153,11 +4153,13 @@ Builds the Windows setup exe and portable version from the repository so release
 files are traceable to their source (needed for SignPath code signing).
 
 ### Technical Details
-Triggers: `workflow_dispatch` and pushed version tags `v<major>.<minor>.<patch>`.
+Trigger: manual `workflow_dispatch` with optional `release_tag`. Leave it blank
+to build the workflow ref and upload an Actions artifact. Provide a
+`v<major>.<minor>.<patch>` tag to check out, build, and publish that tag's
+GitHub Release.
 Default permissions are `contents: read`; only the publish job receives
 `contents: write`. Three Windows jobs run in dependency order: `test`, `build`,
-then `publish` (only for a pushed version tag). Manual dispatch runs checks/build
-and uploads an Actions artifact without publishing a GitHub Release.
+then `publish` (only when a matching release tag is selected or provided).
 
 | Step | Action | Detail |
 | --- | --- | --- |
@@ -4165,9 +4167,11 @@ and uploads an Actions artifact without publishing a GitHub Release.
 | Build | install Inno Setup, validate tag/version, run `build-installer.bat noupload < NUL`, verify and package outputs | Requires the exact versioned setup exe and all five portable files; creates the portable ZIP and SHA-256 checksum list. |
 | Publish | download this run's build artifact and create/update the GitHub Release | Only on pushed version tags; use `release-notes/<tag>.md` when present, otherwise generated notes. |
 
-The manual path uploads the built release directory as an Actions artifact. A pushed
-tag must match `src-tauri/Cargo.toml` and publishes the same build artifact without
-rebuilding it.
+With no `release_tag`, the manual path uploads the built release directory as an
+Actions artifact. A supplied tag must match `src-tauri/Cargo.toml`; the test and
+build jobs check out that tag, and the publish job uploads the same build artifact
+without rebuilding it. Since this workflow intentionally has no `push` trigger,
+pushing a tag alone does not start a run.
 
 `build-installer.bat` searches for Inno Setup 7 and 6, so the setup compiler path
 accepted by the workflow is also accepted by the local build script. Do not remove

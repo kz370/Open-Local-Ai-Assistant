@@ -1296,9 +1296,10 @@ The maintainer checklist from `README.md`: write `release-notes\v<version>.md`, 
 
 `.github/workflows/build.yml` tests and builds this repository and publishes releases:
 
-- **Triggers:** push a `v<major>.<minor>.<patch>` tag, or run manually with
-  `workflow_dispatch`. Manual runs build and upload an Actions artifact but do not
-  publish.
+- **Trigger:** run manually with `workflow_dispatch`. Leave `release_tag` blank
+  for an artifact-only build. To publish, provide a matching
+  `v<major>.<minor>.<patch>` tag; test and build jobs check out that tag, and the
+  publish job creates or updates its GitHub Release.
 - **Version guard:** release tags must be strict semantic versions and match
   `src-tauri/Cargo.toml`.
 - **Jobs:** `test` installs frontend dependencies and runs `npm run build` before
@@ -1306,8 +1307,8 @@ The maintainer checklist from `README.md`: write `release-notes\v<version>.md`, 
   runs formatting, Clippy, Rust tests, and frontend tests on `windows-latest`;
   `build` runs the root `build-installer.bat noupload`, packages the
   five portable files, verifies the setup exe and writes SHA-256 checksums;
-  `publish` runs only for pushed version tags and creates or updates the GitHub
-  Release from those same build artifacts.
+  `publish` runs only when a matching release tag is provided or selected and
+  creates or updates the GitHub Release from those same build artifacts.
 - **Permissions:** default `contents: read`; only `publish` receives `contents: write`.
 - **Release assets:** `Open-Local-Assistant-<version>-setup.exe`,
   `Open-Local-Assistant-<version>-portable-win-x64.zip`, and the matching

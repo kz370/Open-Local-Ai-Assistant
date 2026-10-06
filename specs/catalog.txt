@@ -813,11 +813,11 @@ src-tauri/tauri.conf.json :: bundle — `active: true`, `targets: ["nsis","msi"]
 src-tauri/capabilities/default.json :: windows — `["main","settings","overlay","bubble"]`; one capability for all windows, no per-window least-privilege split.
 src-tauri/capabilities/default.json :: permissions — `core:default`, three `core:window:allow-*` drag/position grants, `dialog:allow-open`, `dialog:allow-save`, `opener:allow-open-url`, `opener:allow-default-urls`, `global-shortcut:default`. No `fs`, `shell` or `http`.
 
-.github/workflows/build.yml :: triggers — `workflow_dispatch`; pushed version tags `v<major>.<minor>.<patch>` run checks, build, and publish. Manual dispatch builds an Actions artifact without publishing.
+.github/workflows/build.yml :: triggers — manual `workflow_dispatch` with optional `release_tag`; blank builds an Actions artifact, while a matching `v<major>.<minor>.<patch>` value checks out that tag, builds it, and publishes its GitHub Release.
 .github/workflows/build.yml :: permissions — `contents: read` by default; only the publish job receives `contents: write`.
 .github/workflows/build.yml :: test — Windows `npm ci`, `npm run build` (creates Tauri's required `src-tauri/../dist`), Rust formatting, Clippy, Rust tests, and frontend tests.
-.github/workflows/build.yml :: build — validate pushed tag against `src-tauri/Cargo.toml`; run `build-installer.bat noupload`; require versioned setup exe and five portable files; create portable ZIP and SHA-256SUMS; upload an Actions artifact.
-.github/workflows/build.yml :: publish — separate job downloads the build artifact, creates or updates the matching GitHub Release, and uses `release-notes/<tag>.md` or generated notes.
+.github/workflows/build.yml :: build — when `release_tag` is set, validate it against `src-tauri/Cargo.toml` and check out its source; run `build-installer.bat noupload`; require versioned setup exe and five portable files; create portable ZIP and SHA-256SUMS; upload an Actions artifact.
+.github/workflows/build.yml :: publish — only when a matching release tag is selected/provided; separate job downloads the build artifact, creates or updates the matching GitHub Release, and uses `release-notes/<tag>.md` or generated notes.
 
 build-installer.bat :: modes — no argument (build + offer to publish), `install`, `upload`, `noupload` (what CI uses).
 build-installer.bat :: DIST — `release\v<version>` (one folder per release; never `dist\`, which is the embedded frontend folder).
