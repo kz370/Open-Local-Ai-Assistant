@@ -937,7 +937,7 @@ read them as new regressions.
    undiscoverable from the frontend, and the fields are one careless cleanup away
    from being read again by code that no longer has a migration.
 
-6. **`upload-release.bat` runs `git add -A`.** The release script stages the whole
+6. **`scripts/upload-release.bat` runs `git add -A`.** The release script stages the whole
    working tree before committing with the message in `commit-message.txt`. On a
    maintainer machine this can commit unrelated in-progress work, stray build
    output or anything else present in the working tree, and it is the only

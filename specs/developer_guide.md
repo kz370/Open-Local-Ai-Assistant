@@ -41,7 +41,7 @@
 | **WebView2 Runtime** | Evergreen | preinstalled on Windows 11 | Already present on Windows 10 1803+ as an app, but not as an OS component. Without it the window never renders. |
 | **Inno Setup 6 or 7** | 6 | — | Only needed to produce `Open-Local-Assistant-<version>-setup.exe`. `build-installer.bat` **searches for 7 only**; see [§12](#12-known-gaps-and-gotchas). |
 | **LM Studio** | optional | — | Required to actually chat locally. The app is fully usable with a hosted provider instead. |
-| **GitHub CLI (`gh`)** | optional | — | Required only by `upload-release.bat` and by the interactive upload prompt at the end of `build-installer.bat`. |
+| **GitHub CLI (`gh`)** | optional | — | Required only by `scripts\upload-release.bat` and by the interactive upload prompt at the end of `build-installer.bat`. |
 | **Python** | optional | — | Only to re-run `scripts/generate_icon.py`; the icon is committed. |
 
 **Platform.** Windows 10/11 x64 is the primary and only tested target. The Rust tree
@@ -1188,7 +1188,7 @@ Plus, every time you update specs:
 
 - **Conventional Commits:** `feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `build:`,
   `chore:`. The release commit message lives in `commit-message.txt` (git-ignored,
-  rewritten per release) and is applied by `upload-release.bat`.
+  rewritten per release) and is applied by `scripts\upload-release.bat`.
 - **Before opening a PR**, run the corrected gate list in
   [§5.2](#52-the-corrected-gate-list) — all six commands.
 - **Open an issue first for anything large**, so the approach can be agreed before the
@@ -1252,10 +1252,10 @@ release\
 
 `build-installer.bat` reads the version from `src-tauri\Cargo.toml` and writes **every**
 artifact to `release\v<version>\`, so rebuilding an old version never overwrites the current
-release's files. `upload-release.bat` reads the same folder (`release\v<version>\`) and still
+release's files. `scripts\upload-release.bat` reads the same folder (`release\v<version>\`) and still
 falls back to the flat `release\` layout for artifacts built before this change.
 
-The **five** portable files are the exact set `upload-release.bat` and the CI check
+The **five** portable files are the exact set `scripts\upload-release.bat` and the CI check
 require. **Keep the four DLLs next to the `.exe`** — the portable version will not start
 without them.
 
@@ -1266,31 +1266,38 @@ installer. The `.iss` is configured for a per-machine install: `DefaultDirName
 `ArchitecturesAllowed=x64compatible`, `Compression=lzma2/max`, Start-menu and optional
 desktop icons, and a post-install "Launch Open Local Assistant" entry.
 
-### 11.3 `upload-release.bat` — publishing (maintainers)
+### 11.3 `scripts\upload-release.bat` — publishing (maintainers)
 
 ```bat
-upload-release.bat            REM tag derived from the newest setup exe
-upload-release.bat v1.0.0     REM explicit tag
+scripts\upload-release.bat                         REM prompt for mode; newest setup tag
+scripts\upload-release.bat v1.0.0                  REM explicit tag; prompt for mode
+scripts\upload-release.bat v1.0.0 notes-only       REM update notes only
+scripts\upload-release.bat v1.0.0 full-force-tag   REM full upload; force tag to master
 ```
 
 Sequence:
 
-1. Verify `gh` and `git` are on `PATH`; verify the setup exe and **all five** portable
-   files exist.
-2. **Commit and push first**, then force-update `refs/tags/<tag>` to the pushed
-  `HEAD`. This also refreshes GitHub's source-code archives for an existing
-  release. If the working tree is dirty, `commit-message.txt` is **required**;
-  otherwise `git add -A` + `git commit -F commit-message.txt` + `git push`.
-3. Zip the five portable files (staged in a temp directory first — "only the portable
+1. If no mode is supplied, prompt for `full` (binaries + notes), `notes-only`, or
+   `full-force-tag` (full upload plus moving the tag to local `master`).
+2. Verify `gh` and `git` are on `PATH`; full modes verify the setup exe and **all five**
+   portable files exist. Notes-only does not require local build artifacts.
+3. If the working tree is dirty, full modes require `commit-message.txt`; then
+   `git add -A` + `git commit -F commit-message.txt`. Notes-only skips a commit if
+   there is no message file. All modes push `HEAD` first. Only `full-force-tag`
+   force-updates `refs/tags/<tag>` to local `master`; normal full uploads do not
+   move an existing tag.
+4. Full modes zip the five portable files (staged in a temp directory first — "only the portable
    files go in the zip, not the setup exe next to them") into
    `%TEMP%\Open-Local-Assistant-<version>-portable-win-x64.zip`.
-4. `gh release create <tag> --notes-file release-notes\<tag>.md` if that file exists,
+5. `gh release create <tag> --notes-file release-notes\<tag>.md` if that file exists,
    otherwise `--generate-notes`. An **existing** release keeps its notes **unless** the
-   file exists, but its assets are replaced.
-5. `gh release upload <tag> <setup> <zip> --clobber`.
+   file exists. Notes-only stops after creating/updating the release notes; full modes
+   replace the release assets.
+6. Full modes generate SHA-256 sums, optionally sign the updater manifest, then run
+   `gh release upload <tag> <setup> <zip> <sums> --clobber`.
 
 The maintainer checklist from `README.md`: write `release-notes\v<version>.md`, write
-`commit-message.txt`, run `upload-release.bat`.
+`commit-message.txt`, run `scripts\upload-release.bat`.
 
 ### 11.4 CI build and release workflow
 
@@ -1344,9 +1351,9 @@ window it evaluates
 `document.body.style.background='#ff0000'`. It is invisible when healthy, but it is
 debug scaffolding in a shipping path and must be removed before a release.
 
-### 12.3 `git add -A` in `upload-release.bat`
+### 12.3 `git add -A` in `scripts\upload-release.bat`
 
-`upload-release.bat` runs `git add -A` with the maintainer's own `commit-message.txt`
+`scripts\upload-release.bat` runs `git add -A` with the maintainer's own `commit-message.txt`
 whenever the working tree is dirty. There is **no path allow-listing and no secrets
 scan**. The intent is that only build output is present (the file is git-ignored, and
 `.gitignore` covers `release/`, `dist/`, `node_modules/` and `.build-cache/`), but

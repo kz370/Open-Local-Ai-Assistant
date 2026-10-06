@@ -95,6 +95,7 @@ If you leave the model on **Auto**, the app uses the model that is already loade
 - **Push-to-talk:** hold `Ctrl+Shift+Space` while you speak.
 - **Hands-free:** click the waveform button next to the message box. The call screen listens, answers, and highlights each word as it is spoken. You can pause, mute or end the call at any time.
 - **Dictation:** press `Ctrl+Alt+Space` in any app. A small overlay shows your words live, and pressing the hotkey again inserts the text.
+- **Target Application:** Shows which application your text will be entered into.
 
 <p align="center">
   <img src="docs/screenshots/dictation-overlay.webp" width="480" alt="Dictation overlay while listening">
@@ -220,7 +221,10 @@ When the build finishes, it asks whether to upload it as GitHub release `v<versi
    and portable archive, then creates or updates the GitHub release with SHA-256 sums.
    The tag must exactly match the Cargo version.
 
-For a local build and manual upload instead, run `upload-release.bat` after building.
+For a local build and manual upload instead, run `scripts\upload-release.bat` after
+building. It prompts for a full upload, notes-only update, or a full upload that
+force-moves the release tag to `master`; you can also pass the mode as the second
+argument, for example `scripts\upload-release.bat v1.2.1 notes-only`.
 
 ## Architecture
 

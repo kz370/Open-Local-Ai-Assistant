@@ -823,7 +823,7 @@ build-installer.bat :: modes — no argument (build + offer to publish), `instal
 build-installer.bat :: DIST — `release\v<version>` (one folder per release; never `dist\`, which is the embedded frontend folder).
 build-installer.bat :: phases — preflight cache trim (8 GB cap) -> `npm run build` -> `cargo build --release` + sherpa-onnx cache copy-back -> locate Inno Setup 7 or 6 -> `ISCC` with `/D` defines.
 build-installer.bat :: portable output — `Open Local Assistant.exe` plus 4 speech DLLs (`sherpa-onnx-c-api`, `sherpa-onnx-cxx-api`, `onnxruntime`, `onnxruntime_providers_shared`).
-upload-release.bat :: — Reads `release\v<version>\` (newest setup exe found recursively under `release\` wins when no tag is given, flat `release\` accepted as fallback); commits first, zips only the 5 portable files, then `gh release create` / `upload --clobber` with `release-notes/<tag>.md` when present.
+scripts/upload-release.bat :: — Reads `release\v<version>\` (newest setup exe found recursively under `release\` wins when no tag is given); prompts for full, notes-only, or full-force-tag, commits/pushes, and for full modes zips the 5 portable files, writes SHA-256 sums and optionally signs the updater manifest before `gh release create` / `upload --clobber`.
 installer/open-local-assistant.iss :: — Inno Setup script receiving `AppVersion`, `SourceExe`, `LibDir`, `OutputDir` from the batch file.
 scripts/generate_icon.py :: — Generates the build-time icon (rounded teal square + white wave); deliberately different from the runtime icon in `desktop/icon.rs`.
 

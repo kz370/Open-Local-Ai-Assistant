@@ -31,7 +31,7 @@ coverage completeness but are **not** deep-analysed: they carry no code semantic
 
 ## Files to Process
 
-### 1. Repository Root (13)
+### 1. Repository Root (12)
 
 - `/LICENSE`
 - `/PRIVACY.md`
@@ -43,15 +43,15 @@ coverage completeness but are **not** deep-analysed: they carry no code semantic
 - `/package-lock.json`
 - `/tsconfig.json`
 - `/tsconfig.node.json`
-- `/upload-release.bat`
 - `/vite.config.ts`
 - `/.gitignore`
 
-### 2. CI, Editor, Scripts, Installer (5)
+### 2. CI, Editor, Scripts, Installer (6)
 
 - `/.github/workflows/build.yml`
 - `/.vscode/extensions.json`
 - `/scripts/generate_icon.py`
+- `/scripts/upload-release.bat`
 - `/installer/open-local-assistant.iss`
 - `/src-tauri/.gitignore`
 
@@ -283,13 +283,14 @@ coverage completeness but are **not** deep-analysed: they carry no code semantic
 
 ## Files Processed
 
-### 1. Repository Root (13) — COMPLETE
+### 1. Repository Root (12) — COMPLETE
 `LICENSE`, `PRIVACY.md`, `README.md`, `build-installer.bat`, `commit-message.txt`,
 `index.html`, `package.json`, `package-lock.json`, `tsconfig.json`,
-`tsconfig.node.json`, `upload-release.bat`, `vite.config.ts`, `.gitignore`
+`tsconfig.node.json`, `vite.config.ts`, `.gitignore`
 
-### 2. CI, Editor, Scripts, Installer (5) — PARTIAL
+### 2. CI, Editor, Scripts, Installer (6) — PARTIAL
 `.github/workflows/build.yml`, `.vscode/extensions.json`, `scripts/generate_icon.py`,
+`scripts/upload-release.bat`,
 `installer/open-local-assistant.iss`, `src-tauri/.gitignore`
 
 ### 3. Rust Build & Manifest (5) — COMPLETE
@@ -412,3 +413,4 @@ coverage completeness but are **not** deep-analysed: they carry no code semantic
 - [2026-10-05T19:52:00Z] Replaced hard-coded destination-tab text colors with the active theme's `--accent` token.
 - [2026-10-05T19:53:00Z] Bumped the app version from 1.1.0 to 1.2.0 across the npm, Cargo and Tauri manifests and lockfiles; synchronized specification version headers. GitHub's Windows release build is triggered by pushing tag `v1.2.0`.
 - [2026-10-05T20:32:00Z] Added `release-notes/v1.2.0.md` covering dictation destination tracking and global review shortcuts, launcher alignment and glow, compact chat resizing, and the 1.2.0 download/requirements guidance. Updated the release-note inventory and count in this file.
+- [2026-10-06T14:48:00Z] Moved `upload-release.bat` to `scripts/` and added prompted/CLI `full`, `notes-only`, and opt-in `full-force-tag` modes. Normal full uploads leave existing tags untouched; only force-tag mode moves the release tag to `master`. Updated build invocation, README, release documentation, catalog, and inventory while keeping file counts unchanged.

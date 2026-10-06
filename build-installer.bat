@@ -32,7 +32,7 @@ if not defined VERSION set "VERSION=0.1.0"
 
 rem NOTE: outputs go to release\v<version>\ (one folder per release), never
 rem to dist\ (dist\ is the Tauri frontend folder and gets embedded into the
-rem exe as-is). upload-release.bat looks in the same place.
+rem exe as-is). scripts\upload-release.bat looks in the same place.
 set "DIST=%ROOT%release\v%VERSION%"
 
 
@@ -174,14 +174,14 @@ echo Done. Installer: "%DIST%\Open-Local-Assistant-%VERSION%-setup.exe"
 echo It installs to "C:\Program Files\%APPNAME%" with a Start menu entry and uninstaller.
 
 
-rem Offer to publish this build as GitHub release v<version> (upload-release.bat).
+rem Offer to publish this build as GitHub release v<version> (scripts\upload-release.bat).
 rem Handy when release\ was lost and the same version just needs rebuilding.
 if /i "%~1"=="noupload" goto :done
 set "TAG=v%VERSION%"
 set "UPLOAD=N"
 if /i "%~1"=="upload" set "UPLOAD=Y"
 if /i "%UPLOAD%"=="Y" goto :upload
-where gh >nul 2>nul || (echo To publish later: run upload-release.bat & goto :done)
+where gh >nul 2>nul || (echo To publish later: run scripts\upload-release.bat & goto :done)
 echo.
 gh release view "%TAG%" >nul 2>nul
 if errorlevel 1 (
@@ -193,13 +193,15 @@ if errorlevel 1 (
   choice /c YN /n /m "Replace its setup exe and portable zip with this build? [Y/N] "
 )
 if errorlevel 2 (
-  echo Not uploaded. To publish later: run upload-release.bat
+  echo Not uploaded. To publish later: run scripts\upload-release.bat
   goto :done
 )
 
 :upload
 echo Uploading %TAG%...
-call "%ROOT%upload-release.bat" %TAG%
+set "UPLOADMODE="
+if /i "%~1"=="upload" set "UPLOADMODE=full"
+call "%ROOT%scripts\upload-release.bat" %TAG% %UPLOADMODE%
 if errorlevel 1 (
   echo [x] Upload failed.
   goto :fail

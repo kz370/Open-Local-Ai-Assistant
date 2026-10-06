@@ -211,7 +211,7 @@ The repository contains 22 logical modules.
 | 26 | Database | `src-tauri/src/database/` | Infrastructure | SQLite schema, migrations, conversation and message CRUD, FTS5 search, JSON export. |
 | 27 | Settings Store | `src-tauri/src/settings/` | Infrastructure | Typed settings registry, defaults, persistence, backup and restore. |
 | 28 | Desktop | `src-tauri/src/desktop/` | Infrastructure | Floating window placement and persistence, tray, global shortcuts, autostart, icon, install verification. |
-| 29 | Build & Release | `build-installer.bat`, `upload-release.bat`, `installer/*.iss`, `.github/workflows/build.yml` | Infrastructure | Portable/installer packaging, SHA-256 publishing, CI. |
+| 29 | Build & Release | `build-installer.bat`, `scripts/upload-release.bat`, `installer/*.iss`, `.github/workflows/build.yml` | Infrastructure | Portable/installer packaging, SHA-256 publishing, CI. |
 
 ---
 
@@ -4098,36 +4098,41 @@ real installer.
 
 ---
 
-#### File: `/upload-release.bat`
+#### File: `/scripts/upload-release.bat`
 
 ### Purpose
 Publishes a GitHub release from the files `build-installer.bat` staged in
 `release\v<version>\` (artifacts built before the per-release folders existed); with no
 tag it takes the **newest** setup exe found anywhere under `release\` (PowerShell recursive
 `Get-ChildItem` sorted by `LastWriteTime`, because `dir /o-d /s` only sorts *within* each
-directory) and derives both the folder and the tag `v<version>` from it.
+directory) and derives both the folder and the tag `v<version>` from it. With no mode it prompts
+for full upload, notes-only, or full upload with the tag force-moved to local `master`.
 
 ### Technical Details
-104 lines. `upload-release.bat [tag]`; with no tag the version is derived from the
-newest setup exe and the tag becomes `v<version>`. Requires `gh` and `git`.
+`scripts/upload-release.bat [tag] [mode]`; modes are `full`, `notes-only`, and
+`full-force-tag` (also accepted as 1, 2, and 3). With no tag the version is derived
+from the newest setup exe and the tag becomes `v<version>`. Requires `gh` and `git`.
 `PORTABLE_FILES` is **exactly the five files CI verifies**.
 
 ### Business Logic
 The sequence is deliberate:
-1. Existence checks on the setup exe and every portable file.
-2. **Commit and push first**, then force-update `refs/tags/<tag>` to the pushed
-  `HEAD`, so GitHub's source-code archives (including for existing releases)
-  contain the published source. `git status --porcelain`; if dirty, require
-  `commit-message.txt`, then `git add -A` and `git commit -F`.
-3. Zip the portable files into `%TEMP%`, staging them in a temporary directory
+1. Full modes check the setup exe and every portable file; notes-only needs no local
+   build artifacts.
+2. **Push first**. If the working tree is dirty, full modes require
+   `commit-message.txt`, then `git add -A` and `git commit -F`; notes-only skips the
+   commit when no message file exists. Only `full-force-tag` moves
+   `refs/tags/<tag>` to local `master` and force-pushes that tag. Normal full mode
+   leaves existing tags in place.
+3. Full modes zip the portable files into `%TEMP%`, staging them in a temporary directory
    first — "Only the portable files go in the zip, not the setup exe next to them".
-4. `gh release create` with `--notes-file release-notes\<tag>.md` when present,
+4. All modes use `gh release create` with `--notes-file release-notes\<tag>.md` when present,
    otherwise `--generate-notes`. An existing release **keeps its notes unless the
-   file exists**, but its assets are replaced.
-5. `gh release upload --clobber` for both assets.
+   file exists**. Notes-only stops here; full modes also replace assets using
+   `gh release upload --clobber`, with SHA-256 sums and the updater manifest when signed.
 
 **Security note:** `git add -A` commits whatever is in the working tree using the
-operator's own `commit-message.txt` — no path allow-listing and no secrets scan.
+operator's own `commit-message.txt` — no path allow-listing and no secrets scan. This
+commit is required for dirty full-mode uploads but optional for notes-only.
 Because `commit-message.txt` is git-ignored, the intent is that only build output
 is committed.
 
