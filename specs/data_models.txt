@@ -1,4 +1,4 @@
-DATA MODELS — Open Local Assistant (`local-ai-assistant` v1.2.0)
+DATA MODELS — Open Local Assistant (`local-ai-assistant` v1.2.1)
 Schemas, domain types, wire types and on-disk formats.
 Companion documents: `catalog.txt` (symbol index), `relationships.txt` (edges),
 `full_documentation.md` (per-file analysis), `runtime.md` (pipeline state).

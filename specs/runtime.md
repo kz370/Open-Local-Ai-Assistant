@@ -1,10 +1,10 @@
 # RUNTIME
 
-Documentation pipeline state for **Open Local Assistant** (`local-ai-assistant` v1.2.0).
+Documentation pipeline state for **Open Local Assistant** (`local-ai-assistant` v1.2.1).
 
 - **Repository root:** `I:\Development\repos\Open-Local-Ai-Assistant`
-- **Tracked files (git):** 233
-- **Analysable source / config / doc files:** 169
+- **Tracked files (git):** 234
+- **Analysable source / config / doc files:** 170
 - **Binary assets (excluded from line-level analysis):** 64
 - **Documentation language:** English (100%)
 - **Started:** 2026-09-27T21:50:21Z
@@ -272,12 +272,13 @@ coverage completeness but are **not** deep-analysed: they carry no code semantic
 - `/src-tauri/icons/android/values/ic_launcher_background.xml`
 - `/src-tauri/models/` sample `.onnx` model file
 
-### 18. Release Notes (4)
+### 18. Release Notes (5)
 
 - `/release-notes/v0.1.0.md`
 - `/release-notes/v1.0.0.md`
 - `/release-notes/v1.1.0.md`
 - `/release-notes/v1.2.0.md`
+- `/release-notes/v1.2.1.md`
 
 ---
 
@@ -334,9 +335,9 @@ coverage completeness but are **not** deep-analysed: they carry no code semantic
 
 ### 17. Binary Assets (64) — INVENTORIED (excluded from line analysis)
 
-### 18. Release Notes (4) — COMPLETE
+### 18. Release Notes (5) — COMPLETE
 `release-notes/v0.1.0.md`, `release-notes/v1.0.0.md`, `release-notes/v1.1.0.md`,
-`release-notes/v1.2.0.md`
+`release-notes/v1.2.0.md`, `release-notes/v1.2.1.md`
 
 ---
 
@@ -399,6 +400,8 @@ coverage completeness but are **not** deep-analysed: they carry no code semantic
 - [2026-10-05T19:34:00Z] Refined the dictation destination tab into a rounded-top trapezoid: its top is narrower than its bottom, the angled sides widen to full width, and the entire bottom outline remains visible instead of being masked. Updated `settings.css`, `full_documentation.md` and `catalog.txt`. Files Processed remains unchanged; the pre-existing pending sections still keep its count from matching Files to Process.
 - [2026-10-06T12:50:00Z] Microphone startup errors in the chat composer now explain that OS permission alone does not guarantee stream startup, give Windows access/device-selection recovery steps, and expose the backend error under Technical details. Added a UI regression case and updated the API, component, relationship, and full-documentation specs. The Files to Process inventory and file counts are unchanged; existing incomplete sections remain as previously recorded.
 - [2026-10-06T13:02:00Z] Replaced the unrelated `ci.yml` pipeline with this app's Windows test/build/release flow: pushed `v<version>` tags must match `src-tauri/Cargo.toml`, the workflow verifies setup and portable outputs, packages a ZIP with SHA-256 sums, and publishes the already-built assets with versioned release notes. Manual dispatch builds without publishing. The build script now detects Inno Setup 6 as well as 7, so the `.iss` compiler version and CI installation are compatible. Added the workflow and refreshed its catalog, developer guide, README, and full documentation. File inventory count includes the new workflow; existing incomplete inventory sections remain.
+- [2026-10-06T13:14:00Z] Bumped the application version to 1.2.1 in the npm, Cargo and Tauri manifests and lockfiles, synchronized current-version spec headers, and recorded the bump here. Release-note history for v1.2.0 remains unchanged; CI uses GitHub-generated notes until the version-specific release note is added.
+- [2026-10-06T13:16:00Z] Added `release-notes/v1.2.1.md` for improved microphone startup diagnostics and the verified Windows release pipeline. Updated the release-note inventory and file counts; the notes explicitly describe troubleshooting rather than claiming the app fixes underlying device or driver failures.
 - [2026-10-05T19:35:00Z] Increased the destination tab's vertical text padding slightly for more breathing room. Updated `settings.css` and `full_documentation.md`.
 - [2026-10-05T19:40:00Z] Split the destination tab's “Insert into:” prefix and app name into separately classed spans, while preserving the combined accessible label and unknown-target fallback. Added a separate localized prefix string and updated UI coverage and specs.
 - [2026-10-05T19:42:00Z] Made the “Insert into:” prefix heavier than the app name using its dedicated CSS class; documented the typography distinction.

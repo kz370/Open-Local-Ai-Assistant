@@ -1,6 +1,6 @@
 # FULL DOCUMENTATION
 
-**Project:** Open Local Assistant (`local-ai-assistant` v1.2.0)
+**Project:** Open Local Assistant (`local-ai-assistant` v1.2.1)
 **License:** GPL-3.0-only
 **Type:** Tauri 2 desktop application — Rust backend + React 19 / TypeScript frontend
 **Platform:** Windows 10/11 x64 (primary); code is written to also build on macOS and Linux
@@ -1385,14 +1385,14 @@ Gemini, Hugging Face, SearXNG (own instance), searx.space (public instance
 list), DuckDuckGo, GitHub, NVIDIA, plus user-configured MCP servers. Each
 third-party privacy policy is linked explicitly.
 
-#### File: `/release-notes/v0.1.0.md`, `/release-notes/v1.0.0.md`, `/release-notes/v1.1.0.md` and `/release-notes/v1.2.0.md`
+#### File: `/release-notes/v0.1.0.md`, `/release-notes/v1.0.0.md`, `/release-notes/v1.1.0.md`, `/release-notes/v1.2.0.md` and `/release-notes/v1.2.1.md`
 
 ### Purpose
 Published release notes.
 
 ### Summary
-27, 29, 33 and 27 lines. Each states the version, licence and provider
-requirements, names the two download artefacts, and repeats the not-code-signed
+27, 29, 33, 27 and 24 lines. Each states the version, licence and provider
+requirements, names the download artefacts, and repeats the not-code-signed
 SmartScreen guidance with the `Get-FileHash` verification instruction.
 
 ### Technical Details
@@ -1410,6 +1410,10 @@ global review shortcuts, launcher alignment with chat positioning, and
 horizontal compact-chat resizing. Downloads are named for each version; the
 installer and release scripts read the version from `Cargo.toml`, so the file
 name and `tauri.conf.json` must agree with it.
+`v1.2.1` adds user-facing microphone startup diagnostics with Windows access
+guidance and expandable backend detail; it does not claim to fix device or
+driver startup failures. It also documents the automated Windows release checks,
+portable package, and SHA-256 checksum asset.
 
 #### File: `/src-tauri/icons/android/mipmap-anydpi-v26/ic_launcher.xml` and `/src-tauri/icons/android/values/ic_launcher_background.xml`
 
@@ -4048,7 +4052,7 @@ back to a **stale `0.1.0`**. Output therefore lands in a **per-release folder**
 files. `JOBS` is half
 the processor count, overridable by `BUILD_JOBS`. `CACHE_LIMIT_GB = 8`.
 The release version is kept in sync across the npm, Cargo and Tauri manifests
-and lockfiles; `v1.2.0` is the current version. The GitHub release workflow
+and lockfiles; `v1.2.1` is the current version. The GitHub release workflow
 builds when a `v*` tag is pushed.
 
 **Four build phases:**
