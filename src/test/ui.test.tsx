@@ -34,14 +34,14 @@ describe("SpokenText", () => {
   it("shows the whole reply and highlights the word being spoken", async () => {
     const reply = "Hello there. **One** two three four. Goodbye now.";
     const sentence = { tag: "t1", text: "One two three four.", durationMs: 1000, startedAt: performance.now() };
-    const { rerender } = render(<SpokenText text={reply} sentence={sentence} paused={false} />);
+    const { rerender } = render(<SpokenText text={reply} sentence={sentence} paused />);
     // Markdown is not shown, the rest of the reply is.
     expect(document.querySelector(".spoken-text")?.textContent).toBe("Hello there. One two three four. Goodbye now.");
     await waitFor(() => expect(on()).toBe("One"));
     expect(document.querySelectorAll(".spoken-word.done")).toHaveLength(2); // "Hello there." came before
 
     // Three quarters through the sentence: the third word is spoken.
-    rerender(<SpokenText text={reply} sentence={{ ...sentence, startedAt: performance.now() - 700 }} paused={false} />);
+    rerender(<SpokenText text={reply} sentence={{ ...sentence, startedAt: performance.now() - 700 }} paused />);
     await waitFor(() => expect(on()).toBe("three"));
   });
 
